@@ -1,0 +1,56 @@
+// ============================================================
+// Interactive Guide - Shared Utilities
+// ============================================================
+
+import { v4 as uuidv4 } from 'uuid'
+import type { KnowledgePackage, PackageListItem } from './types.js'
+
+/**
+ * Generate a unique generate ID.
+ */
+export function generateGenerateId(): string {
+  return `generate_${Date.now()}_${uuidv4().slice(0, 8)}`
+}
+
+/**
+ * Generate a unique build ID (legacy alias).
+ */
+export function generateBuildId(): string {
+  return generateGenerateId()
+}
+
+/**
+ * Generate a unique node/edge ID.
+ */
+export function generateId(prefix: string): string {
+  return `${prefix}_${uuidv4().slice(0, 8)}`
+}
+
+/**
+ * Convert a KnowledgePackage to a PackageListItem for overview display.
+ */
+export function toPackageListItem(pkg: KnowledgePackage): PackageListItem {
+  return {
+    id: pkg.id,
+    title: pkg.title,
+    version: pkg.version,
+    resolution: pkg.resolution,
+    nodeCount: pkg.nodes.length,
+    edgeCount: pkg.edges.length,
+    updatedAt: pkg.metadata?.updatedAt,
+  }
+}
+
+/**
+ * Generate a timestamp in ISO format.
+ */
+export function nowISO(): string {
+  return new Date().toISOString()
+}
+
+/**
+ * Get the root node from a package.
+ */
+export function getRootNode(pkg: KnowledgePackage) {
+  return pkg.nodes.find(n => n.id === 'root')
+}

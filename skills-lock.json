@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "baoyu-infographic": {
+      "source": "jimliu/baoyu-skills",
+      "sourceType": "github",
+      "skillPath": "skills/baoyu-infographic/SKILL.md",
+      "computedHash": "d8b7255bd1ac0842fc8b6a4c2f58e395f64c245a11756cea7ef690082e96381f"
+    }
+  }
+}
