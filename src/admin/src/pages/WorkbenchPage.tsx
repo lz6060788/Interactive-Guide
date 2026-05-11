@@ -18,7 +18,7 @@ import {
   IconButton,
 } from '@chakra-ui/react'
 import {
-  ArrowLeft, Settings, Play, Eye, Send, CircleDot, Minus, Plus,
+  ArrowLeft, Settings, Play, Eye, Package, Plus,
 } from 'lucide-react'
 import * as api from '../services/api'
 import { layoutWithElk } from '../layout/elk-layout'
@@ -47,6 +47,7 @@ export function WorkbenchPage() {
   const [hotspotNodeId, setHotspotNodeId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [building, setBuilding] = useState(false)
+  const [packaging, setPackaging] = useState(false)
   const [sidebarFilter, setSidebarFilter] = useState<SidebarFilter>('all')
   const [showAddNode, setShowAddNode] = useState(false)
   const [addParentId, setAddParentId] = useState('')
@@ -229,6 +230,36 @@ export function WorkbenchPage() {
     }
   }, [guideId])
 
+  const allNodesReady = useMemo(() => {
+    if (!pkg?.nodes?.length) return false
+    return pkg.nodes.every((node: any) => node.imageStatus === 'success' || node.status === 'success')
+  }, [pkg])
+
+  const packageDisabledReason = useMemo(() => {
+    if (building) return '生成进行中，暂不可打包'
+    if (packaging) return '打包进行中'
+    if (!allNodesReady) return '仅当所有节点均为成功状态时才可打包'
+    return ''
+  }, [allNodesReady, building, packaging])
+
+  const handlePackage = useCallback(async () => {
+    if (!guideId) return
+    try {
+      setPackaging(true)
+      setError(null)
+      const bundle = await api.packageGuide(guideId)
+      if (!bundle?.entryUrl) {
+        throw new Error('打包成功但未返回运行时入口')
+      }
+      window.open(bundle.entryUrl, '_blank', 'noopener,noreferrer')
+      await load()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setPackaging(false)
+    }
+  }, [guideId, load])
+
   const openHotspotEditor = useCallback((nodeId: string) => {
     setHotspotNodeId(nodeId)
     setShowHotspotEditor(true)
@@ -400,6 +431,20 @@ export function WorkbenchPage() {
           >
             <Eye size={14} style={{ marginRight: 4 }} />
             预览
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            style={{ border: '1px solid #2a2d3a' }}
+            color="text-secondary"
+            _hover={{ bg: 'surface-raised' }}
+            onClick={handlePackage}
+            loading={packaging}
+            disabled={Boolean(packageDisabledReason)}
+            title={packageDisabledReason || '导出可独立部署的运行时页面'}
+          >
+            <Package size={14} style={{ marginRight: 4 }} />
+            打包
           </Button>
         </Flex>
       </Flex>

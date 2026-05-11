@@ -63,6 +63,8 @@ export const fetchGenerateLogs = (generateId: string) =>
 
 // Manifest
 export const fetchManifest = (guideId: string) => request<any>(`/guides/${guideId}/manifest`)
+export const packageGuide = (guideId: string) =>
+  request<any>(`/guides/${guideId}/package`, { method: 'POST' })
 
 // Legacy aliases (for backward compatibility during migration)
 export const fetchPackages = fetchGuides

@@ -325,6 +325,8 @@ export function PreviewModal({ packageId, onClose }: Props) {
                     width={`${imgRect.w}px`}
                     height={`${imgRect.h}px`}
                     pointerEvents="none"
+                    opacity={transitioning ? 0 : 1}
+                    transition="opacity 180ms ease"
                   >
                     {(currentNode.hotspots ?? []).map((hs) => (
                       <Box
@@ -333,29 +335,45 @@ export function PreviewModal({ packageId, onClose }: Props) {
                         position="absolute"
                         left={`${hs.normalizedX * 100}%`}
                         top={`${hs.normalizedY * 100}%`}
-                        w="24px"
-                        h="24px"
+                        w="28px"
+                        h="28px"
                         rounded="full"
-                        bg="whiteAlpha.900"
-                        border="2px solid"
-                        borderColor="whiteAlpha.600"
+                        border="1px solid"
+                        borderColor="rgba(255,255,255,0.86)"
+                        background="radial-gradient(circle at 35% 35%, rgba(255,255,255,0.98) 0%, rgba(223,239,255,0.96) 36%, rgba(107,177,255,0.84) 70%, rgba(33,105,255,0.46) 100%)"
                         transform="translate(-50%, -50%)"
                         cursor="pointer"
                         pointerEvents="auto"
                         zIndex={10}
                         p="0"
-                        boxShadow="0 0 12px rgba(255,255,255,0.5)"
-                        _hover={{ transform: 'translate(-50%, -50%) scale(1.2)' }}
+                        boxShadow="0 0 12px rgba(131,194,255,0.7), 0 0 28px rgba(87,162,255,0.4), inset 0 0 10px rgba(255,255,255,0.88)"
+                        _hover={{
+                          transform: 'translate(-50%, -50%) scale(1.18)',
+                          borderColor: 'rgba(202,233,255,0.98)',
+                          background: 'radial-gradient(circle at 35% 35%, rgba(244,251,255,1) 0%, rgba(198,230,255,0.98) 30%, rgba(113,185,255,0.92) 62%, rgba(37,119,255,0.7) 100%)',
+                          boxShadow: '0 0 18px rgba(137,208,255,0.9), 0 0 40px rgba(95,176,255,0.72), 0 0 72px rgba(49,128,255,0.42), inset 0 0 12px rgba(255,255,255,0.96)',
+                          '& > .hotspot-outer-glow': {
+                            inset: '-13px',
+                            background: 'radial-gradient(circle, rgba(158,214,255,0.72) 0%, rgba(110,186,255,0.42) 38%, rgba(58,137,255,0.18) 68%, rgba(58,137,255,0) 100%)',
+                          },
+                        }}
                         onClick={() => handleHotspotClick(hs)}
                         title={hs.label}
                       >
                         <Box
                           position="absolute"
-                          inset="-4px"
+                          inset="5px"
                           rounded="full"
-                          border="2px solid"
-                          borderColor="whiteAlpha.300"
-                          animation="pulse 2s ease-in-out infinite"
+                          background="radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(214,238,255,0.94) 42%, rgba(148,206,255,0.2) 100%)"
+                        />
+                        <Box
+                          className="hotspot-outer-glow"
+                          position="absolute"
+                          inset="-8px"
+                          rounded="full"
+                          background="radial-gradient(circle, rgba(118,184,255,0.55) 0%, rgba(82,156,255,0.28) 45%, rgba(48,124,255,0.08) 72%, rgba(48,124,255,0) 100%)"
+                          animation="pulse 1.9s ease-in-out infinite"
+                          transition="inset 180ms ease, background 180ms ease"
                         />
                       </Box>
                     ))}

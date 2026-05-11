@@ -21,6 +21,15 @@ export function createGeneratesRouter(generateService: GenerateService): Router 
     }
   })
 
+  router.post('/guides/:id/package', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const bundle = await generateService.packageGuide(String(req.params.id))
+      res.json({ data: bundle })
+    } catch (err) {
+      next(err)
+    }
+  })
+
   // ─── Generate Status ───────────────────────────────────
 
   router.get('/generates', (_req: Request, res: Response) => {

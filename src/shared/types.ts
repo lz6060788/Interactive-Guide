@@ -289,6 +289,16 @@ export interface PreviewSessionPayload {
   mode: 'preview' | 'published'
 }
 
+export interface RuntimeBundlePayload {
+  bundleId: string
+  guideId: string
+  version: string
+  generatedAt: string
+  entryUrl: string
+  manifestUrl: string
+  bundleUrl: string
+}
+
 export interface UpdateHotspotsPayload {
   nodeId: string
   hotspots: Array<{
