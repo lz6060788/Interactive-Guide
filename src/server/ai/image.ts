@@ -24,7 +24,16 @@ function isDashScopeProvider(baseUrl: string, model: string): boolean {
 
 // ─── DashScope Image Generation ──────────────────────────────
 
-async function generateDashScopeImage(prompt: string, size: string, referenceImageBuffer?: Buffer): Promise<Buffer> {
+interface RawImageResult {
+  buffer: Buffer
+  modelInputUrl?: string
+}
+
+async function generateDashScopeImage(
+  prompt: string,
+  size: string,
+  referenceImageBuffer?: Buffer,
+): Promise<RawImageResult> {
   const config = loadConfig()
   const normalizedSize = normalizeDashScopeSize(size)
 
@@ -89,7 +98,10 @@ async function generateDashScopeImage(prompt: string, size: string, referenceIma
     // Download remote image
     const imgResp = await fetch(imageUrl)
     if (!imgResp.ok) throw new Error(`Failed to download image: ${imgResp.status}`)
-    return Buffer.from(await imgResp.arrayBuffer())
+    return {
+      buffer: Buffer.from(await imgResp.arrayBuffer()),
+      modelInputUrl: imageUrl,
+    }
   }
 
   throw new Error('Image API returned unexpected format')
@@ -97,7 +109,7 @@ async function generateDashScopeImage(prompt: string, size: string, referenceIma
 
 // ─── OpenAI-compatible Image Generation ──────────────────────
 
-async function generateOpenAiImage(prompt: string, size: string): Promise<Buffer> {
+async function generateOpenAiImage(prompt: string, size: string): Promise<RawImageResult> {
   const config = loadConfig()
 
   const requestBody = {
@@ -131,12 +143,15 @@ async function generateOpenAiImage(prompt: string, size: string): Promise<Buffer
   if (!item) throw new Error('Image API returned no data')
 
   if (item.b64_json) {
-    return Buffer.from(item.b64_json, 'base64')
+    return { buffer: Buffer.from(item.b64_json, 'base64') }
   }
   if (item.url) {
     const imgResp = await fetch(item.url)
     if (!imgResp.ok) throw new Error(`Failed to download image: ${imgResp.status}`)
-    return Buffer.from(await imgResp.arrayBuffer())
+    return {
+      buffer: Buffer.from(await imgResp.arrayBuffer()),
+      modelInputUrl: item.url,
+    }
   }
 
   throw new Error('Image API returned no image data')
@@ -147,6 +162,7 @@ async function generateOpenAiImage(prompt: string, size: string): Promise<Buffer
 export interface GenerateImageResult {
   localPath: string
   fromCache: boolean
+  modelInputUrl?: string
 }
 
 export async function generateNodeImage(
@@ -172,6 +188,7 @@ export async function generateNodeImage(
   // Check cache
   const cacheKey = buildCacheKey({
     type: 'image',
+    cacheVersion: 'v2-model-input-url',
     nodeId,
     prompt,
     size,
@@ -182,21 +199,30 @@ export async function generateNodeImage(
 
   const cached = getCachedImage(cacheKey)
   if (cached) {
-    return { localPath: cached.localPath, fromCache: true }
+    return {
+      localPath: cached.localPath,
+      fromCache: true,
+      modelInputUrl: cached.record?.modelInputUrl,
+    }
   }
 
   // Generate image
-  let imageBuffer: Buffer
+  let imageResult: RawImageResult
   if (isDashScopeProvider(config.IMAGE_BASE_URL, config.IMAGE_MODEL)) {
-    imageBuffer = await generateDashScopeImage(prompt, size, referenceImageBuffer)
+    imageResult = await generateDashScopeImage(prompt, size, referenceImageBuffer)
   } else {
-    imageBuffer = await generateOpenAiImage(prompt, size)
+    imageResult = await generateOpenAiImage(prompt, size)
   }
 
   // Persist to cache
-  const localPath = persistImageToCache(cacheKey, imageBuffer, {
+  const localPath = persistImageToCache(cacheKey, imageResult.buffer, {
     nodeId, prompt, size, model: config.IMAGE_MODEL, provider: isDashScopeProvider(config.IMAGE_BASE_URL, config.IMAGE_MODEL) ? 'dashscope' : 'openai',
+    modelInputUrl: imageResult.modelInputUrl,
   })
 
-  return { localPath, fromCache: false }
+  return {
+    localPath,
+    fromCache: false,
+    modelInputUrl: imageResult.modelInputUrl,
+  }
 }

@@ -69,3 +69,11 @@ docs/                # All design documents
 ## Environment Variables
 
 All AI/ML provider configs must come from environment variables. The flip-book project uses these env var patterns — follow the same convention. Extract all API keys, model names, and provider URLs to `.env` files.
+
+## Project Docs
+
+- `docs/开发计划.md`: 当前开发阶段、已完成能力与后续重点
+- `docs/宏观经济学导览生成复盘与知识沉淀-2026-05-11.md`: 内容驱动导览出图改造复盘
+- `docs/边转场视频与预览链路修复-2026-05-11.md`: 边视频、对象存储暴露、预览播放与状态回写修复
+- `docs/生图内容描述规范.md`: 场景图与知识信息图的提示词规范
+- `docs/知识输入Schema设计.md`: 当前知识输入 schema 与字段约定

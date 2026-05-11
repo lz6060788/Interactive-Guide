@@ -11,6 +11,13 @@ export type NodeStatus = 'draft' | 'ready' | 'archived'
 export type EdgeStatus = 'draft' | 'ready' | 'archived'
 export type BuildStatus = 'pending' | 'running' | 'partial_failed' | 'success' | 'failed'
 export type SubTaskStatus = 'pending' | 'running' | 'success' | 'failed'
+export type TransitionStrategyMode = 'element-bridge' | 'fallback-navigation'
+export type NodeTopicType =
+  | 'general'
+  | 'news-report'
+  | 'common-knowledge'
+  | 'content-analysis'
+  | (string & {})
 
 export type BuildCurrentStage =
   | 'validate'
@@ -49,6 +56,12 @@ export interface KnowledgeNode {
   id: string
   title: string
   keyContent: string
+  sourceText?: string
+  summary?: string
+  keyPoints?: string[]
+  topicType?: NodeTopicType
+  visualIntent?: string
+  hotspotHints?: string[]
   presentationIntent?: string
   imageUrl?: string
   imageStatus?: ResourceStatus
@@ -82,6 +95,8 @@ export interface KnowledgePackage {
   resolution: PackageResolution
   visualStyle?: string
   transitionStyle?: string
+  /** Infographic style key (e.g. 'morandi-journal', 'pop-laboratory') */
+  style?: string
   nodes: KnowledgeNode[]
   edges: KnowledgeEdge[]
   metadata?: PackageMetadata
@@ -117,6 +132,9 @@ export interface NodeBuildRecord {
   imageStatus: SubTaskStatus
   plannerOutputPath?: string
   imagePath?: string
+  modelInputUrl?: string
+  objectStorageKey?: string
+  objectStorageUrl?: string
   errorMessage?: string
   updatedAt: string
 }
@@ -139,10 +157,22 @@ export interface EdgeBuildRecord {
   status: SubTaskStatus
   promptStatus: SubTaskStatus
   videoStatus: SubTaskStatus
+  transitionStrategyMode?: TransitionStrategyMode
+  transitionStrategyReason?: string
   transitionPath?: string
   videoPath?: string
   errorMessage?: string
   updatedAt: string
+}
+
+export interface TransitionVisualPlan {
+  mode: TransitionStrategyMode
+  reason: string
+  entryFocus: string
+  sourceFadePlan: string
+  targetRevealPlan: string
+  midTransitionAction: string
+  avoidances?: string[]
 }
 
 // ─── Publish Layer ──────────────────────────────────────────
@@ -161,6 +191,9 @@ export interface PublishNode {
   id: string
   title: string
   summary?: string
+  keyPoints?: string[]
+  topicType?: NodeTopicType
+  sourceText?: string
   imageUrl: string
   hotspots: PublishHotspot[]
 }
@@ -218,6 +251,7 @@ export interface PackageListItem {
 export interface FlowNodeData {
   id: string
   title: string
+  summary?: string
   presentationIntent?: string
   imageStatus?: ResourceStatus
   hotspotCount?: number

@@ -5,7 +5,6 @@
 // Integrates AI services (vision, image, video) through the ai/ layer.
 // Depends on Repository interface — does NOT import FsRepository.
 
-import fs from 'node:fs'
 import type { Repository } from '../storage/repository.js'
 import type {
   KnowledgePackage,
@@ -26,6 +25,85 @@ import type * as video from '../ai/video.js'
 import type * as media from '../ai/media.js'
 
 const GENERATES_DIR = 'generates'
+
+// ─── Infographic Style Definitions ─────────────────────────
+// Based on baoyu-infographic skill reference files.
+
+interface StyleDef { name: string; guidelines: string }
+
+const STYLE_DEFS: Record<string, StyleDef> = {
+  'morandi-journal': {
+    name: 'Morandi Journal',
+    guidelines: [
+      '- Background: Warm cream/beige with subtle paper texture (#F5F0E6)',
+      '- Primary: Muted teal/sage green (#7BA3A8) for headers and frames',
+      '- Secondary: Warm terracotta/orange (#D4956A) for highlights and numbers',
+      '- Line art: Dark charcoal brown (#4A4540)',
+      '- Hand-drawn doodle illustrations with organic, slightly imperfect ink lines',
+      '- Washi tape strip decorations and rounded card containers',
+      '- Dotted line frames around sections',
+      '- Corner decorations: tiny houses, stars, sparkles',
+      '- Main title: Bold hand-lettered calligraphy style',
+      '- All imagery must maintain hand-drawn/doodle aesthetic — no digital precision',
+      '- Warm and cozy journal feel, not clinical or corporate',
+      '- AVOID: Flat vector icons, clean geometric shapes, stock illustration style',
+    ].join('\n'),
+  },
+  'pop-laboratory': {
+    name: 'Pop Laboratory',
+    guidelines: [
+      '- Background: Professional grayish-white with faint blueprint grid texture (#F2F2F2)',
+      '- Primary: Muted teal/sage green (#B8D8BE) for major functional blocks',
+      '- High-alert accent: Vibrant fluorescent pink (#E91E63) for critical data or highlights',
+      '- Marker highlights: Vivid lemon yellow (#FFF200) as highlighter effect for keywords',
+      '- Line art: Ultra-fine charcoal brown (#2D2926) for technical grids and hairlines',
+      '- Coordinate-style labels on every module (e.g. R-20, G-02)',
+      '- Technical diagrams: exploded views, cross-sections with anchor points',
+      '- Vertical/horizontal rulers with precise markers',
+      '- Corner metadata: tiny barcodes, timestamps, technical parameters',
+      '- Headers: Bold brutalist characters, high visual impact',
+      '- Numbers: Large, highlighted with yellow or blue to stand out',
+      '- AVOID: Cute doodles, soft pastels, empty white space, flat vector icons',
+    ].join('\n'),
+  },
+  'cyberpunk-neon': {
+    name: 'Cyberpunk Neon',
+    guidelines: [
+      '- Primary colors: Neon pink (#FF00FF), cyan (#00FFFF), electric blue',
+      '- Background: Deep black (#0A0A0A) or dark purple gradients',
+      '- Glowing neon outlines on all elements',
+      '- Dark atmospheric backgrounds with digital glitch effects',
+      '- Circuit patterns and holographic elements',
+      '- Glowing neon text with digital/tech fonts',
+      '- Chrome reflections and flickering effects',
+    ].join('\n'),
+  },
+  'technical-schematic': {
+    name: 'Technical Schematic',
+    guidelines: [
+      '- Primary: Blues (#2563EB), teals, grays, white lines',
+      '- Background: Deep blue (#1E3A5F) or light gray with grid pattern',
+      '- Accents: Amber highlights (#F59E0B), cyan callouts',
+      '- Geometric precision throughout with grid pattern',
+      '- Dimension lines and measurements',
+      '- Technical symbols and annotations',
+      '- Clean vector shapes with consistent stroke weights',
+      '- All-caps labels with measurement annotations',
+    ].join('\n'),
+  },
+  'craft-handmade': {
+    name: 'Craft Handmade',
+    guidelines: [
+      '- Hand-drawn style with visible pen/brush strokes',
+      '- Paper or notebook texture backgrounds',
+      '- Warm, natural color palette with earthy tones',
+      '- Organic shapes with slight imperfections',
+      '- Cut-out and collage aesthetic elements',
+      '- Handwritten-style typography for labels',
+      '- Craft material textures: paper, cardboard, fabric',
+    ].join('\n'),
+  },
+}
 
 export class GenerateService {
   private logs: Map<string, string[]> = new Map()
@@ -115,13 +193,338 @@ export class GenerateService {
   }
 
   regenerateNode(guideId: string, nodeId: string): void {
-    // TODO: Phase 5 — single node regeneration
-    throw new AppError('Node regeneration not yet implemented', 'NOT_IMPLEMENTED', 501)
+    this.repo.refresh()
+    const guides = this.repo.loadAllGuides()
+    const guide = guides.get(guideId)
+    if (!guide) throw AppError.notFound(`Guide "${guideId}" not found`)
+
+    const node = guide.nodes.find(n => n.id === nodeId)
+    if (!node) throw AppError.notFound(`Node "${nodeId}" not found in guide "${guideId}"`)
+
+    // Find latest generate for this guide
+    const generates = this.repo.loadAllGenerates()
+    const guideGenerates = Array.from(generates.values())
+      .filter(g => g.packageId === guideId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const latest = guideGenerates[0]
+    if (!latest) throw AppError.validation('No existing build found — run a full build first')
+
+    const generateId = latest.buildId
+
+    this.appendLog(generateId, `[Regen] Regenerating node "${nodeId}"...`)
+
+    // Run async
+    this.runRegenerateNode(generateId, guide, node).catch(err => {
+      this.appendLog(generateId, `[Regen] Node "${nodeId}" fatal error: ${err.message}`)
+      console.error(`[Regen] Node "${nodeId}" fatal error:`, err)
+    })
   }
 
-  regenerateEdge(guideId: string, edgeId: string): void {
-    // TODO: Phase 5 — single edge regeneration
-    throw new AppError('Edge regeneration not yet implemented', 'NOT_IMPLEMENTED', 501)
+  private async runRegenerateNode(
+    generateId: string,
+    guide: KnowledgePackage,
+    node: KnowledgeNode,
+  ) {
+    const nodeRecord: NodeBuildRecord = {
+      buildId: generateId,
+      nodeId: node.id,
+      status: 'running',
+      plannerStatus: 'success',
+      imageStatus: 'running',
+      updatedAt: nowISO(),
+    }
+
+    try {
+      const imagePrompt = this.buildImagePrompt(node, guide)
+
+      this.repo.writeJson(
+        `${GENERATES_DIR}/${generateId}/nodes/${node.id}/planner.json`,
+        {
+          nodeId: node.id,
+          title: node.title,
+          style: guide.style ?? 'morandi-journal',
+          imagePrompt,
+          summary: this.getNodeSummary(node),
+          status: 'success',
+        },
+      )
+
+      this.appendLog(generateId, `[Regen] Generating image for "${node.id}"...`)
+      const imageResult = await this.imageModule.generateNodeImage(
+        node.id,
+        imagePrompt,
+        guide.resolution.width,
+        guide.resolution.height,
+      )
+
+      const buildImagePath = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
+      this.repo.copyFile(imageResult.localPath, buildImagePath)
+
+      // Also update publish assets
+      const publishImagePath = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
+      if (this.repo.fileExists(publishImagePath)) {
+        this.repo.copyFile(imageResult.localPath, publishImagePath)
+      }
+
+      nodeRecord.imageStatus = 'success'
+      nodeRecord.imagePath = buildImagePath
+      nodeRecord.modelInputUrl = imageResult.modelInputUrl
+      nodeRecord.status = 'success'
+
+      this.appendLog(generateId, `[Regen] Node "${node.id}" done (cached: ${imageResult.fromCache})`)
+    } catch (e: any) {
+      nodeRecord.status = 'failed'
+      nodeRecord.imageStatus = 'failed'
+      nodeRecord.errorMessage = e.message
+      this.appendLog(generateId, `[Regen] Node "${node.id}" FAILED: ${e.message}`)
+      console.error(`[Regen] Node "${node.id}" failed:`, e.message)
+    }
+
+    nodeRecord.updatedAt = nowISO()
+    this.repo.saveNodeRecord(generateId, node.id, nodeRecord)
+  }
+
+  regenerateEdge(guideId: string, edgeId: string): { buildId: string; edgeId: string } {
+    this.repo.refresh()
+    const guides = this.repo.loadAllGuides()
+    const guide = guides.get(guideId)
+    if (!guide) throw AppError.notFound(`Guide "${guideId}" not found`)
+
+    const edge = guide.edges.find(e => e.id === edgeId)
+    if (!edge) throw AppError.notFound(`Edge "${edgeId}" not found in guide "${guideId}"`)
+
+    const fromNode = guide.nodes.find(n => n.id === edge.fromNodeId)
+    const toNode = guide.nodes.find(n => n.id === edge.toNodeId)
+    if (!fromNode || !toNode) {
+      throw AppError.validation(`Edge "${edgeId}" references missing node(s)`)
+    }
+
+    const generates = this.repo.loadAllGenerates()
+    const guideGenerates = Array.from(generates.values())
+      .filter(g => g.packageId === guideId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const latest = guideGenerates[0]
+    if (!latest) throw AppError.validation('No existing build found — run a full build first')
+
+    const generateId = latest.buildId
+
+    this.appendLog(generateId, `[Regen] Regenerating edge "${edgeId}"...`)
+
+    this.runRegenerateEdge(generateId, guide, edge, fromNode, toNode).catch(err => {
+      this.appendLog(generateId, `[Regen] Edge "${edgeId}" fatal error: ${err.message}`)
+      console.error(`[Regen] Edge "${edgeId}" fatal error:`, err)
+    })
+
+    return { buildId: generateId, edgeId }
+  }
+
+  private async runRegenerateEdge(
+    generateId: string,
+    guide: KnowledgePackage,
+    edge: KnowledgeEdge,
+    fromNode: KnowledgeNode,
+    toNode: KnowledgeNode,
+  ) {
+    const edgeRecord: EdgeBuildRecord = {
+      buildId: generateId,
+      edgeId: edge.id,
+      status: 'running',
+      promptStatus: 'running',
+      videoStatus: 'pending',
+      updatedAt: nowISO(),
+    }
+
+    try {
+      const visualPlan = await this.planTransitionVisuals(generateId, edge, fromNode, toNode, guide)
+      const transitionPrompt = this.buildTransitionPrompt(edge, fromNode, toNode, guide, visualPlan)
+      const transitionJsonPath = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.json`
+
+      edgeRecord.promptStatus = 'success'
+      edgeRecord.transitionStrategyMode = visualPlan.mode
+      edgeRecord.transitionStrategyReason = visualPlan.reason
+      edgeRecord.transitionPath = transitionJsonPath
+
+      this.repo.writeJson(
+        transitionJsonPath,
+        {
+          edgeId: edge.id,
+          fromNodeId: edge.fromNodeId,
+          toNodeId: edge.toNodeId,
+          relationLabel: edge.relationLabel,
+          strategyMode: visualPlan.mode,
+          strategyReason: visualPlan.reason,
+          visualPlan,
+          prompt: transitionPrompt,
+          status: 'running',
+        },
+      )
+
+      const firstFrame = await this.mediaModule.exposeNodeImage(generateId, edge.fromNodeId)
+      const lastFrame = await this.mediaModule.exposeNodeImage(generateId, edge.toNodeId)
+
+      edgeRecord.videoStatus = 'running'
+      this.appendLog(generateId, `[Regen] Generating video "${edge.id}" (${edge.fromNodeId} → ${edge.toNodeId})...`)
+
+      const videoResult = await this.videoModule.generateTransitionVideo(
+        edge.id,
+        edge.fromNodeId,
+        edge.toNodeId,
+        transitionPrompt,
+        firstFrame.url,
+        lastFrame.url,
+        (status, taskId) => {
+          this.appendLog(generateId, `[Regen] "${edge.id}" video task ${taskId}: ${status}`)
+        },
+      )
+
+      const buildVideoPath = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.mp4`
+      const publishVideoPath = `publish/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`
+
+      this.repo.copyFile(videoResult.localPath, buildVideoPath)
+      this.repo.copyFile(videoResult.localPath, publishVideoPath)
+
+      edgeRecord.videoStatus = 'success'
+      edgeRecord.videoPath = buildVideoPath
+      edgeRecord.status = 'success'
+
+      const updatedGuide: KnowledgePackage = {
+        ...guide,
+        edges: guide.edges.map(currentEdge => (
+          currentEdge.id === edge.id
+            ? {
+              ...currentEdge,
+              status: 'ready',
+              videoStatus: 'success',
+              videoUrl: `/api/media/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`,
+            }
+            : currentEdge
+        )),
+        metadata: {
+          ...guide.metadata,
+          updatedAt: nowISO(),
+        },
+      }
+
+      this.repo.saveGuide(updatedGuide)
+      const manifest = this.buildManifest(updatedGuide, generateId)
+      this.repo.writeJson(`publish/${guide.id}/${guide.version}/manifest.json`, manifest)
+
+      this.appendLog(generateId, `[Regen] Edge "${edge.id}" done (cached: ${videoResult.fromCache})`)
+    } catch (e: any) {
+      const updatedGuide: KnowledgePackage = {
+        ...guide,
+        edges: guide.edges.map(currentEdge => (
+          currentEdge.id === edge.id
+            ? {
+              ...currentEdge,
+              videoStatus: 'failed',
+            }
+            : currentEdge
+        )),
+        metadata: {
+          ...guide.metadata,
+          updatedAt: nowISO(),
+        },
+      }
+
+      this.repo.saveGuide(updatedGuide)
+
+      edgeRecord.status = 'failed'
+      edgeRecord.videoStatus = 'failed'
+      edgeRecord.errorMessage = e.message
+      this.appendLog(generateId, `[Regen] Edge "${edge.id}" FAILED: ${e.message}`)
+      console.error(`[Regen] Edge "${edge.id}" failed:`, e.message)
+    }
+
+    edgeRecord.updatedAt = nowISO()
+    this.repo.saveEdgeRecord(generateId, edge.id, edgeRecord)
+  }
+
+  async regenerateHotspots(guideId: string, nodeId: string): Promise<Array<{
+    edgeId: string; targetNodeId: string; label: string
+    normalizedX: number; normalizedY: number; radius: number
+    source: 'vision' | 'manual'
+  }>> {
+    this.repo.refresh()
+    const guides = this.repo.loadAllGuides()
+    const guide = guides.get(guideId)
+    if (!guide) throw AppError.notFound(`Guide "${guideId}" not found`)
+
+    const node = guide.nodes.find(n => n.id === nodeId)
+    if (!node) throw AppError.notFound(`Node "${nodeId}" not found`)
+    if (!node.hotspots || node.hotspots.length === 0) return []
+
+    // Find latest generate
+    const generates = this.repo.loadAllGenerates()
+    const latest = Array.from(generates.values())
+      .filter(g => g.packageId === guideId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+    if (!latest) throw AppError.validation('No existing build found')
+
+    const generateId = latest.buildId
+
+    // Manual fallback
+    const manualHotspots: Array<{
+      edgeId: string; targetNodeId: string; label: string
+      normalizedX: number; normalizedY: number; radius: number
+      source: 'vision' | 'manual'
+    }> = node.hotspots.map(hs => ({
+      edgeId: hs.edgeId,
+      targetNodeId: hs.targetNodeId,
+      label: hs.label,
+      normalizedX: hs.normalizedX,
+      normalizedY: hs.normalizedY,
+      radius: hs.radius ?? 12,
+      source: 'manual' as 'manual',
+    }))
+
+    // Vision-based recommendation
+    const imageRelPath = `${GENERATES_DIR}/${generateId}/nodes/${nodeId}/image.png`
+    const imageBuffer = this.repo.readFile(imageRelPath)
+    if (!imageBuffer) throw AppError.validation(`Image not found for node "${nodeId}"`)
+
+    let recommended: typeof manualHotspots = manualHotspots
+    try {
+      const visionResult = await this.visionModule.recommendHotspots(node, imageBuffer)
+      if (visionResult.length > 0) {
+        recommended = visionResult.map(vr => {
+          const manual = manualHotspots.find(m => m.targetNodeId === vr.targetNodeId)
+          return {
+            edgeId: manual?.edgeId ?? '',
+            targetNodeId: vr.targetNodeId,
+            label: vr.label,
+            normalizedX: vr.normalizedX,
+            normalizedY: vr.normalizedY,
+            radius: vr.radius,
+            source: 'vision' as const,
+          }
+        })
+      }
+    } catch (e: any) {
+      console.error(`[RegenHotspots] Vision failed for "${nodeId}":`, e.message)
+    }
+
+    // Write results
+    this.repo.writeJson(
+      `${GENERATES_DIR}/${generateId}/nodes/${nodeId}/hotspots.recommended.json`,
+      recommended,
+    )
+
+    // Update guide.json hotspots with vision coordinates
+    const updatedNodes = guide.nodes.map(n => {
+      if (n.id !== nodeId) return n
+      return {
+        ...n,
+        hotspots: n.hotspots?.map(hs => {
+          const rec = recommended.find(r => r.targetNodeId === hs.targetNodeId)
+          return rec ? { ...hs, normalizedX: rec.normalizedX, normalizedY: rec.normalizedY } : hs
+        }),
+      }
+    })
+    const updatedGuide = { ...guide, nodes: updatedNodes, metadata: { ...guide.metadata, updatedAt: nowISO() } }
+    this.repo.writeJson(`guides/${guideId}/current/guide.json`, updatedGuide)
+
+    return recommended
   }
 
   // ─── Logging ────────────────────────────────────────────
@@ -256,7 +659,6 @@ export class GenerateService {
     }
 
     // BFS traversal: root → first layer → second layer → ...
-    const nodeImagePaths = new Map<string, string>() // nodeId -> localImagePath
     const queue: string[] = ['root']
     const orderedNodes: KnowledgeNode[] = []
     const visited = new Set<string>()
@@ -283,33 +685,17 @@ export class GenerateService {
       }
 
       try {
-        // Find parent image for this node
-        const parentEdge = guide.edges.find(e => e.toNodeId === node.id)
-        const parentImagePath = parentEdge ? nodeImagePaths.get(parentEdge.fromNodeId) : undefined
-        const refBuffer = parentImagePath ? fs.readFileSync(parentImagePath) : undefined
-
-        // Find the parent hotspot label that leads to this child
-        let parentHotspotLabel: string | undefined
-        if (parentEdge) {
-          const parentNode = guide.nodes.find(n => n.id === parentEdge.fromNodeId)
-          const hotspot = parentNode?.hotspots?.find(h => h.targetNodeId === node.id)
-          parentHotspotLabel = hotspot?.label
-        }
-
-        if (refBuffer) {
-          this.appendLog(generateId, `[Node] "${node.id}" using reference image from parent "${parentEdge!.fromNodeId}" (hotspot: "${parentHotspotLabel ?? '?'}")`)
-        }
-
-        // Build image prompt directly from keyContent (no vision planner)
-        const imagePrompt = this.buildImagePrompt(node, guide, refBuffer != null, parentHotspotLabel)
+        // Build image prompt directly from structured content
+        const imagePrompt = this.buildImagePrompt(node, guide)
 
         this.repo.writeJson(
           `${GENERATES_DIR}/${generateId}/nodes/${node.id}/planner.json`,
           {
             nodeId: node.id,
             title: node.title,
+            style: guide.style ?? 'morandi-journal',
             imagePrompt,
-            summary: node.keyContent.slice(0, 200),
+            summary: this.getNodeSummary(node),
             status: 'success',
           },
         )
@@ -322,11 +708,7 @@ export class GenerateService {
           imagePrompt,
           guide.resolution.width,
           guide.resolution.height,
-          refBuffer,
         )
-
-        // Track image path for child node reference
-        nodeImagePaths.set(node.id, imageResult.localPath)
 
         // Copy image to generate dir
         const buildImagePath = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
@@ -334,6 +716,7 @@ export class GenerateService {
 
         nodeRecord.imageStatus = 'success'
         nodeRecord.imagePath = buildImagePath
+        nodeRecord.modelInputUrl = imageResult.modelInputUrl
         nodeRecord.status = 'success'
         record.summary.nodeSuccess++
 
@@ -352,25 +735,160 @@ export class GenerateService {
     this.repo.saveGenerateRecord(record)
   }
 
+  private getNodeSummary(node: KnowledgeNode): string {
+    const summary = node.summary?.trim()
+    if (summary) return summary.slice(0, 200)
+
+    const keyPoints = (node.keyPoints ?? [])
+      .map(item => item.trim())
+      .filter(Boolean)
+    if (keyPoints.length > 0) {
+      return keyPoints.slice(0, 2).join('；').slice(0, 200)
+    }
+
+    return node.keyContent.trim().slice(0, 200)
+  }
+
+  private getNodeKeyPoints(node: KnowledgeNode): string[] {
+    return (node.keyPoints ?? [])
+      .map(item => item.trim())
+      .filter(Boolean)
+  }
+
+  private getNodeHotspotHints(node: KnowledgeNode): string[] {
+    const explicitHints = (node.hotspotHints ?? [])
+      .map(item => item.trim())
+      .filter(Boolean)
+    if (explicitHints.length > 0) return explicitHints
+
+    return (node.hotspots ?? [])
+      .map(hs => hs.label.trim())
+      .filter(Boolean)
+  }
+
+  private getNodeVisualIntent(node: KnowledgeNode): string {
+    return node.visualIntent?.trim() || node.presentationIntent?.trim() || ''
+  }
+
+  private getTopicGuidance(topicType?: string): string {
+    switch (topicType) {
+      case 'news-report':
+        return [
+          '- Treat this page as a factual news explainer, not a cinematic scene.',
+          '- Prioritize event context, timeline cues, geographic hints, key actors, and data evidence.',
+          '- Use information panels, newsroom graphics, maps, and charts before decorative metaphor.',
+        ].join('\n')
+      case 'common-knowledge':
+        return [
+          '- Treat this page as an educational explainer for a general audience.',
+          '- Prioritize definitions, mechanisms, categories, comparisons, and intuitive examples.',
+          '- Use clear diagrammatic zones, annotated objects, and explanatory callouts before atmosphere.',
+        ].join('\n')
+      case 'content-analysis':
+        return [
+          '- Treat this page as an analytical breakdown of a topic or viewpoint.',
+          '- Prioritize claims, evidence, context, cause-effect links, and contrasting interpretations.',
+          '- Use analysis boards, comparison modules, and relationship diagrams before visual spectacle.',
+        ].join('\n')
+      default:
+        return [
+          '- Treat this page as a content-first infographic.',
+          '- The image should help explain the subject, not replace it with a purely symbolic illustration.',
+          '- Prefer charts, callouts, labeled objects, comparison modules, and structured information zones.',
+        ].join('\n')
+    }
+  }
+
+  private getCanvasGuidance(width: number, height: number): string {
+    if (height > width) {
+      return [
+        '- This is a tall mobile portrait canvas. Compose for vertical reading from top to bottom.',
+        '- Fill the full canvas height with content. Use clear top, middle, and lower information zones.',
+        '- Keep overall information density high enough that at least 80% of the canvas contains meaningful visual content.',
+        '- Avoid a single centered horizontal board, poster, desk, or card floating in the middle with large empty margins above and below.',
+        '- Prefer 3 to 5 vertically stacked or cascading modules, callout groups, charts, and labeled illustrations.',
+        '- The title area should be compact. Do not let oversized title text consume too much vertical space.',
+      ].join('\n')
+    }
+
+    if (width > height) {
+      return [
+        '- This is a landscape canvas. Spread content across the horizontal space with multiple distinct but connected zones.',
+        '- Avoid shrinking all important content into a narrow central strip.',
+      ].join('\n')
+    }
+
+    return [
+      '- This is a square canvas. Balance information across all four quadrants.',
+      '- Avoid leaving large unused areas around the central subject.',
+    ].join('\n')
+  }
+
   private buildImagePrompt(
     node: KnowledgeNode,
     guide: KnowledgePackage,
-    hasReference: boolean,
-    parentHotspotLabel?: string,
   ): string {
+    const lang = guide.locale ?? 'zh-CN'
+    const langName = lang.startsWith('zh') ? 'Chinese' : lang.startsWith('ja') ? 'Japanese' : 'English'
+    const w = guide.resolution.width
+    const h = guide.resolution.height
+    const aspectLabel = w > h ? 'landscape' : w < h ? 'portrait' : 'square'
+    const styleKey = guide.style ?? 'morandi-journal'
+    const styleDef = STYLE_DEFS[styleKey]
+    const topicType = node.topicType?.trim() || 'general'
+    const summary = this.getNodeSummary(node)
+    const keyPoints = this.getNodeKeyPoints(node)
+    const sourceText = node.sourceText?.trim()
+    const visualIntent = this.getNodeVisualIntent(node)
+    const hotspotHints = this.getNodeHotspotHints(node)
+
     const parts: string[] = []
-    parts.push(`Generate an infographic image (${guide.resolution.width}x${guide.resolution.height} pixels).`)
-    parts.push(`Visual style: ${guide.visualStyle ?? 'modern clean design'}.`)
-    if (hasReference && parentHotspotLabel) {
-      parts.push(`This image should zoom into and detail the "${parentHotspotLabel}" element from the parent image. Maintain the parent image's visual elements (shapes, colors, textures) as the core subject, expanding and deconstructing them into detailed views.`)
+
+    // ── Image specs ──
+    parts.push(
+      `Create a professional infographic image (${w}x${h} pixels, ${aspectLabel}). All text in ${langName}.`
+    )
+
+    // ── Style guidelines ──
+    if (styleDef) {
+      parts.push(`Visual Style — ${styleDef.name}:\n${styleDef.guidelines}`)
     }
-    parts.push(`Content to visualize:\n${node.keyContent}`)
-    if (node.presentationIntent) {
-      parts.push(`Presentation intent: ${node.presentationIntent}`)
+
+    // ── Scenario guidance ──
+    parts.push(`Scenario Template — ${topicType}:\n${this.getTopicGuidance(topicType)}`)
+    parts.push(`Canvas Composition Rules:\n${this.getCanvasGuidance(w, h)}`)
+    parts.push(
+      [
+        'This page must remain closely tied to the source content.',
+        'Avoid turning the subject into a purely atmospheric or decorative scene.',
+        'If long text would be needed, express it as concise labels, callout cards, diagrams, charts, icons, or structured modules.',
+        'Use dense explanatory visuals, not sparse decoration.',
+        'Do not leave large blank background areas without instructional value.',
+      ].join('\n')
+    )
+
+    // ── Content ──
+    parts.push(`Page Summary:\n${summary}`)
+    if (keyPoints.length > 0) {
+      parts.push(`Must-retain key points:\n${keyPoints.map((item, index) => `${index + 1}. ${item}`).join('\n')}`)
     }
-    if (node.hotspots && node.hotspots.length > 0) {
-      parts.push(`Highlight areas for interactive hotspots: ${node.hotspots.map(h => `"${h.label}"`).join(', ')}. Make these areas visually distinct with subtle glow borders.`)
+    if (sourceText) {
+      parts.push(`Source material reference:\n${sourceText}`)
     }
+    parts.push(
+      `Legacy content hints (low priority, use only as optional visual details when consistent with the source content; do not let this override the topic, structure, or composition):\n${node.keyContent}`
+    )
+
+    // ── Presentation intent ──
+    if (visualIntent) {
+      parts.push(`Visual goal:\n${visualIntent}`)
+    }
+
+    // ── Hotspot hints ──
+    if (hotspotHints.length > 0) {
+      parts.push(`Make these areas visually distinct for interaction:\n${hotspotHints.map(item => `- ${item}`).join('\n')}`)
+    }
+
     return parts.join('\n\n')
   }
 
@@ -473,8 +991,11 @@ export class GenerateService {
         // Build transition prompt
         const fromNode = guide.nodes.find(n => n.id === edge.fromNodeId)
         const toNode = guide.nodes.find(n => n.id === edge.toNodeId)
-        const transitionPrompt = this.buildTransitionPrompt(edge, fromNode, toNode, guide)
+        const visualPlan = await this.planTransitionVisuals(generateId, edge, fromNode, toNode, guide)
+        const transitionPrompt = this.buildTransitionPrompt(edge, fromNode, toNode, guide, visualPlan)
         edgeRecord.promptStatus = 'success'
+        edgeRecord.transitionStrategyMode = visualPlan.mode
+        edgeRecord.transitionStrategyReason = visualPlan.reason
 
         this.repo.writeJson(
           `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.json`,
@@ -483,14 +1004,17 @@ export class GenerateService {
             fromNodeId: edge.fromNodeId,
             toNodeId: edge.toNodeId,
             relationLabel: edge.relationLabel,
+            strategyMode: visualPlan.mode,
+            strategyReason: visualPlan.reason,
+            visualPlan,
             prompt: transitionPrompt,
             status: 'running',
           },
         )
 
         // Get HTTP URLs for frame images (DashScope requires URLs, not local paths)
-        const firstFrame = this.mediaModule.exposeNodeImage(generateId, edge.fromNodeId)
-        const lastFrame = this.mediaModule.exposeNodeImage(generateId, edge.toNodeId)
+        const firstFrame = await this.mediaModule.exposeNodeImage(generateId, edge.fromNodeId)
+        const lastFrame = await this.mediaModule.exposeNodeImage(generateId, edge.toNodeId)
 
         edgeRecord.videoStatus = 'running'
         this.appendLog(generateId, `[Edge] Generating video "${edge.id}" (${edge.fromNodeId} → ${edge.toNodeId})...`)
@@ -570,12 +1094,16 @@ export class GenerateService {
     const mediaBase = `/api/media/${guide.id}/${guide.version}`
 
     const nodes = guide.nodes.map(n => {
-      const summary = n.keyContent.slice(0, 200)
+      const summary = this.getNodeSummary(n)
+      const keyPoints = this.getNodeKeyPoints(n)
 
       return {
         id: n.id,
         title: n.title,
         summary: summary || undefined,
+        keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
+        topicType: n.topicType,
+        sourceText: n.sourceText?.trim() || undefined,
         imageUrl: `${mediaBase}/assets/nodes/${n.id}.png`,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
@@ -634,17 +1162,191 @@ export class GenerateService {
     fromNode?: KnowledgeNode,
     toNode?: KnowledgeNode,
     guide?: KnowledgePackage,
+    visualPlan?: vision.TransitionVisualPlan,
   ): string {
     const fromTitle = fromNode?.title ?? edge.fromNodeId
     const toTitle = toNode?.title ?? edge.toNodeId
+    const fromSummary = fromNode ? this.getNodeSummary(fromNode) : ''
+    const toSummary = toNode ? this.getNodeSummary(toNode) : ''
     const relation = edge.relationLabel ?? '移动到'
-    const style = guide?.transitionStyle ?? 'smooth pan'
+    const transitionStyle = this.normalizeTransitionStyle(guide?.transitionStyle)
+    const visualStyle = [
+      guide?.style,
+      guide?.visualStyle?.trim(),
+    ].filter(Boolean).join(' | ') || 'clean infographic interface'
+    const canvasDescriptor = guide
+      ? `${guide.resolution.width}:${guide.resolution.height} portrait mobile canvas`
+      : 'portrait mobile canvas'
+    const sourceHotspot = fromNode?.hotspots?.find(hs => hs.edgeId === edge.id)
+    const hotspotCue = sourceHotspot
+      ? `Source hotspot region: x ${sourceHotspot.normalizedX.toFixed(2)}, y ${sourceHotspot.normalizedY.toFixed(2)}, radius ${(sourceHotspot.radius ?? 18)}.`
+      : ''
+    const hotspotPositionCue = this.buildHotspotPositionCue(sourceHotspot?.normalizedX, sourceHotspot?.normalizedY)
+    const elementBridgeCue = this.buildElementBridgeCue(fromNode, toNode)
+    const strategyMode = visualPlan?.mode ?? 'element-bridge'
+    const strategyReason = visualPlan?.reason?.trim()
+    const entryFocus = visualPlan?.entryFocus?.trim()
+    const sourceFadePlan = visualPlan?.sourceFadePlan?.trim()
+    const targetRevealPlan = visualPlan?.targetRevealPlan?.trim()
+    const midTransitionAction = visualPlan?.midTransitionAction?.trim()
+    const avoidances = (visualPlan?.avoidances ?? []).slice(0, 6)
 
-    return (
-      `A smooth ${style} camera transition from "${fromTitle}" page to "${toTitle}" page. ` +
-      `The transition represents: ${relation}. ` +
-      `Visual style: ${guide?.visualStyle ?? 'modern clean interface'}. ` +
-      `Fluid motion, professional UI transition effect.`
-    )
+    return [
+      'Create a short navigation transition between two connected infographic screens using the provided first frame and last frame as hard visual constraints.',
+      `Start screen title: ${fromTitle}.`,
+      fromSummary ? `Start screen summary: ${fromSummary}.` : '',
+      `End screen title: ${toTitle}.`,
+      toSummary ? `End screen summary: ${toSummary}.` : '',
+      `Navigation topic for semantic continuity only: ${relation}.`,
+      `Preferred motion language: ${transitionStyle}.`,
+      `Overall visual style: ${visualStyle}.`,
+      `Canvas: ${canvasDescriptor}.`,
+      hotspotCue,
+      hotspotPositionCue,
+      elementBridgeCue,
+      `Selected transition strategy: ${strategyMode}.`,
+      strategyReason ? `Why this strategy fits: ${strategyReason}.` : '',
+      entryFocus ? `Entry focus: ${entryFocus}.` : '',
+      sourceFadePlan ? `Source fade plan: ${sourceFadePlan}.` : '',
+      targetRevealPlan ? `Target reveal plan: ${targetRevealPlan}.` : '',
+      midTransitionAction ? `Mid-transition action: ${midTransitionAction}.` : '',
+      avoidances.length > 0 ? `Extra avoidances: ${avoidances.join('; ')}.` : '',
+      'Treat this as spatial navigation inside one knowledge system, not page turning.',
+      'Open by matching the first frame exactly, then move into the source hotspot along its real on-screen position before converging to the destination.',
+      'The main motion must be forward zoom-in / dive with depth, not lateral slide. Allow one elegant reveal only if it stays logically tied to endpoint layouts.',
+      strategyMode === 'element-bridge'
+        ? 'Use element-bridge mode: transform real endpoint elements such as cards, charts, labels, arrows, borders, icons, repeated textures, or shared topic tokens so the source module gradually reorganizes into the target module.'
+        : 'Use fallback-navigation mode: let the source region guide the entry path, then progressively reduce the source layout while the destination layout gradually appears and takes over the frame. Prefer guided reveal, focus handoff, panel takeover, or depth-led replacement over forced object morphing.',
+      'The image must progress continuously toward the target throughout the clip: early segment leaves source, middle segment transforms or reveals, final segment settles into the exact last frame.',
+      'Each moment should be closer to the destination than the previous one. Keep intermediate frames anchored to structures already present in the first or last frame.',
+      'Keep the tone readable, restrained, and infographic-like.',
+      'Do not literalize the navigation topic as a new prop unless that object is already clearly dominant in both endpoint frames.',
+      'Do not use page-turn, paper flip, card flip, swipe, simple left-right pan, late hard cut, snap replacement, fake camera shake, unrelated objects, or major composition drift.',
+      'Do not spend most of the clip animating the first frame and then suddenly jump to the last frame. Do not drift away from the destination or end with only an approximate target.',
+    ].filter(Boolean).join(' ')
+  }
+
+  private async planTransitionVisuals(
+    generateId: string,
+    edge: KnowledgeEdge,
+    fromNode: KnowledgeNode | undefined,
+    toNode: KnowledgeNode | undefined,
+    guide: KnowledgePackage,
+  ): Promise<vision.TransitionVisualPlan> {
+    if (!fromNode || !toNode) {
+      return {
+        mode: 'fallback-navigation',
+        reason: '节点信息不完整，默认使用兜底导览转场',
+        entryFocus: '从源热点区域进入',
+        sourceFadePlan: '源页局部逐步退场',
+        targetRevealPlan: '目标页主体逐步接管画面',
+        midTransitionAction: '使用导览式揭示完成中段过渡',
+        avoidances: ['不要晚切', '不要首帧自循环'],
+      }
+    }
+
+    const fromImage = this.repo.readFile(`${GENERATES_DIR}/${generateId}/nodes/${fromNode.id}/image.png`)
+    const toImage = this.repo.readFile(`${GENERATES_DIR}/${generateId}/nodes/${toNode.id}/image.png`)
+
+    if (!fromImage || !toImage) {
+      return {
+        mode: 'fallback-navigation',
+        reason: '首尾帧图片缺失，默认使用兜底导览转场',
+        entryFocus: '从源热点区域进入',
+        sourceFadePlan: '源页局部逐步退场',
+        targetRevealPlan: '目标页主体逐步接管画面',
+        midTransitionAction: '使用导览式揭示完成中段过渡',
+        avoidances: ['不要晚切', '不要首帧自循环'],
+      }
+    }
+
+    try {
+      return await this.visionModule.planTransitionVisuals(
+        edge,
+        fromNode,
+        toNode,
+        guide,
+        fromImage,
+        toImage,
+      )
+    } catch (error: any) {
+      const message = error?.message ? String(error.message) : '转场规划失败'
+      return {
+        mode: 'fallback-navigation',
+        reason: `转场规划失败，回退为兜底导览转场：${message.slice(0, 120)}`,
+        entryFocus: '从源热点区域进入',
+        sourceFadePlan: '源页局部逐步退场',
+        targetRevealPlan: '目标页主体逐步接管画面',
+        midTransitionAction: '使用导览式揭示完成中段过渡',
+        avoidances: ['不要晚切', '不要首帧自循环'],
+      }
+    }
+  }
+
+  private buildHotspotPositionCue(x?: number, y?: number): string {
+    if (typeof x !== 'number' || typeof y !== 'number') return ''
+
+    const horizontal =
+      x < 0.33 ? 'left' :
+      x > 0.67 ? 'right' :
+      'center'
+    const vertical =
+      y < 0.33 ? 'upper' :
+      y > 0.67 ? 'lower' :
+      'middle'
+
+    return `The source hotspot sits in the ${vertical}-${horizontal} part of the screen. Preserve that spatial origin during the initial zoom path before converging toward the destination layout.`
+  }
+
+  private buildElementBridgeCue(
+    fromNode?: KnowledgeNode,
+    toNode?: KnowledgeNode,
+  ): string {
+    const fromTokens = this.collectVisualAnchorTokens(fromNode)
+    const toTokens = this.collectVisualAnchorTokens(toNode)
+    const sharedTokens = fromTokens.filter(token => toTokens.includes(token)).slice(0, 3)
+
+    if (sharedTokens.length > 0) {
+      return `Shared endpoint token(s) that should guide the element-level bridge: ${sharedTokens.join(', ')}.`
+    }
+
+    return 'Find a real shared visual bridge across the endpoints and use it as the zoom-in anchor instead of introducing a generic tunnel or neutral transition layer.'
+  }
+
+  private collectVisualAnchorTokens(node?: KnowledgeNode): string[] {
+    if (!node) return []
+
+    const raw = [
+      node.title,
+      node.summary,
+      ...(node.keyPoints ?? []),
+      node.visualIntent,
+      node.presentationIntent,
+    ].filter(Boolean).join(' ')
+
+    const matches = raw.match(/[A-Z][A-Z0-9-]{1,}/g) ?? []
+    return Array.from(new Set(matches.map(token => token.trim()).filter(Boolean)))
+  }
+
+  private normalizeTransitionStyle(transitionStyle?: string): string {
+    const raw = transitionStyle?.trim()
+    if (!raw) return 'gentle push-in navigation with stable convergence into the target screen'
+
+    const bannedTerms = [
+      /翻页/iu,
+      /翻书/iu,
+      /书页/iu,
+      /page[\s-]?turn/iu,
+      /book[\s-]?flip/iu,
+      /paper[\s-]?curl/iu,
+      /card[\s-]?flip/iu,
+      /swipe/iu,
+    ]
+
+    if (bannedTerms.some(pattern => pattern.test(raw))) {
+      return 'gentle push-in navigation with stable convergence into the target screen'
+    }
+
+    return raw
   }
 }

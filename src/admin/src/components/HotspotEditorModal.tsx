@@ -23,6 +23,29 @@ interface Props {
 
 export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [imgRect, setImgRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
+
+  const updateImgRect = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
+    const img = container.querySelector('img') as HTMLImageElement | null
+    if (!img) return
+    const cRect = container.getBoundingClientRect()
+    const iRect = img.getBoundingClientRect()
+    setImgRect({
+      x: iRect.left - cRect.left,
+      y: iRect.top - cRect.top,
+      w: iRect.width,
+      h: iRect.height,
+    })
+  }, [])
+
+  useEffect(() => {
+    const timer = setTimeout(updateImgRect, 100)
+    window.addEventListener('resize', updateImgRect)
+    return () => { clearTimeout(timer); window.removeEventListener('resize', updateImgRect) }
+  }, [updateImgRect])
+
   const [drafts, setDrafts] = useState<DraftHotspot[]>(
     (node.hotspots ?? []).map((hs: any) => ({
       edgeId: hs.edgeId,
@@ -37,13 +60,16 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
   const [dragging, setDragging] = useState(false)
 
   const getPosition = useCallback((e: React.MouseEvent) => {
-    const rect = containerRef.current?.getBoundingClientRect()
-    if (!rect) return { x: 0, y: 0 }
+    const container = containerRef.current
+    if (!container || imgRect.w === 0) return { x: 0, y: 0 }
+    const cRect = container.getBoundingClientRect()
+    const relX = e.clientX - cRect.left - imgRect.x
+    const relY = e.clientY - cRect.top - imgRect.y
     return {
-      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)),
+      x: Math.max(0, Math.min(1, relX / imgRect.w)),
+      y: Math.max(0, Math.min(1, relY / imgRect.h)),
     }
-  }, [])
+  }, [imgRect])
 
   const handleMouseDown = (index: number, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -138,40 +164,53 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
                 alt={node.title}
                 style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain', userSelect: 'none' }}
                 draggable={false}
+                onLoad={updateImgRect}
               />
             ) : (
               <Text color="text-secondary" fontSize="md">无图片</Text>
             )}
 
-            {/* Hotspot dots */}
-            {drafts.map((hs, i) => (
+            {/* Hotspot overlay — positioned exactly over the image content area */}
+            {imgRect.w > 0 && (
               <Box
-                key={hs.edgeId}
                 position="absolute"
-                left={`${hs.normalizedX * 100}%`}
-                top={`${hs.normalizedY * 100}%`}
-                w="28px"
-                h="28px"
-                rounded="full"
-                display="flex"
-                alignItems="center"
-                justifyContent="center"
-                fontSize="xs"
-                fontWeight="700"
-                color="black"
-                userSelect="none"
-                transition="box-shadow 0.15s"
-                cursor={dragging && activeIndex === i ? 'grabbing' : 'grab'}
-                zIndex={activeIndex === i ? 10 : 5}
-                bg={activeIndex === i ? 'brand' : 'white'}
-                boxShadow={activeIndex === i ? '0 0 16px rgba(99,102,241,0.6)' : '0 0 8px rgba(255,255,255,0.4)'}
-                transform="translate(-50%, -50%)"
-                onMouseDown={(e: any) => handleMouseDown(i, e)}
-                title={`${hs.label} → ${hs.targetNodeId}`}
+                left={`${imgRect.x}px`}
+                top={`${imgRect.y}px`}
+                width={`${imgRect.w}px`}
+                height={`${imgRect.h}px`}
+                pointerEvents="none"
               >
-                {i + 1}
+                {drafts.map((hs, i) => (
+                  <Box
+                    key={hs.edgeId}
+                    position="absolute"
+                    left={`${hs.normalizedX * 100}%`}
+                    top={`${hs.normalizedY * 100}%`}
+                    w="28px"
+                    h="28px"
+                    rounded="full"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    fontSize="xs"
+                    fontWeight="700"
+                    color="black"
+                    userSelect="none"
+                    transition="box-shadow 0.15s"
+                    cursor={dragging && activeIndex === i ? 'grabbing' : 'grab'}
+                    pointerEvents="auto"
+                    zIndex={activeIndex === i ? 10 : 5}
+                    bg={activeIndex === i ? 'brand' : 'white'}
+                    boxShadow={activeIndex === i ? '0 0 16px rgba(99,102,241,0.6)' : '0 0 8px rgba(255,255,255,0.4)'}
+                    transform="translate(-50%, -50%)"
+                    onMouseDown={(e: any) => handleMouseDown(i, e)}
+                    title={`${hs.label} → ${hs.targetNodeId}`}
+                  >
+                    {i + 1}
+                  </Box>
+                ))}
               </Box>
-            ))}
+            )}
           </Box>
 
           {/* Side panel */}

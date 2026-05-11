@@ -36,6 +36,18 @@ const configSchema = z.object({
   VIDEO_RESOLUTION: z.string().default('540P'),
   VIDEO_DURATION_SECONDS: z.coerce.number().default(3),
 
+  // Object Storage (S3-compatible / OSS)
+  OBJECT_STORAGE_PROTOCOL: z.string().default('https'),
+  OBJECT_STORAGE_ENDPOINT: z.string().default(''),
+  OBJECT_STORAGE_BUCKET: z.string().default(''),
+  OBJECT_STORAGE_ACCESS_KEY: z.string().default(''),
+  OBJECT_STORAGE_SECRET_KEY: z.string().default(''),
+  OBJECT_STORAGE_REGION: z.string().default('oss-cn-hangzhou'),
+  OBJECT_STORAGE_PREFIX: z.string().default(''),
+  OBJECT_STORAGE_ADDRESSING_STYLE: z.enum(['virtual', 'path']).default('virtual'),
+  OBJECT_STORAGE_SIGNED_URL_EXPIRES_SECONDS: z.coerce.number().default(86400),
+  OBJECT_STORAGE_PUBLIC_BASE_URL: z.string().default(''),
+
   // Default resolution
   DEFAULT_WIDTH: z.coerce.number().default(1440),
   DEFAULT_HEIGHT: z.coerce.number().default(810),

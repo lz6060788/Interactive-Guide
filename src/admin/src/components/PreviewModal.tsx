@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Box, Flex, Text, Heading, Badge, Spinner, IconButton,
 } from '@chakra-ui/react'
@@ -12,6 +12,29 @@ interface Props {
 }
 
 type PlayerStatus = 'loading' | 'ready' | 'error'
+type PendingTransition = { targetNodeId: string; videoUrl: string } | null
+
+const POLL_INTERVAL_MS = 2000
+const MAX_POLL_COUNT = 45
+const INFO_PANEL_COLLAPSED_PX = 52
+const INFO_PANEL_EXPANDED_PX = 176
+
+function isPublishManifest(value: unknown): value is PublishManifest {
+  if (!value || typeof value !== 'object') return false
+  const manifest = value as Partial<PublishManifest>
+  return (
+    typeof manifest.packageId === 'string' &&
+    typeof manifest.rootNodeId === 'string' &&
+    Array.isArray(manifest.nodes) &&
+    Array.isArray(manifest.edges) &&
+    !!manifest.nodeMap &&
+    !!manifest.edgeMap
+  )
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => window.setTimeout(resolve, ms))
+}
 
 export function PreviewModal({ packageId, onClose }: Props) {
   const [manifest, setManifest] = useState<PublishManifest | null>(null)
@@ -20,21 +43,80 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const [status, setStatus] = useState<PlayerStatus>('loading')
   const [error, setError] = useState<string | null>(null)
   const [transitioning, setTransitioning] = useState(false)
+  const [pendingTransition, setPendingTransition] = useState<PendingTransition>(null)
+  const [infoExpanded, setInfoExpanded] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [imgRect, setImgRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
+  const infoPanelHeight = infoExpanded ? INFO_PANEL_EXPANDED_PX : INFO_PANEL_COLLAPSED_PX
+
+  const updateImgRect = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
+    const img = container.querySelector('img') as HTMLImageElement | null
+    if (!img) return
+    const cRect = container.getBoundingClientRect()
+    const iRect = img.getBoundingClientRect()
+    setImgRect({
+      x: iRect.left - cRect.left,
+      y: iRect.top - cRect.top,
+      w: iRect.width,
+      h: iRect.height,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (status !== 'ready') return
+    const timer = setTimeout(updateImgRect, 100)
+    window.addEventListener('resize', updateImgRect)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', updateImgRect)
+    }
+  }, [status, currentNodeId, updateImgRect])
 
   useEffect(() => {
     const load = async () => {
       try {
         setStatus('loading')
+        setError(null)
+
         let m: PublishManifest | null = null
         try {
-          m = await api.fetchManifest(packageId) as PublishManifest
+          const manifest = await api.fetchManifest(packageId)
+          if (isPublishManifest(manifest)) {
+            m = manifest
+          }
         } catch {
-          m = await api.publishPackage(packageId) as PublishManifest
+          // Fall through to rebuild/publish below.
         }
+
+        if (!m) {
+          const build = await api.publishPackage(packageId) as { buildId?: string }
+          if (!build?.buildId) {
+            throw new Error('未获取到可用的发布任务，无法预览')
+          }
+
+          for (let i = 0; i < MAX_POLL_COUNT; i += 1) {
+            const record = await api.fetchGenerate(build.buildId) as { status?: string }
+            if (record?.status === 'failed') {
+              throw new Error('生成失败，无法加载预览')
+            }
+            if (record?.status === 'success' || record?.status === 'partial_failed') {
+              const manifest = await api.fetchManifest(packageId)
+              if (isPublishManifest(manifest)) {
+                m = manifest
+                break
+              }
+            }
+            await sleep(POLL_INTERVAL_MS)
+          }
+        }
+
         if (!m) throw new Error('无法加载 manifest')
         setManifest(m)
         setCurrentNodeId(m.rootNodeId)
+        setInfoExpanded(false)
         setStatus('ready')
       } catch (e: any) {
         setError(e.message)
@@ -44,25 +126,21 @@ export function PreviewModal({ packageId, onClose }: Props) {
     load()
   }, [packageId])
 
-  const currentNode = manifest ? manifest.nodeMap[currentNodeId] : null
+  const currentNode = manifest?.nodeMap?.[currentNodeId] ?? null
 
   const handleHotspotClick = (hotspot: PublishHotspot) => {
     if (!manifest || transitioning) return
-    const edge = manifest.edgeMap[hotspot.edgeId]
+    const edge = manifest.edgeMap?.[hotspot.edgeId]
 
     // Push current node to history before navigating
     setHistory(prev => [...prev, currentNodeId])
 
     if (edge?.videoUrl) {
       setTransitioning(true)
-      const video = videoRef.current
-      if (video) {
-        video.src = edge.videoUrl
-        video.play().catch(() => switchNode(hotspot.targetNodeId))
-        video.onended = () => switchNode(hotspot.targetNodeId)
-      } else {
-        switchNode(hotspot.targetNodeId)
-      }
+      setPendingTransition({
+        targetNodeId: hotspot.targetNodeId,
+        videoUrl: edge.videoUrl,
+      })
     } else {
       switchNode(hotspot.targetNodeId)
     }
@@ -74,12 +152,37 @@ export function PreviewModal({ packageId, onClose }: Props) {
     setHistory(prev => prev.slice(0, -1))
     setCurrentNodeId(prevNodeId)
     setTransitioning(false)
+    setPendingTransition(null)
+    setInfoExpanded(false)
   }
 
   const switchNode = (nodeId: string) => {
     setCurrentNodeId(nodeId)
     setTransitioning(false)
+    setPendingTransition(null)
+    setInfoExpanded(false)
   }
+
+  useEffect(() => {
+    if (!transitioning || !pendingTransition) return
+    const video = videoRef.current
+    if (!video) return
+
+    const handleEnded = () => switchNode(pendingTransition.targetNodeId)
+    const handleError = () => switchNode(pendingTransition.targetNodeId)
+
+    video.onended = handleEnded
+    video.onerror = handleError
+    video.src = pendingTransition.videoUrl
+    video.currentTime = 0
+    video.load()
+    video.play().catch(() => switchNode(pendingTransition.targetNodeId))
+
+    return () => {
+      video.onended = null
+      video.onerror = null
+    }
+  }, [pendingTransition, transitioning])
 
   // Build breadcrumb path from root to current node
   const buildBreadcrumb = (m: PublishManifest, nodeId: string): { id: string; title: string }[] => {
@@ -112,6 +215,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
         display="flex"
         flexDirection="column"
         maxH="90vh"
+        h="90vh"
         zIndex={1}
       >
         {/* Header */}
@@ -162,7 +266,18 @@ export function PreviewModal({ packageId, onClose }: Props) {
         </Flex>
 
         {/* Player */}
-        <Box flex="1" position="relative" bg="black" minH="400px" display="flex" alignItems="center" justifyContent="center" overflow="hidden">
+        <Box
+          flex="1"
+          minH="0"
+          position="relative"
+          bg="black"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          overflow="hidden"
+          px={{ base: 3, md: 5 }}
+          py={{ base: 3, md: 4 }}
+        >
           {status === 'loading' && (
             <Flex direction="column" align="center" gap="3">
               <Spinner color="brand" />
@@ -174,84 +289,159 @@ export function PreviewModal({ packageId, onClose }: Props) {
           )}
           {status === 'ready' && currentNode && manifest && (
             <Box
-              position="relative"
-              style={{
-                aspectRatio: `${manifest.resolution.width} / ${manifest.resolution.height}`,
-                maxHeight: '90%',
-                maxWidth: '100%',
-              }}
+              w="100%"
+              h="100%"
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              minH="0"
             >
-              {/* Node image fills the container */}
-              <img
-                src={currentNode.imageUrl}
-                alt={currentNode.title}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
+              <Box
+                ref={containerRef}
+                position="relative"
+                h={`calc(100% - ${INFO_PANEL_COLLAPSED_PX}px)`}
+                maxH={`calc(100% - ${INFO_PANEL_COLLAPSED_PX}px)`}
+                maxW="100%"
+                overflow="visible"
+                style={{
+                  aspectRatio: `${manifest.resolution.width} / ${manifest.resolution.height}`,
+                }}
+              >
+                {/* Node image */}
+                <img
+                  src={currentNode.imageUrl}
+                  alt={currentNode.title}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                  onLoad={updateImgRect}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                />
 
-              {/* Hotspot dots */}
-              {currentNode.hotspots.map((hs) => (
-                <Box
-                  key={hs.edgeId}
-                  as="button"
-                  position="absolute"
-                  left={`${hs.normalizedX * 100}%`}
-                  top={`${hs.normalizedY * 100}%`}
-                  w="24px"
-                  h="24px"
-                  rounded="full"
-                  bg="whiteAlpha.900"
-                  border="2px solid"
-                  borderColor="whiteAlpha.600"
-                  transform="translate(-50%, -50%)"
-                  cursor="pointer"
-                  zIndex={10}
-                  p="0"
-                  boxShadow="0 0 12px rgba(255,255,255,0.5)"
-                  _hover={{ transform: 'translate(-50%, -50%) scale(1.2)' }}
-                  onClick={() => handleHotspotClick(hs)}
-                  title={hs.label}
-                >
-                  {/* Pulse ring */}
+                {/* Hotspot overlay — positioned exactly over the image content area */}
+                {imgRect.w > 0 && (
                   <Box
                     position="absolute"
-                    inset="-4px"
-                    rounded="full"
-                    border="2px solid"
-                    borderColor="whiteAlpha.300"
-                    animation="pulse 2s ease-in-out infinite"
-                  />
-                </Box>
-              ))}
-
-              {/* Video overlay */}
-              {transitioning && (
-                <video
-                  ref={videoRef}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 20 }}
-                  muted
-                  playsInline
-                  onError={() => setTransitioning(false)}
-                />
-              )}
-
-              {/* Title bar */}
-              <Box
-                position="absolute"
-                bottom="0"
-                left="0"
-                right="0"
-                p="5"
-                bg="linear-gradient(transparent, blackAlpha.800)"
-              >
-                <Text color="white" fontSize="lg" fontWeight="600">
-                  {currentNode.title}
-                </Text>
-                {currentNode.summary && (
-                  <Text color="whiteAlpha.800" fontSize="sm" mt="1">
-                    {currentNode.summary}
-                  </Text>
+                    left={`${imgRect.x}px`}
+                    top={`${imgRect.y}px`}
+                    width={`${imgRect.w}px`}
+                    height={`${imgRect.h}px`}
+                    pointerEvents="none"
+                  >
+                    {(currentNode.hotspots ?? []).map((hs) => (
+                      <Box
+                        key={hs.edgeId}
+                        as="button"
+                        position="absolute"
+                        left={`${hs.normalizedX * 100}%`}
+                        top={`${hs.normalizedY * 100}%`}
+                        w="24px"
+                        h="24px"
+                        rounded="full"
+                        bg="whiteAlpha.900"
+                        border="2px solid"
+                        borderColor="whiteAlpha.600"
+                        transform="translate(-50%, -50%)"
+                        cursor="pointer"
+                        pointerEvents="auto"
+                        zIndex={10}
+                        p="0"
+                        boxShadow="0 0 12px rgba(255,255,255,0.5)"
+                        _hover={{ transform: 'translate(-50%, -50%) scale(1.2)' }}
+                        onClick={() => handleHotspotClick(hs)}
+                        title={hs.label}
+                      >
+                        <Box
+                          position="absolute"
+                          inset="-4px"
+                          rounded="full"
+                          border="2px solid"
+                          borderColor="whiteAlpha.300"
+                          animation="pulse 2s ease-in-out infinite"
+                        />
+                      </Box>
+                    ))}
+                  </Box>
                 )}
+
+                {/* Video overlay */}
+                {transitioning && (
+                  <video
+                    ref={videoRef}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 20 }}
+                    muted
+                    playsInline
+                    autoPlay
+                  />
+                )}
+
+                <Box
+                  position="absolute"
+                  left="0"
+                  right="0"
+                  top="100%"
+                  h={`${infoPanelHeight}px`}
+                  overflow="hidden"
+                  zIndex={15}
+                  pointerEvents="auto"
+                  transform={infoExpanded ? `translateY(-${INFO_PANEL_EXPANDED_PX - INFO_PANEL_COLLAPSED_PX}px)` : 'translateY(0)'}
+                  transition="height 220ms ease, transform 220ms ease"
+                  onMouseLeave={() => setInfoExpanded(false)}
+                  style={{
+                    backgroundColor: 'rgba(232, 235, 239, 0.2)',
+                    backdropFilter: 'blur(14px)',
+                    WebkitBackdropFilter: 'blur(14px)',
+                    borderTop: '1px solid rgba(255,255,255,0.28)',
+                    boxShadow: '0 -10px 24px rgba(0,0,0,0.12)',
+                  }}
+                >
+                  <Flex
+                    align="center"
+                    justify="space-between"
+                    px="4"
+                    h={`${INFO_PANEL_COLLAPSED_PX}px`}
+                    flexShrink={0}
+                    cursor="ns-resize"
+                    onMouseEnter={() => setInfoExpanded(true)}
+                    style={{
+                      backgroundColor: 'rgba(240, 242, 245, 0.2)',
+                      borderBottom: infoExpanded ? '1px solid rgba(120, 130, 140, 0.12)' : 'none',
+                    }}
+                  >
+                    <Text
+                      color="rgba(255,255,255,0.96)"
+                      fontSize="sm"
+                      fontWeight="600"
+                      whiteSpace="nowrap"
+                      overflow="hidden"
+                      textOverflow="ellipsis"
+                      textShadow="0 1px 8px rgba(0,0,0,0.35)"
+                    >
+                      {currentNode.title}
+                    </Text>
+                    <Text fontSize="11px" color="rgba(255,255,255,0.78)" flexShrink={0} ml="3">
+                      悬浮展开
+                    </Text>
+                  </Flex>
+
+                  <Box
+                    px="4"
+                    pt="3"
+                    pb="2"
+                    overflow="hidden"
+                    opacity={infoExpanded ? 1 : 0}
+                    transition="opacity 180ms ease"
+                  >
+                    {currentNode.summary && (
+                      <Text color="rgba(255,255,255,0.92)" fontSize="sm" lineHeight="1.55" textShadow="0 1px 8px rgba(0,0,0,0.35)">
+                        {currentNode.summary}
+                      </Text>
+                    )}
+                    {currentNode.keyPoints?.length > 0 && (
+                      <Text color="rgba(255,255,255,0.82)" fontSize="xs" mt="2" lineHeight="1.7" textShadow="0 1px 8px rgba(0,0,0,0.35)">
+                        {currentNode.keyPoints.slice(0, 3).map((item: string) => `• ${item}`).join('  ')}
+                      </Text>
+                    )}
+                  </Box>
+                </Box>
               </Box>
             </Box>
           )}

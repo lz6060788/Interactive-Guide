@@ -110,6 +110,28 @@ function validateNode(
   if (!node.keyContent || typeof node.keyContent !== 'string' || node.keyContent.trim() === '') {
     errors.push(`Node "${node.id}" keyContent must be a non-empty string`)
   }
+  if (node.summary != null && typeof node.summary !== 'string') {
+    errors.push(`Node "${node.id}" summary must be a string when provided`)
+  }
+  if (node.sourceText != null && typeof node.sourceText !== 'string') {
+    errors.push(`Node "${node.id}" sourceText must be a string when provided`)
+  }
+  if (node.topicType != null && typeof node.topicType !== 'string') {
+    errors.push(`Node "${node.id}" topicType must be a string when provided`)
+  }
+  if (node.visualIntent != null && typeof node.visualIntent !== 'string') {
+    errors.push(`Node "${node.id}" visualIntent must be a string when provided`)
+  }
+  if (node.keyPoints != null) {
+    if (!Array.isArray(node.keyPoints) || node.keyPoints.some(item => typeof item !== 'string')) {
+      errors.push(`Node "${node.id}" keyPoints must be an array of strings when provided`)
+    }
+  }
+  if (node.hotspotHints != null) {
+    if (!Array.isArray(node.hotspotHints) || node.hotspotHints.some(item => typeof item !== 'string')) {
+      errors.push(`Node "${node.id}" hotspotHints must be an array of strings when provided`)
+    }
+  }
 
   // Hotspot validation
   if (node.hotspots) {

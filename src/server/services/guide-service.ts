@@ -72,6 +72,21 @@ export class GuideService {
           }
         }
       }
+
+      for (const edge of guide.edges) {
+        const record = this.repo.readJson<{
+          status?: string
+          videoStatus?: string
+          videoPath?: string
+        }>(`generates/${latest.buildId}/edges/${edge.id}/edge-record.json`)
+        if (record) {
+          edge.status = (record.status as any) ?? edge.status
+          edge.videoStatus = (record.videoStatus as any) ?? edge.videoStatus
+          if (record.videoPath) {
+            edge.videoUrl = `/api/media/generates/${latest.buildId}/edges/${edge.id}/transition.mp4`
+          }
+        }
+      }
     }
 
     return guide

@@ -162,7 +162,8 @@ export class FsRepository implements Repository {
     const absPath = this.resolveDataPath(filePath)
     if (!fs.existsSync(absPath)) return null
     try {
-      return JSON.parse(fs.readFileSync(absPath, 'utf-8')) as T
+      const raw = fs.readFileSync(absPath, 'utf-8').replace(/^\uFEFF/, '')
+      return JSON.parse(raw) as T
     } catch {
       return null
     }

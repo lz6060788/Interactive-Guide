@@ -94,7 +94,7 @@ export function WorkbenchPage() {
                 </Text>
               </Flex>
               <Text fontSize="2xs" color="text-tertiary" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
-                {n.presentationIntent || n.id}
+                {n.summary || n.visualIntent || n.presentationIntent || n.id}
               </Text>
               <Flex align="center" justify="center" gap="2" mt="1">
                 <Badge
@@ -264,6 +264,34 @@ export function WorkbenchPage() {
       setError(e.message)
     } finally {
       setSaving(false)
+    }
+  }, [guideId, load])
+
+  const handleRegenerateNode = useCallback(async (nodeId: string) => {
+    if (!guideId) return
+    try {
+      await api.regenerateNode(guideId, nodeId)
+      // Poll for completion — reload after a delay
+      setTimeout(() => load(), 5000)
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }, [guideId, load])
+
+  const handleRegenerateHotspots = useCallback(async (nodeId: string) => {
+    if (!guideId) return
+    await api.regenerateHotspots(guideId, nodeId)
+    await load()
+  }, [guideId, load])
+
+  const handleRegenerateEdge = useCallback(async (edgeId: string) => {
+    if (!guideId) return
+    try {
+      await api.regenerateEdge(guideId, edgeId)
+      setTimeout(() => load(), 5000)
+    } catch (e: any) {
+      setError(e.message)
+      throw e
     }
   }, [guideId, load])
 
@@ -517,6 +545,9 @@ export function WorkbenchPage() {
           saving={saving}
           onOpenHotspotEditor={openHotspotEditor}
           onDeleteNode={handleDeleteNode}
+          onRegenerateNode={handleRegenerateNode}
+          onRegenerateHotspots={handleRegenerateHotspots}
+          onRegenerateEdge={handleRegenerateEdge}
         />
       )}
 

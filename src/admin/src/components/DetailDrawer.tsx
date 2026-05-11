@@ -3,7 +3,7 @@ import {
   Box, Flex, Text, Button, Heading, Badge,
   IconButton, VStack, HStack,
 } from '@chakra-ui/react'
-import { X, Crosshair, Save, Image as ImageIcon, Trash2 } from 'lucide-react'
+import { X, Crosshair, Save, Image as ImageIcon, Trash2, RefreshCw } from 'lucide-react'
 
 interface Props {
   pkg: any
@@ -13,11 +13,25 @@ interface Props {
   saving: boolean
   onOpenHotspotEditor: (nodeId: string) => void
   onDeleteNode?: (nodeId: string) => void
+  onRegenerateNode?: (nodeId: string) => void
+  onRegenerateHotspots?: (nodeId: string) => Promise<void>
+  onRegenerateEdge?: (edgeId: string) => Promise<void>
 }
 
 const BORDER = '#2a2d3a'
 
-export function DetailDrawer({ pkg, selected, onClose, onSave, saving, onOpenHotspotEditor, onDeleteNode }: Props) {
+export function DetailDrawer({
+  pkg,
+  selected,
+  onClose,
+  onSave,
+  saving,
+  onOpenHotspotEditor,
+  onDeleteNode,
+  onRegenerateNode,
+  onRegenerateHotspots,
+  onRegenerateEdge,
+}: Props) {
   return (
     <Flex position="fixed" top="0" right="0" bottom="0" zIndex={100}>
       {/* Backdrop */}
@@ -71,6 +85,8 @@ export function DetailDrawer({ pkg, selected, onClose, onSave, saving, onOpenHot
               saving={saving}
               onOpenHotspotEditor={onOpenHotspotEditor}
               onDeleteNode={onDeleteNode}
+              onRegenerateNode={onRegenerateNode}
+              onRegenerateHotspots={onRegenerateHotspots}
             />
           )}
           {selected.type === 'edge' && (
@@ -78,6 +94,7 @@ export function DetailDrawer({ pkg, selected, onClose, onSave, saving, onOpenHot
               edge={pkg.edges.find((e: any) => e.id === selected.id)}
               onSave={onSave}
               saving={saving}
+              onRegenerateEdge={onRegenerateEdge}
             />
           )}
         </Box>
@@ -150,6 +167,64 @@ function Field({ label, value, onChange, disabled, multiline, rows, mono }: {
   )
 }
 
+function linesToArray(value: string): string[] {
+  return value
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+}
+
+// ─── Select Field Component ────────────────────────
+
+const STYLE_OPTIONS = [
+  { value: 'morandi-journal', label: 'Morandi Journal — 暖色手绘日记' },
+  { value: 'pop-laboratory', label: 'Pop Laboratory — 实验室精度' },
+  { value: 'cyberpunk-neon', label: 'Cyberpunk Neon — 赛博霓虹' },
+  { value: 'technical-schematic', label: 'Technical Schematic — 工程蓝图' },
+  { value: 'craft-handmade', label: 'Craft Handmade — 手工拼贴' },
+]
+
+const TOPIC_TYPE_OPTIONS = [
+  { value: 'general', label: 'General — 通用内容' },
+  { value: 'news-report', label: 'News Report — 新闻播报' },
+  { value: 'common-knowledge', label: 'Common Knowledge — 常识介绍' },
+  { value: 'content-analysis', label: 'Content Analysis — 内容解读' },
+]
+
+function SelectField({ label, value, onChange, options }: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+  options: { value: string; label: string }[]
+}) {
+  return (
+    <Box mb="4">
+      <Text fontSize="xs" fontWeight="500" color="text-tertiary" mb="1.5">
+        {label}
+      </Text>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: '100%',
+          background: '#0a0b0f',
+          border: `1px solid ${BORDER}`,
+          borderRadius: '6px',
+          color: '#e4e4e7',
+          fontSize: '13px',
+          padding: '8px 12px',
+          outline: 'none',
+          boxSizing: 'border-box',
+        }}
+      >
+        {options.map(opt => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+    </Box>
+  )
+}
+
 // ─── Status Badge ───────────────────────────────────
 
 function StatusBadge({ status }: { status?: string }) {
@@ -198,28 +273,39 @@ function PackageForm({ pkg, onSave, saving }: { pkg: any; onSave: (d: any) => vo
   const [description, setDescription] = useState(pkg.description || '')
   const [visualStyle, setVisualStyle] = useState(pkg.visualStyle || '')
   const [transitionStyle, setTransitionStyle] = useState(pkg.transitionStyle || '')
+  const [style, setStyle] = useState(pkg.style || 'morandi-journal')
 
   return (
     <div>
       <Field label="标题" value={title} onChange={setTitle} />
       <Field label="版本" value={version} onChange={setVersion} />
       <Field label="描述" value={description} onChange={setDescription} multiline />
-      <Field label="画面风格" value={visualStyle} onChange={setVisualStyle} multiline />
+      <SelectField label="信息图风格" value={style} onChange={setStyle} options={STYLE_OPTIONS} />
+      <Field label="画面风格 (补充)" value={visualStyle} onChange={setVisualStyle} multiline />
       <Field label="转场风格" value={transitionStyle} onChange={setTransitionStyle} multiline />
-      <SaveButton saving={saving} onClick={() => onSave({ title, version, description, visualStyle, transitionStyle })} />
+      <SaveButton saving={saving} onClick={() => onSave({ title, version, description, style, visualStyle, transitionStyle })} />
     </div>
   )
 }
 
 // ─── Node Form ───────────────────────────────────
 
-function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode }: {
+function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode, onRegenerateNode, onRegenerateHotspots }: {
   node: any; onSave: (d: any) => void; saving: boolean; onOpenHotspotEditor: (id: string) => void
   onDeleteNode?: (id: string) => void
+  onRegenerateNode?: (id: string) => void
+  onRegenerateHotspots?: (id: string) => Promise<void>
 }) {
   const [title, setTitle] = useState(node.title)
-  const [presentationIntent, setPresentationIntent] = useState(node.presentationIntent || '')
+  const [topicType, setTopicType] = useState(node.topicType || 'general')
+  const [visualIntent, setVisualIntent] = useState(node.visualIntent || node.presentationIntent || '')
+  const [summary, setSummary] = useState(node.summary || '')
+  const [sourceText, setSourceText] = useState(node.sourceText || '')
   const [keyContentValue, setKeyContentValue] = useState(node.keyContent || '')
+  const [keyPointsText, setKeyPointsText] = useState((node.keyPoints || []).join('\n'))
+  const [hotspotHintsText, setHotspotHintsText] = useState((node.hotspotHints || []).join('\n'))
+  const [hotspotLoading, setHotspotLoading] = useState(false)
+  const [hotspotMsg, setHotspotMsg] = useState<string | null>(null)
 
   return (
     <div>
@@ -229,7 +315,9 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode }: {
       </Text>
       <Field label="ID" value={node.id} disabled />
       <Field label="标题" value={title} onChange={setTitle} />
-      <Field label="呈现意图" value={presentationIntent} onChange={setPresentationIntent} multiline />
+      <SelectField label="主题类型" value={topicType} onChange={setTopicType} options={TOPIC_TYPE_OPTIONS} />
+      <Field label="页面摘要" value={summary} onChange={setSummary} multiline rows={3} />
+      <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
 
       {/* 状态信息（只读） */}
       <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
@@ -283,7 +371,10 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode }: {
       <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
         内容
       </Text>
+      <Field label="核心要点（每行一条）" value={keyPointsText} onChange={setKeyPointsText} multiline rows={5} />
+      <Field label="原始内容参考" value={sourceText} onChange={setSourceText} multiline rows={6} />
       <Field label="内容描述" value={keyContentValue} onChange={setKeyContentValue} multiline rows={6} />
+      <Field label="热点提示（每行一条）" value={hotspotHintsText} onChange={setHotspotHintsText} multiline rows={4} />
 
       {/* 热点 */}
       <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
@@ -293,7 +384,33 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode }: {
         <Text fontSize="xs" color="text-secondary">
           共 {node.hotspots?.length ?? 0} 个热点
         </Text>
-        <Button
+        <Flex gap="2">
+          {onRegenerateHotspots && (
+            <Button
+              size="xs"
+              variant="ghost"
+              color="#3b82f6"
+              _hover={{ bg: 'rgba(59,130,246,0.12)' }}
+              loading={hotspotLoading}
+              onClick={async () => {
+                setHotspotLoading(true)
+                setHotspotMsg(null)
+                try {
+                  await onRegenerateHotspots(node.id)
+                  setHotspotMsg('热点已更新')
+                  setTimeout(() => setHotspotMsg(null), 3000)
+                } catch (e: any) {
+                  setHotspotMsg(e.message)
+                } finally {
+                  setHotspotLoading(false)
+                }
+              }}
+            >
+              <RefreshCw size={12} style={{ marginRight: 4 }} />
+              AI定位
+            </Button>
+          )}
+          <Button
           size="xs"
           variant="ghost"
           color="brand"
@@ -303,7 +420,18 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode }: {
           <Crosshair size={12} style={{ marginRight: 4 }} />
           校准
         </Button>
+        </Flex>
       </Flex>
+      {hotspotMsg && (
+        <Text
+          fontSize="xs"
+          color={hotspotMsg.includes('已更新') ? '#22c55e' : '#ef4444'}
+          mb="2"
+          px="1"
+        >
+          {hotspotMsg}
+        </Text>
+      )}
       {node.hotspots?.map((hs: any, i: number) => (
         <Flex
           key={i}
@@ -338,7 +466,35 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode }: {
         </Text>
       )}
 
-      <SaveButton saving={saving} onClick={() => onSave({ title, presentationIntent, keyContent: keyContentValue })} />
+      <SaveButton
+        saving={saving}
+        onClick={() => onSave({
+          title,
+          topicType,
+          summary,
+          visualIntent,
+          presentationIntent: visualIntent,
+          sourceText,
+          keyContent: keyContentValue,
+          keyPoints: linesToArray(keyPointsText),
+          hotspotHints: linesToArray(hotspotHintsText),
+        })}
+      />
+
+      {onRegenerateNode && (
+        <Button
+          w="100%"
+          mt="3"
+          bg="rgba(59,130,246,0.12)"
+          color="#3b82f6"
+          _hover={{ bg: 'rgba(59,130,246,0.2)' }}
+          onClick={() => onRegenerateNode(node.id)}
+          size="sm"
+        >
+          <RefreshCw size={14} style={{ marginRight: 6 }} />
+          重新生成图片
+        </Button>
+      )}
 
       {onDeleteNode && node.id !== 'root' && (
         <Button
@@ -364,8 +520,20 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode }: {
 
 // ─── Edge Form ───────────────────────────────────
 
-function EdgeForm({ edge, onSave, saving }: { edge: any; onSave: (d: any) => void; saving: boolean }) {
+function EdgeForm({
+  edge,
+  onSave,
+  saving,
+  onRegenerateEdge,
+}: {
+  edge: any
+  onSave: (d: any) => void
+  saving: boolean
+  onRegenerateEdge?: (id: string) => Promise<void>
+}) {
   const [relationLabel, setRelationLabel] = useState(edge.relationLabel || '')
+  const [videoLoading, setVideoLoading] = useState(false)
+  const [videoMsg, setVideoMsg] = useState<string | null>(null)
 
   return (
     <div>
@@ -381,7 +549,61 @@ function EdgeForm({ edge, onSave, saving }: { edge: any; onSave: (d: any) => voi
         </Box>
       )}
 
+      {edge.videoUrl && (
+        <Box mb="4">
+          <Text fontSize="xs" color="text-tertiary" mb="1.5">转场预览</Text>
+          <Box rounded="md" overflow="hidden" style={{ border: `1px solid ${BORDER}` }}>
+            <video
+              src={edge.videoUrl}
+              controls
+              muted
+              playsInline
+              style={{ width: '100%', display: 'block', background: '#05060a' }}
+            />
+          </Box>
+        </Box>
+      )}
+
+      {videoMsg && (
+        <Text
+          fontSize="xs"
+          color={videoMsg.includes('已触发') ? '#22c55e' : '#ef4444'}
+          mb="2"
+          px="1"
+        >
+          {videoMsg}
+        </Text>
+      )}
+
       <SaveButton saving={saving} onClick={() => onSave({ relationLabel })} />
+
+      {onRegenerateEdge && (
+        <Button
+          w="100%"
+          mt="3"
+          bg="rgba(59,130,246,0.12)"
+          color="#3b82f6"
+          _hover={{ bg: 'rgba(59,130,246,0.2)' }}
+          loading={videoLoading}
+          onClick={async () => {
+            setVideoLoading(true)
+            setVideoMsg(null)
+            try {
+              await onRegenerateEdge(edge.id)
+              setVideoMsg('转场已触发重生成')
+              setTimeout(() => setVideoMsg(null), 3000)
+            } catch (e: any) {
+              setVideoMsg(e.message)
+            } finally {
+              setVideoLoading(false)
+            }
+          }}
+          size="sm"
+        >
+          <RefreshCw size={14} style={{ marginRight: 6 }} />
+          重新生成转场
+        </Button>
+      )}
     </div>
   )
 }

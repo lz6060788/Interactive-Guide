@@ -37,10 +37,19 @@ export const deleteNode = (guideId: string, nodeId: string) =>
   request(`/guides/${guideId}/nodes/${nodeId}`, { method: 'DELETE' })
 export const updateHotspots = (guideId: string, nodeId: string, data: any) =>
   request(`/guides/${guideId}/nodes/${nodeId}/hotspots`, { method: 'PUT', body: JSON.stringify(data) })
+export const regenerateNode = (guideId: string, nodeId: string) =>
+  request(`/guides/${guideId}/nodes/${nodeId}/regenerate`, { method: 'POST' })
+export const regenerateHotspots = (guideId: string, nodeId: string) =>
+  request<any[]>(`/guides/${guideId}/nodes/${nodeId}/hotspots/regenerate`, { method: 'POST' })
 
 // Edges
 export const updateEdge = (guideId: string, edgeId: string, data: any) =>
   request(`/guides/${guideId}/edges/${edgeId}`, { method: 'PUT', body: JSON.stringify(data) })
+export const regenerateEdge = (guideId: string, edgeId: string) =>
+  request<{ ok: boolean; buildId?: string; edgeId: string }>(
+    `/guides/${guideId}/edges/${edgeId}/regenerate`,
+    { method: 'POST' },
+  )
 
 // Generate (includes publish as final stage)
 export const startGenerate = (guideId: string) =>
