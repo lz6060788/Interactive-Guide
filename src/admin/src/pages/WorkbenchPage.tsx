@@ -210,13 +210,24 @@ export function WorkbenchPage() {
     try {
       setSaving(true)
       await api.updateHotspots(guideId, hotspotNodeId, hotspots)
+      
+      // Update local state without waiting for full reload to avoid flicker
+      if (pkg) {
+        const updatedNodes = pkg.nodes.map(n => 
+          n.id === hotspotNodeId ? { ...n, hotspots } : n
+        )
+        setPkg({ ...pkg, nodes: updatedNodes })
+      }
+      
       await load()
+      setShowHotspotEditor(false)
+      setHotspotNodeId(null)
     } catch (e: any) {
       setError(e.message)
     } finally {
       setSaving(false)
     }
-  }, [guideId, hotspotNodeId, load])
+  }, [guideId, hotspotNodeId, load, pkg])
 
   const handleBuild = useCallback(async () => {
     if (!guideId) return

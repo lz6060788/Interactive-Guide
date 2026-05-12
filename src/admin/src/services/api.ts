@@ -62,7 +62,14 @@ export const fetchGenerateLogs = (generateId: string) =>
   request<string[]>(`/generates/${generateId}/logs`)
 
 // Manifest
-export const fetchManifest = (guideId: string) => request<any>(`/guides/${guideId}/manifest`)
+export const fetchManifest = (guideId: string) => {
+  // If ?t= is passed in guideId, pass it correctly to backend via query string
+  if (guideId.includes('?')) {
+    const [id, query] = guideId.split('?')
+    return request<any>(`/guides/${id}/manifest?${query}`)
+  }
+  return request<any>(`/guides/${guideId}/manifest`)
+}
 export const packageGuide = (guideId: string) =>
   request<any>(`/guides/${guideId}/package`, { method: 'POST' })
 

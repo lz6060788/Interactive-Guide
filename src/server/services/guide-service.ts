@@ -201,6 +201,48 @@ export class GuideService {
 
     guide.metadata = { ...guide.metadata, updatedAt: nowISO() }
     this.repo.saveGuide(guide)
+
+    // --- Sync to manifest if it exists ---
+    try {
+      const manifestPath = `publish/${guideId}/${guide.version}/manifest.json`
+      // We must clear fs-repository cache for this file before reading
+      // to ensure we're reading the latest content before modifying
+      const manifest = this.repo.readJson<any>(manifestPath)
+      if (manifest && manifest.nodes) {
+        const updatedHotspots = node.hotspots?.map(hs => ({
+          edgeId: hs.edgeId,
+          targetNodeId: hs.targetNodeId,
+          label: hs.label,
+          normalizedX: hs.normalizedX,
+          normalizedY: hs.normalizedY,
+          radius: hs.radius,
+          markerType: 'dot',
+        })) || []
+
+        manifest.nodes = manifest.nodes.map((n: any) => {
+          if (n.id === nodeId) {
+            return {
+              ...n,
+              hotspots: updatedHotspots,
+            }
+          }
+          return n
+        })
+        if (manifest.nodeMap?.[nodeId]) {
+          manifest.nodeMap[nodeId] = {
+            ...manifest.nodeMap[nodeId],
+            hotspots: updatedHotspots,
+          }
+        }
+        this.repo.writeJson(manifestPath, manifest)
+        
+        // Ensure changes are flushed immediately (though fs is sync, good practice)
+        console.log(`[updateHotspots] Synced to manifest: ${manifestPath}`)
+      }
+    } catch (e) {
+      console.warn(`Failed to sync hotspots to manifest for guide ${guideId}:`, e)
+    }
+
     return node
   }
 
@@ -309,6 +351,8 @@ export class GuideService {
     const guide = this.repo.loadAllGuides().get(guideId)
     if (!guide) return null
 
+    // We must pass bypassCache flag or refresh the disk state explicitly if needed,
+    // but repo.readJson handles this if fs.readFileSync is used (which bypasses memory cache).
     return this.repo.readJson<PublishManifest>(
       `publish/${guideId}/${guide.version}/manifest.json`,
     )

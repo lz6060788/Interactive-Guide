@@ -55,13 +55,33 @@ export function PreviewModal({ packageId, onClose }: Props) {
     if (!container) return
     const img = container.querySelector('img') as HTMLImageElement | null
     if (!img) return
+
+    // Use the browser's actual rendered image box instead of re-deriving object-fit math.
+    if (img.naturalWidth === 0 || img.naturalHeight === 0) return
+
     const cRect = container.getBoundingClientRect()
     const iRect = img.getBoundingClientRect()
+
+    const renderX = iRect.left - cRect.left
+    const renderY = iRect.top - cRect.top
+    const renderW = iRect.width
+    const renderH = iRect.height
+
+    console.log('[PreviewModal] updateImgRect', {
+      cRect,
+      iRect,
+      renderW,
+      renderH,
+      renderX,
+      renderY,
+      natural: { w: img.naturalWidth, h: img.naturalHeight },
+    })
+
     setImgRect({
-      x: iRect.left - cRect.left,
-      y: iRect.top - cRect.top,
-      w: iRect.width,
-      h: iRect.height,
+      x: renderX,
+      y: renderY,
+      w: renderW,
+      h: renderH,
     })
   }, [])
 
@@ -83,7 +103,8 @@ export function PreviewModal({ packageId, onClose }: Props) {
 
         let m: PublishManifest | null = null
         try {
-          const manifest = await api.fetchManifest(packageId)
+          // Add a timestamp to bypass browser cache
+          const manifest = await api.fetchManifest(`${packageId}?t=${Date.now()}`)
           if (isPublishManifest(manifest)) {
             m = manifest
           }
@@ -97,19 +118,25 @@ export function PreviewModal({ packageId, onClose }: Props) {
             throw new Error('未获取到可用的发布任务，无法预览')
           }
 
+          let buildFinished = false;
           for (let i = 0; i < MAX_POLL_COUNT; i += 1) {
             const record = await api.fetchGenerate(build.buildId) as { status?: string }
             if (record?.status === 'failed') {
               throw new Error('生成失败，无法加载预览')
             }
             if (record?.status === 'success' || record?.status === 'partial_failed') {
-              const manifest = await api.fetchManifest(packageId)
-              if (isPublishManifest(manifest)) {
-                m = manifest
-                break
-              }
+              buildFinished = true;
+              break;
             }
             await sleep(POLL_INTERVAL_MS)
+          }
+          
+          if (buildFinished) {
+            // Add a timestamp to bypass browser cache
+            const manifest = await api.fetchManifest(`${packageId}?t=${Date.now()}`)
+            if (isPublishManifest(manifest)) {
+              m = manifest
+            }
           }
         }
 
@@ -127,6 +154,22 @@ export function PreviewModal({ packageId, onClose }: Props) {
   }, [packageId])
 
   const currentNode = manifest?.nodeMap?.[currentNodeId] ?? null
+
+  // --- Add debug logs for hotspot rendering ---
+  useEffect(() => {
+    if (currentNode && imgRect.w > 0) {
+      console.log(`[PreviewModal] Render Hotspots for Node: ${currentNode.title}`, {
+        imgRect,
+        hotspots: currentNode.hotspots?.map(hs => ({
+          label: hs.label,
+          normalizedX: hs.normalizedX,
+          normalizedY: hs.normalizedY,
+          pixelX: hs.normalizedX * imgRect.w,
+          pixelY: hs.normalizedY * imgRect.h,
+        }))
+      })
+    }
+  }, [currentNode, imgRect])
 
   const handleHotspotClick = (hotspot: PublishHotspot) => {
     if (!manifest || transitioning) return
@@ -305,13 +348,14 @@ export function PreviewModal({ packageId, onClose }: Props) {
                 overflow="visible"
                 style={{
                   aspectRatio: `${manifest.resolution.width} / ${manifest.resolution.height}`,
+                  margin: '0 auto',
                 }}
               >
                 {/* Node image */}
                 <img
                   src={currentNode.imageUrl}
                   alt={currentNode.title}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', userSelect: 'none' }}
                   onLoad={updateImgRect}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                 />

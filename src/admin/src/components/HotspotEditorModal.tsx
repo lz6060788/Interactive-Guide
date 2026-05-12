@@ -30,13 +30,33 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
     if (!container) return
     const img = container.querySelector('img') as HTMLImageElement | null
     if (!img) return
+
+    // Use the browser's actual rendered image box instead of re-deriving object-fit math.
+    if (img.naturalWidth === 0 || img.naturalHeight === 0) return
+
     const cRect = container.getBoundingClientRect()
     const iRect = img.getBoundingClientRect()
+
+    const renderX = iRect.left - cRect.left
+    const renderY = iRect.top - cRect.top
+    const renderW = iRect.width
+    const renderH = iRect.height
+
+    console.log('[HotspotEditor] updateImgRect', {
+      cRect,
+      iRect,
+      renderW,
+      renderH,
+      renderX,
+      renderY,
+      natural: { w: img.naturalWidth, h: img.naturalHeight },
+    })
+
     setImgRect({
-      x: iRect.left - cRect.left,
-      y: iRect.top - cRect.top,
-      w: iRect.width,
-      h: iRect.height,
+      x: renderX,
+      y: renderY,
+      w: renderW,
+      h: renderH,
     })
   }, [])
 
@@ -92,6 +112,22 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
 
   const handleMouseUp = useCallback(() => { setDragging(false) }, [])
 
+  // --- Add debug logs for hotspot rendering ---
+  useEffect(() => {
+    if (imgRect.w > 0) {
+      console.log(`[HotspotEditor] Render Hotspots for Node: ${node.title}`, {
+        imgRect,
+        drafts: drafts.map(hs => ({
+          label: hs.label,
+          normalizedX: hs.normalizedX,
+          normalizedY: hs.normalizedY,
+          pixelX: hs.normalizedX * imgRect.w,
+          pixelY: hs.normalizedY * imgRect.h,
+        }))
+      })
+    }
+  }, [imgRect, drafts, node.title])
+
   useEffect(() => {
     if (dragging) {
       const up = () => setDragging(false)
@@ -130,7 +166,7 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
               color="white"
               _hover={{ bg: 'brand-hover' }}
               onClick={() => onSave(drafts)}
-              loading={saving}
+              isLoading={saving}
             >
               <Save size={14} style={{ marginRight: 6 }} />
               保存校准结果
@@ -145,7 +181,6 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
         <Flex flex="1" overflow="hidden">
           {/* Image stage */}
           <Box
-            ref={containerRef}
             flex="1"
             position="relative"
             bg="black"
@@ -158,59 +193,69 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
           >
-            {node.imageUrl ? (
-              <img
-                src={node.imageUrl}
-                alt={node.title}
-                style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain', userSelect: 'none' }}
-                draggable={false}
-                onLoad={updateImgRect}
-              />
-            ) : (
-              <Text color="text-secondary" fontSize="md">无图片</Text>
-            )}
+            <Box 
+              ref={containerRef} 
+              position="relative" 
+              h="100%" 
+              maxH="100%" 
+              display="flex" 
+              alignItems="center" 
+              justifyContent="center"
+            >
+              {node.imageUrl ? (
+                <img
+                  src={node.imageUrl}
+                  alt={node.title}
+                  style={{ maxWidth: '100%', maxHeight: '75vh', objectFit: 'contain', userSelect: 'none' }}
+                  draggable={false}
+                  onLoad={updateImgRect}
+                />
+              ) : (
+                <Text color="text-secondary" fontSize="md">无图片</Text>
+              )}
 
-            {/* Hotspot overlay — positioned exactly over the image content area */}
-            {imgRect.w > 0 && (
-              <Box
-                position="absolute"
-                left={`${imgRect.x}px`}
-                top={`${imgRect.y}px`}
-                width={`${imgRect.w}px`}
-                height={`${imgRect.h}px`}
-                pointerEvents="none"
-              >
-                {drafts.map((hs, i) => (
-                  <Box
-                    key={hs.edgeId}
-                    position="absolute"
-                    left={`${hs.normalizedX * 100}%`}
-                    top={`${hs.normalizedY * 100}%`}
-                    w="28px"
-                    h="28px"
-                    rounded="full"
-                    display="flex"
-                    alignItems="center"
-                    justifyContent="center"
-                    fontSize="xs"
-                    fontWeight="700"
-                    color="black"
-                    userSelect="none"
-                    transition="box-shadow 0.15s"
-                    cursor={dragging && activeIndex === i ? 'grabbing' : 'grab'}
-                    pointerEvents="auto"
-                    zIndex={activeIndex === i ? 10 : 5}
-                    bg={activeIndex === i ? 'brand' : 'white'}
-                    boxShadow={activeIndex === i ? '0 0 16px rgba(99,102,241,0.6)' : '0 0 8px rgba(255,255,255,0.4)'}
-                    transform="translate(-50%, -50%)"
-                    onMouseDown={(e: any) => handleMouseDown(i, e)}
-                    title={`${hs.label} → ${hs.targetNodeId}`}
-                  >
-                    {i + 1}
-                  </Box>
-                ))}
-              </Box>
-            )}
+              {/* Hotspot overlay — positioned exactly over the image content area */}
+              {imgRect.w > 0 && (
+                <Box
+                  position="absolute"
+                  left={`${imgRect.x}px`}
+                  top={`${imgRect.y}px`}
+                  width={`${imgRect.w}px`}
+                  height={`${imgRect.h}px`}
+                  pointerEvents="none"
+                >
+                  {drafts.map((hs, i) => (
+                    <Box
+                      key={hs.edgeId}
+                      position="absolute"
+                      left={`${hs.normalizedX * 100}%`}
+                      top={`${hs.normalizedY * 100}%`}
+                      w="28px"
+                      h="28px"
+                      rounded="full"
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="center"
+                      fontSize="xs"
+                      fontWeight="700"
+                      color="black"
+                      userSelect="none"
+                      transition="box-shadow 0.15s"
+                      cursor={dragging && activeIndex === i ? 'grabbing' : 'grab'}
+                      pointerEvents="auto"
+                      zIndex={activeIndex === i ? 10 : 5}
+                      bg={activeIndex === i ? 'brand' : 'white'}
+                      boxShadow={activeIndex === i ? '0 0 16px rgba(99,102,241,0.6)' : '0 0 8px rgba(255,255,255,0.4)'}
+                      transform="translate(-50%, -50%)"
+                      onMouseDown={(e: any) => handleMouseDown(i, e)}
+                      title={`${hs.label} → ${hs.targetNodeId}`}
+                    >
+                      {i + 1}
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </Box>
           </Box>
 
           {/* Side panel */}

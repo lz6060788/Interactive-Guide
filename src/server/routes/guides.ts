@@ -124,7 +124,12 @@ export function createGuidesRouter(guideService: GuideService): Router {
 
   router.get('/guides/:id/manifest', (req: Request, res: Response, next: NextFunction) => {
     try {
-      const manifest = guideService.getManifest(String(req.params.id))
+      // Allow passing ?t=timestamp to bypass frontend cache but extract pure ID for service
+      // Note: req.params.id will NOT include the query string in Express (it's in req.query.t)
+      // So we just use req.params.id directly. The query string cache-buster works at the network layer.
+      const guideId = String(req.params.id)
+      
+      const manifest = guideService.getManifest(guideId)
       if (!manifest) {
         res.status(404).json({ error: 'No published manifest found', code: 'NOT_FOUND' })
         return

@@ -592,6 +592,43 @@ export class GenerateService {
     const updatedGuide = { ...guide, nodes: updatedNodes, metadata: { ...guide.metadata, updatedAt: nowISO() } }
     this.repo.writeJson(`guides/${guideId}/current/guide.json`, updatedGuide)
 
+    // --- Sync to manifest if it exists ---
+    try {
+      const manifestPath = `publish/${guideId}/${guide.version}/manifest.json`
+      const manifest = this.repo.readJson<any>(manifestPath)
+      if (manifest && manifest.nodes) {
+        const updatedNode = updatedNodes.find(un => un.id === nodeId)
+        const updatedHotspots = updatedNode?.hotspots?.map(hs => ({
+          edgeId: hs.edgeId,
+          targetNodeId: hs.targetNodeId,
+          label: hs.label,
+          normalizedX: hs.normalizedX,
+          normalizedY: hs.normalizedY,
+          radius: hs.radius,
+          markerType: 'dot',
+        })) || []
+
+        manifest.nodes = manifest.nodes.map((n: any) => {
+          if (n.id === nodeId) {
+            return {
+              ...n,
+              hotspots: updatedHotspots,
+            }
+          }
+          return n
+        })
+        if (manifest.nodeMap?.[nodeId]) {
+          manifest.nodeMap[nodeId] = {
+            ...manifest.nodeMap[nodeId],
+            hotspots: updatedHotspots,
+          }
+        }
+        this.repo.writeJson(manifestPath, manifest)
+      }
+    } catch (e) {
+      console.warn(`Failed to sync regenerated hotspots to manifest for guide ${guideId}:`, e)
+    }
+
     return recommended
   }
 
