@@ -75,6 +75,12 @@ export interface KnowledgeEdge {
   fromNodeId: string
   toNodeId: string
   relationLabel?: string
+  promptStatus?: SubTaskStatus
+  transitionStrategyMode?: TransitionStrategyMode
+  transitionStrategyReason?: string
+  transitionPlan?: TransitionVisualPlan
+  transitionPrompt?: string
+  transitionPath?: string
   videoUrl?: string
   videoStatus?: ResourceStatus
   status?: EdgeStatus
@@ -169,9 +175,9 @@ export interface TransitionVisualPlan {
   mode: TransitionStrategyMode
   reason: string
   entryFocus: string
-  sourceFadePlan: string
-  targetRevealPlan: string
-  midTransitionAction: string
+  openingPhase: string
+  handoffPhase: string
+  landingPhase: string
   avoidances?: string[]
 }
 

@@ -1607,14 +1607,13 @@ export class GenerateService {
       ? `Source hotspot region: x ${sourceHotspot.normalizedX.toFixed(2)}, y ${sourceHotspot.normalizedY.toFixed(2)}, radius ${(sourceHotspot.radius ?? 18)}.`
       : ''
     const hotspotPositionCue = this.buildHotspotPositionCue(sourceHotspot?.normalizedX, sourceHotspot?.normalizedY)
-    const elementBridgeCue = this.buildElementBridgeCue(fromNode, toNode)
-    const strategyMode = visualPlan?.mode ?? 'element-bridge'
+    const strategyMode = visualPlan?.mode ?? 'fallback-navigation'
     const strategyReason = visualPlan?.reason?.trim()
     const entryFocus = visualPlan?.entryFocus?.trim()
-    const sourceFadePlan = visualPlan?.sourceFadePlan?.trim()
-    const targetRevealPlan = visualPlan?.targetRevealPlan?.trim()
-    const midTransitionAction = visualPlan?.midTransitionAction?.trim()
-    const avoidances = (visualPlan?.avoidances ?? []).slice(0, 6)
+    const openingPhase = visualPlan?.openingPhase?.trim()
+    const handoffPhase = visualPlan?.handoffPhase?.trim()
+    const landingPhase = visualPlan?.landingPhase?.trim()
+    const avoidances = (visualPlan?.avoidances ?? []).slice(0, 4)
 
     return [
       'Create a short navigation transition between two connected infographic screens using the provided first frame and last frame as hard visual constraints.',
@@ -1622,33 +1621,37 @@ export class GenerateService {
       fromSummary ? `Start screen summary: ${fromSummary}.` : '',
       `End screen title: ${toTitle}.`,
       toSummary ? `End screen summary: ${toSummary}.` : '',
-      `Navigation topic for semantic continuity only: ${relation}.`,
-      `Preferred motion language: ${transitionStyle}.`,
-      `Overall visual style: ${visualStyle}.`,
+      `Navigation topic: ${relation}.`,
+      `Motion language: ${transitionStyle}.`,
+      `Visual style: ${visualStyle}.`,
       `Canvas: ${canvasDescriptor}.`,
       hotspotCue,
       hotspotPositionCue,
-      elementBridgeCue,
-      `Selected transition strategy: ${strategyMode}.`,
+      '',
+      'Transition plan:',
+      `- Strategy: ${strategyMode}.`,
       strategyReason ? `Why this strategy fits: ${strategyReason}.` : '',
-      entryFocus ? `Entry focus: ${entryFocus}.` : '',
-      sourceFadePlan ? `Source fade plan: ${sourceFadePlan}.` : '',
-      targetRevealPlan ? `Target reveal plan: ${targetRevealPlan}.` : '',
-      midTransitionAction ? `Mid-transition action: ${midTransitionAction}.` : '',
-      avoidances.length > 0 ? `Extra avoidances: ${avoidances.join('; ')}.` : '',
-      'Treat this as spatial navigation inside one knowledge system, not page turning.',
-      'Open by matching the first frame exactly, then move into the source hotspot along its real on-screen position before converging to the destination.',
-      'The main motion must be forward zoom-in / dive with depth, not lateral slide. Allow one elegant reveal only if it stays logically tied to endpoint layouts.',
+      entryFocus ? `- Entry focus: ${entryFocus}.` : '',
+      openingPhase ? `- Opening: ${openingPhase}.` : '',
+      handoffPhase ? `- Handoff: ${handoffPhase}.` : '',
+      landingPhase ? `- Landing: ${landingPhase}.` : '',
+      '',
+      'Global rules:',
+      '- Match the first frame exactly at the beginning and the last frame exactly at the end.',
+      '- Treat this as spatial navigation inside one knowledge system, not page turning.',
+      '- The main motion must be forward zoom-in / dive with depth, not lateral slide.',
+      '- Use the source hotspot as the entry anchor and preserve its real on-screen position during the initial move.',
       strategyMode === 'element-bridge'
-        ? 'Use element-bridge mode: transform real endpoint elements such as cards, charts, labels, arrows, borders, icons, repeated textures, or shared topic tokens so the source module gradually reorganizes into the target module.'
-        : 'Use fallback-navigation mode: let the source region guide the entry path, then progressively reduce the source layout while the destination layout gradually appears and takes over the frame. Prefer guided reveal, focus handoff, panel takeover, or depth-led replacement over forced object morphing.',
-      'The image must progress continuously toward the target throughout the clip: early segment leaves source, middle segment transforms or reveals, final segment settles into the exact last frame.',
-      'Each moment should be closer to the destination than the previous one. Keep intermediate frames anchored to structures already present in the first or last frame.',
-      'Keep the tone readable, restrained, and infographic-like.',
-      'Do not literalize the navigation topic as a new prop unless that object is already clearly dominant in both endpoint frames.',
-      'Do not use page-turn, paper flip, card flip, swipe, simple left-right pan, late hard cut, snap replacement, fake camera shake, unrelated objects, or major composition drift.',
-      'Do not spend most of the clip animating the first frame and then suddenly jump to the last frame. Do not drift away from the destination or end with only an approximate target.',
-    ].filter(Boolean).join(' ')
+        ? '- Only use element-bridge if real shared endpoint structures can continuously reorganize into the target.'
+        : '- Use guided reveal / focus handoff / panel takeover, and do not invent a fake shared object, tunnel, or neutral transition layer.',
+      '- Every moment should be closer to the destination than the previous one.',
+      '- Keep intermediate frames anchored to structures already present in the first or last frame.',
+      '- Keep the tone readable, restrained, and infographic-like.',
+      '- Do not literalize the navigation topic as a new prop unless it is already dominant in the endpoints.',
+      avoidances.length > 0
+        ? `- Avoid: ${avoidances.join('; ')}.`
+        : '- Avoid: page-turn, swipe, late hard cut, snap replacement, fake camera shake, major composition drift.',
+    ].filter(Boolean).join('\n')
   }
 
   private async planTransitionVisuals(
@@ -1663,9 +1666,9 @@ export class GenerateService {
         mode: 'fallback-navigation',
         reason: '节点信息不完整，默认使用兜底导览转场',
         entryFocus: '从源热点区域进入',
-        sourceFadePlan: '源页局部逐步退场',
-        targetRevealPlan: '目标页主体逐步接管画面',
-        midTransitionAction: '使用导览式揭示完成中段过渡',
+        openingPhase: '首帧稳定匹配后，从源热点真实位置开始前向推进。',
+        handoffPhase: '保留源热点作为过渡锚点，其余源页结构逐步减弱，目标页主结构开始接管画面。',
+        landingPhase: '画面继续向目标布局收束，并在结尾精确对齐终帧。',
         avoidances: ['不要晚切', '不要首帧自循环'],
       }
     }
@@ -1678,9 +1681,9 @@ export class GenerateService {
         mode: 'fallback-navigation',
         reason: '首尾帧图片缺失，默认使用兜底导览转场',
         entryFocus: '从源热点区域进入',
-        sourceFadePlan: '源页局部逐步退场',
-        targetRevealPlan: '目标页主体逐步接管画面',
-        midTransitionAction: '使用导览式揭示完成中段过渡',
+        openingPhase: '首帧稳定匹配后，从源热点真实位置开始前向推进。',
+        handoffPhase: '保留源热点作为过渡锚点，其余源页结构逐步减弱，目标页主结构开始接管画面。',
+        landingPhase: '画面继续向目标布局收束，并在结尾精确对齐终帧。',
         avoidances: ['不要晚切', '不要首帧自循环'],
       }
     }
@@ -1700,9 +1703,9 @@ export class GenerateService {
         mode: 'fallback-navigation',
         reason: `转场规划失败，回退为兜底导览转场：${message.slice(0, 120)}`,
         entryFocus: '从源热点区域进入',
-        sourceFadePlan: '源页局部逐步退场',
-        targetRevealPlan: '目标页主体逐步接管画面',
-        midTransitionAction: '使用导览式揭示完成中段过渡',
+        openingPhase: '首帧稳定匹配后，从源热点真实位置开始前向推进。',
+        handoffPhase: '保留源热点作为过渡锚点，其余源页结构逐步减弱，目标页主结构开始接管画面。',
+        landingPhase: '画面继续向目标布局收束，并在结尾精确对齐终帧。',
         avoidances: ['不要晚切', '不要首帧自循环'],
       }
     }
@@ -1721,36 +1724,6 @@ export class GenerateService {
       'middle'
 
     return `The source hotspot sits in the ${vertical}-${horizontal} part of the screen. Preserve that spatial origin during the initial zoom path before converging toward the destination layout.`
-  }
-
-  private buildElementBridgeCue(
-    fromNode?: KnowledgeNode,
-    toNode?: KnowledgeNode,
-  ): string {
-    const fromTokens = this.collectVisualAnchorTokens(fromNode)
-    const toTokens = this.collectVisualAnchorTokens(toNode)
-    const sharedTokens = fromTokens.filter(token => toTokens.includes(token)).slice(0, 3)
-
-    if (sharedTokens.length > 0) {
-      return `Shared endpoint token(s) that should guide the element-level bridge: ${sharedTokens.join(', ')}.`
-    }
-
-    return 'Find a real shared visual bridge across the endpoints and use it as the zoom-in anchor instead of introducing a generic tunnel or neutral transition layer.'
-  }
-
-  private collectVisualAnchorTokens(node?: KnowledgeNode): string[] {
-    if (!node) return []
-
-    const raw = [
-      node.title,
-      node.summary,
-      ...(node.keyPoints ?? []),
-      node.visualIntent,
-      node.presentationIntent,
-    ].filter(Boolean).join(' ')
-
-    const matches = raw.match(/[A-Z][A-Z0-9-]{1,}/g) ?? []
-    return Array.from(new Set(matches.map(token => token.trim()).filter(Boolean)))
   }
 
   private normalizeTransitionStyle(transitionStyle?: string): string {

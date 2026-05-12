@@ -229,6 +229,7 @@ function SelectField({ label, value, onChange, options }: {
 
 function StatusBadge({ status }: { status?: string }) {
   const colorMap: Record<string, { bg: string; color: string; label: string }> = {
+    pending: { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', label: '等待中' },
     success: { bg: 'rgba(34,197,94,0.12)', color: '#22c55e', label: '成功' },
     failed: { bg: 'rgba(239,68,68,0.12)', color: '#ef4444', label: '失败' },
     running: { bg: 'rgba(59,130,246,0.12)', color: '#3b82f6', label: '运行中' },
@@ -534,6 +535,16 @@ function EdgeForm({
   const [relationLabel, setRelationLabel] = useState(edge.relationLabel || '')
   const [videoLoading, setVideoLoading] = useState(false)
   const [videoMsg, setVideoMsg] = useState<string | null>(null)
+  const transitionPlan = edge.transitionPlan
+  const strategyModeLabel =
+    edge.transitionStrategyMode === 'element-bridge' ? '元素桥接' :
+    edge.transitionStrategyMode === 'fallback-navigation' ? '兜底导览' :
+    ''
+  const hasTransitionDescription = Boolean(
+    edge.transitionStrategyReason ||
+    transitionPlan ||
+    edge.transitionPrompt,
+  )
 
   return (
     <div>
@@ -542,11 +553,94 @@ function EdgeForm({
       <Field label="目标节点" value={edge.toNodeId} disabled />
       <Field label="关系文案" value={relationLabel} onChange={setRelationLabel} />
 
-      {edge.videoStatus && (
+      {(edge.status || edge.promptStatus || edge.videoStatus) && (
         <Box mb="4">
-          <Text fontSize="xs" color="text-tertiary" mb="1.5">视频状态</Text>
-          <StatusBadge status={edge.videoStatus} />
+          <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3">
+            状态
+          </Text>
+          <Flex gap="4" wrap="wrap">
+            <Box>
+              <Text fontSize="xs" color="text-tertiary" mb="1">边状态</Text>
+              <StatusBadge status={edge.status} />
+            </Box>
+            <Box>
+              <Text fontSize="xs" color="text-tertiary" mb="1">规划状态</Text>
+              <StatusBadge status={edge.promptStatus} />
+            </Box>
+            <Box>
+              <Text fontSize="xs" color="text-tertiary" mb="1">视频状态</Text>
+              <StatusBadge status={edge.videoStatus} />
+            </Box>
+          </Flex>
         </Box>
+      )}
+
+      <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
+        AI 转场描述
+      </Text>
+      {hasTransitionDescription ? (
+        <Box mb="4">
+          {strategyModeLabel && (
+            <Box mb="3">
+              <Text fontSize="xs" color="text-tertiary" mb="1.5">转场策略</Text>
+              <Badge bg="rgba(59,130,246,0.12)" color="#3b82f6" fontSize="xs" px="2" py="0.5" rounded="sm">
+                {strategyModeLabel}
+              </Badge>
+            </Box>
+          )}
+          {edge.transitionStrategyReason && (
+            <Field label="策略理由" value={edge.transitionStrategyReason} disabled multiline rows={3} />
+          )}
+          {transitionPlan?.entryFocus && (
+            <Field label="进入焦点" value={transitionPlan.entryFocus} disabled multiline rows={2} />
+          )}
+          {transitionPlan?.openingPhase && (
+            <Field label="前段进入" value={transitionPlan.openingPhase} disabled multiline rows={3} />
+          )}
+          {transitionPlan?.handoffPhase && (
+            <Field label="中段接管" value={transitionPlan.handoffPhase} disabled multiline rows={3} />
+          )}
+          {transitionPlan?.landingPhase && (
+            <Field label="后段落版" value={transitionPlan.landingPhase} disabled multiline rows={3} />
+          )}
+          {transitionPlan?.avoidances?.length > 0 && (
+            <Box mb="4">
+              <Text fontSize="xs" fontWeight="500" color="text-tertiary" mb="1.5">
+                避免事项
+              </Text>
+              <VStack align="stretch" gap="1.5">
+                {transitionPlan.avoidances.map((item: string, index: number) => (
+                  <Box
+                    key={`${item}-${index}`}
+                    px="3"
+                    py="2"
+                    rounded="md"
+                    fontSize="xs"
+                    color="text-secondary"
+                    style={{ background: '#0a0b0f', border: `1px solid ${BORDER}` }}
+                  >
+                    {item}
+                  </Box>
+                ))}
+              </VStack>
+            </Box>
+          )}
+          {edge.transitionPrompt && (
+            <Field label="生成提示词（只读）" value={edge.transitionPrompt} disabled multiline rows={8} mono />
+          )}
+        </Box>
+      ) : (
+        <Flex
+          align="center"
+          gap="2"
+          mb="4"
+          p="3"
+          rounded="md"
+          bg="rgba(92,95,119,0.08)"
+          style={{ border: `1px dashed ${BORDER}` }}
+        >
+          <Text fontSize="xs" color="text-tertiary">暂无 AI 转场描述，请先生成转场。</Text>
+        </Flex>
       )}
 
       {edge.videoUrl && (

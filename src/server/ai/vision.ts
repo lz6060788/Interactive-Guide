@@ -328,6 +328,7 @@ ${edgeContext}
 
 const TRANSITION_VISUAL_PLAN_SYSTEM_PROMPT = `你是一个导览视频转场视效规划器。
 你要根据两张信息图首尾帧，为视频模型输出一份简明但可执行的转场规划。
+重点是规划镜头如何从源页进入、如何完成中段接管、如何精确落到目标页，不要堆砌风格辞藻。
 
 可选模式：
 - element-bridge：首尾帧存在可连续延展的共享视觉结构，适合局部元素放大、重组、连续变形。
@@ -338,15 +339,16 @@ const TRANSITION_VISUAL_PLAN_SYSTEM_PROMPT = `你是一个导览视频转场视�
 2. 如果共享的只是抽象概念词，而不是模块、曲线、容器、图示结构、边框、布局骨架，则优先 fallback-navigation。
 3. 如果源热点只是入口提示，不是目标页主视觉的缩略前身，也优先 fallback-navigation。
 4. 只有在局部结构、图形语言、布局骨架确实能连续延展时，才选 element-bridge。
+5. 如果没有真实共享桥接结构，不要硬造“通道”“隧道”“抽象层”等中性转场层，应直接写 fallback-navigation 的接管方案。
 
 输出严格 JSON：
 {
   "mode": "element-bridge 或 fallback-navigation",
   "reason": "一句中文理由",
   "entryFocus": "从首帧哪个局部进入",
-  "sourceFadePlan": "首帧哪些内容应逐步减弱或退场",
-  "targetRevealPlan": "尾帧哪些结构应先出现、哪些后出现",
-  "midTransitionAction": "中段主要动作",
+  "openingPhase": "前段如何贴合首帧并进入热点",
+  "handoffPhase": "中段如何让源页退场并让目标结构接管",
+  "landingPhase": "后段如何收束并精确落到终帧",
   "avoidances": ["避免事项1", "避免事项2"]
 }`
 
@@ -368,6 +370,8 @@ export async function planTransitionVisuals(
   const userMessage = `知识包：${pkg.title}
 边ID：${edge.id}
 导航语义：${edge.relationLabel ?? '无'}
+画布：${pkg.resolution.width}x${pkg.resolution.height}
+整体风格：${pkg.style ?? pkg.visualStyle ?? '未指定'}
 
 源节点标题：${fromNode.title}
 源节点摘要：${getNodeSummary(fromNode)}
@@ -378,10 +382,15 @@ export async function planTransitionVisuals(
 目标节点摘要：${getNodeSummary(toNode)}
 目标节点视觉意图：${getNodeVisualIntent(toNode) || '无'}
 
-请结合两张图像和上述上下文，为这条边输出一份简短但具体的转场规划。`
+请结合两张图像和上述上下文，为这条边输出一份简短但具体的转场规划。
+要求：
+1. 规划必须体现“前段进入 / 中段接管 / 后段落版”三个阶段。
+2. 重点写空间路径和结构接管，不要写空泛的审美形容词。
+3. 如果结构不连续，直接选 fallback-navigation，不要强行写元素变形。`
 
   const cacheKey = buildCacheKey({
     type: 'transition-visual-plan',
+    version: 'v2',
     edgeId: edge.id,
     fromNodeId: fromNode.id,
     toNodeId: toNode.id,
@@ -445,9 +454,21 @@ export async function planTransitionVisuals(
     mode: parsed.mode === 'fallback-navigation' ? 'fallback-navigation' : 'element-bridge',
     reason: parsed.reason?.trim() || '模型未提供理由',
     entryFocus: parsed.entryFocus?.trim() || '从源热点区域进入',
-    sourceFadePlan: parsed.sourceFadePlan?.trim() || '源页局部逐步退场',
-    targetRevealPlan: parsed.targetRevealPlan?.trim() || '目标页结构逐步接管画面',
-    midTransitionAction: parsed.midTransitionAction?.trim() || '中段完成主要结构转换',
+    openingPhase:
+      (parsed as any).openingPhase?.trim() ||
+      '首帧保持稳定匹配，从源热点真实位置开始前向推进进入。',
+    handoffPhase:
+      (parsed as any).handoffPhase?.trim() ||
+      [
+        (parsed as any).sourceFadePlan?.trim(),
+        (parsed as any).midTransitionAction?.trim(),
+        (parsed as any).targetRevealPlan?.trim(),
+      ].filter(Boolean).join('；') ||
+      '源页重点区域保留为过渡锚点，其余结构逐步退场，目标页主要结构分层接管画面。',
+    landingPhase:
+      (parsed as any).landingPhase?.trim() ||
+      (parsed as any).targetRevealPlan?.trim() ||
+      '画面继续向目标布局收束，并在结尾精确对齐终帧。',
     avoidances: Array.isArray(parsed.avoidances)
       ? parsed.avoidances.map(item => String(item).trim()).filter(Boolean).slice(0, 6)
       : [],

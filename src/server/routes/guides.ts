@@ -4,8 +4,56 @@
 // All guide/node/edge CRUD endpoints.
 // Thin controller — delegates to GuideService, no business logic here.
 
+import fs from 'node:fs'
+import path from 'node:path'
 import { Router, type Request, type Response, type NextFunction } from 'express'
 import { GuideService } from '../services/guide-service.js'
+import type { KnowledgePackage } from '../../shared/types.js'
+
+function hydrateGuideEdgeTransitions(guide: KnowledgePackage): KnowledgePackage {
+  const generatesDir = path.resolve('data', 'generates')
+  if (!fs.existsSync(generatesDir)) return guide
+
+  const latest = fs.readdirSync(generatesDir, { withFileTypes: true })
+    .filter(entry => entry.isDirectory())
+    .map(entry => {
+      const generatePath = path.join(generatesDir, entry.name, 'generate.json')
+      if (!fs.existsSync(generatePath)) return null
+      try {
+        const record = JSON.parse(fs.readFileSync(generatePath, 'utf-8'))
+        return record?.packageId === guide.id
+          ? { buildId: String(record.buildId), createdAt: String(record.createdAt ?? '') }
+          : null
+      } catch {
+        return null
+      }
+    })
+    .filter((item): item is { buildId: string; createdAt: string } => Boolean(item))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+
+  if (!latest) return guide
+
+  guide.edges = guide.edges.map(edge => {
+    const transitionPath = path.join(generatesDir, latest.buildId, 'edges', edge.id, 'transition.json')
+    if (!fs.existsSync(transitionPath)) return edge
+
+    try {
+      const transition = JSON.parse(fs.readFileSync(transitionPath, 'utf-8'))
+      return {
+        ...edge,
+        transitionStrategyMode: transition.strategyMode ?? edge.transitionStrategyMode,
+        transitionStrategyReason: transition.strategyReason ?? edge.transitionStrategyReason,
+        transitionPlan: transition.visualPlan ?? edge.transitionPlan,
+        transitionPrompt: transition.prompt ?? edge.transitionPrompt,
+        transitionPath: `generates/${latest.buildId}/edges/${edge.id}/transition.json`,
+      }
+    } catch {
+      return edge
+    }
+  })
+
+  return guide
+}
 
 export function createGuidesRouter(guideService: GuideService): Router {
   const router = Router()
@@ -18,7 +66,7 @@ export function createGuidesRouter(guideService: GuideService): Router {
 
   router.get('/guides/:id', (req: Request, res: Response, next: NextFunction) => {
     try {
-      const guide = guideService.getGuide(String(req.params.id))
+      const guide = hydrateGuideEdgeTransitions(guideService.getGuide(String(req.params.id)))
       res.json({ data: guide })
     } catch (err) {
       next(err)
