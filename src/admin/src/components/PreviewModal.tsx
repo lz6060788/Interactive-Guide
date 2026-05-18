@@ -4,7 +4,9 @@ import {
 } from '@chakra-ui/react'
 import { X, ArrowLeft } from 'lucide-react'
 import * as api from '../services/api'
-import type { PublishManifest, PublishHotspot } from '../../../shared/types'
+import type { PublishManifest, PublishHotspot, BuiltinTransitionConfig } from '../../../shared/types'
+import type { Transition } from '../../../runtime/transitions/index.js'
+import { createTransition } from '../../../runtime/transitions/index.js'
 
 interface Props {
   packageId: string
@@ -13,6 +15,7 @@ interface Props {
 
 type PlayerStatus = 'loading' | 'ready' | 'error'
 type PendingTransition = { targetNodeId: string; videoUrl: string } | null
+type PendingBuiltinTransition = { targetNodeId: string; transition: Transition; builtinConfig: BuiltinTransitionConfig } | null
 
 const POLL_INTERVAL_MS = 2000
 const MAX_POLL_COUNT = 45
@@ -44,7 +47,9 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [transitioning, setTransitioning] = useState(false)
   const [pendingTransition, setPendingTransition] = useState<PendingTransition>(null)
+  const [pendingBuiltinTransition, setPendingBuiltinTransition] = useState<PendingBuiltinTransition>(null)
   const [infoExpanded, setInfoExpanded] = useState(false)
+  const manifestRef = useRef<PublishManifest | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [imgRect, setImgRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
@@ -142,6 +147,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
 
         if (!m) throw new Error('无法加载 manifest')
         setManifest(m)
+        manifestRef.current = m
         setCurrentNodeId(m.rootNodeId)
         setInfoExpanded(false)
         setStatus('ready')
@@ -178,13 +184,27 @@ export function PreviewModal({ packageId, onClose }: Props) {
     // Push current node to history before navigating
     setHistory(prev => [...prev, currentNodeId])
 
-    if (edge?.videoUrl) {
+    if (edge?.transitionType === 'builtin' && edge.builtinTransition) {
+      // Builtin transition
+      setTransitioning(true)
+      const transition = createTransition(edge.builtinTransition.type, edge.builtinTransition)
+      setPendingBuiltinTransition({
+        targetNodeId: hotspot.targetNodeId,
+        transition,
+        builtinConfig: edge.builtinTransition,
+      })
+    } else if (edge?.videoUrl) {
+      // Video transition (existing behavior)
       setTransitioning(true)
       setPendingTransition({
         targetNodeId: hotspot.targetNodeId,
         videoUrl: edge.videoUrl,
       })
+    } else if (edge?.transitionType === 'none') {
+      // No transition - immediate switch
+      switchNode(hotspot.targetNodeId)
     } else {
+      // Default: immediate switch (no video, no builtin, no 'none' flag)
       switchNode(hotspot.targetNodeId)
     }
   }
@@ -203,6 +223,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
     setCurrentNodeId(nodeId)
     setTransitioning(false)
     setPendingTransition(null)
+    setPendingBuiltinTransition(null)
     setInfoExpanded(false)
   }
 
@@ -226,6 +247,95 @@ export function PreviewModal({ packageId, onClose }: Props) {
       video.onerror = null
     }
   }, [pendingTransition, transitioning])
+
+  // Handle builtin transitions
+  useEffect(() => {
+    if (!pendingBuiltinTransition || !manifestRef.current) return
+
+    const edgeId = Object.keys(manifestRef.current.edgeMap).find(
+      key => manifestRef.current!.edgeMap[key].toNodeId === pendingBuiltinTransition.targetNodeId
+    )
+
+    if (!edgeId) {
+      setTransitioning(false)
+      setPendingBuiltinTransition(null)
+      return
+    }
+
+    const edge = manifestRef.current.edgeMap[edgeId]
+    const fromNodeId = edge.fromNodeId
+
+    // Find the hotspot on the source node to get hotspot position
+    const fromNode = manifestRef.current.nodeMap[fromNodeId]
+    const hotspot = fromNode?.hotspots?.find(h => h.targetNodeId === pendingBuiltinTransition.targetNodeId)
+
+    if (!hotspot) {
+      setTransitioning(false)
+      setPendingBuiltinTransition(null)
+      return
+    }
+
+    // Get the container element
+    const container = containerRef.current
+    if (!container) {
+      setTransitioning(false)
+      setPendingBuiltinTransition(null)
+      return
+    }
+
+    // Get the current node image element (the main img element)
+    const imgEl = container.querySelector('img')
+    if (!imgEl) {
+      setTransitioning(false)
+      setPendingBuiltinTransition(null)
+      return
+    }
+
+    // Create a temporary container for transition elements
+    const tempContainer = document.createElement('div')
+    tempContainer.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%;'
+    container.appendChild(tempContainer)
+
+    // Clone the current image as fromEl
+    const fromEl = imgEl.cloneNode(true) as HTMLElement
+    fromEl.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;'
+
+    // Create the toEl with the target node image
+    const targetNode = manifestRef.current.nodeMap[pendingBuiltinTransition.targetNodeId]
+    const toImg = document.createElement('img')
+    toImg.src = targetNode.imageUrl
+    toImg.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0;'
+
+    tempContainer.appendChild(fromEl)
+    tempContainer.appendChild(toImg)
+
+    // Wait for toImg to load
+    toImg.onload = () => {
+      const context = {
+        container: tempContainer,
+        fromNodeEl: fromEl,
+        toNodeEl: toImg,
+        hotspot: { x: hotspot.normalizedX, y: hotspot.normalizedY },
+        config: pendingBuiltinTransition.builtinConfig,
+      }
+
+      pendingBuiltinTransition.transition.play(context).then(() => {
+        // Cleanup temp container
+        if (tempContainer.parentNode) {
+          tempContainer.parentNode.removeChild(tempContainer)
+        }
+        switchNode(pendingBuiltinTransition.targetNodeId)
+      })
+    }
+
+    toImg.onerror = () => {
+      if (tempContainer.parentNode) {
+        tempContainer.parentNode.removeChild(tempContainer)
+      }
+      setTransitioning(false)
+      setPendingBuiltinTransition(null)
+    }
+  }, [pendingBuiltinTransition])
 
   // Build breadcrumb path from root to current node
   const buildBreadcrumb = (m: PublishManifest, nodeId: string): { id: string; title: string }[] => {
