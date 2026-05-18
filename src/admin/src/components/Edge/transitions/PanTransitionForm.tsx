@@ -65,7 +65,10 @@ export function PanTransitionForm({
     }
     setPreviewing(false)
     setPreviewProgress(0)
-    if (fromElRef.current) fromElRef.current.style.transform = ''
+    if (fromElRef.current) {
+      fromElRef.current.style.transform = ''
+      fromElRef.current.style.opacity = '1'
+    }
     if (toElRef.current && containerRef.current) {
       const m = 1.5
       const w = containerRef.current.offsetWidth
@@ -124,10 +127,11 @@ export function PanTransitionForm({
 
       if (fromElRef.current) {
         fromElRef.current.style.transform = `translate(${fx}px, ${fy}px)`
+        fromElRef.current.style.opacity = String(1 - easedProgress)
       }
       if (toElRef.current) {
         toElRef.current.style.transform = `translate(${tx}px, ${ty}px)`
-        toElRef.current.style.opacity = '1'
+        toElRef.current.style.opacity = String(easedProgress)
       }
 
       if (progress < 1) {
@@ -160,7 +164,7 @@ export function PanTransitionForm({
         case 'down': ty = h * m; break
       }
       toElRef.current.style.transform = `translate(${tx}px, ${ty}px)`
-      toElRef.current.style.opacity = '0'
+      toElRef.current.style.opacity = '0'  // Start fully transparent
     }
   }, [config.direction, fromImageUrl, toImageUrl])
 

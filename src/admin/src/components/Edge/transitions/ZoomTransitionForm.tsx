@@ -93,9 +93,11 @@ export function ZoomTransitionForm({
       const progress = Math.min(elapsed / duration, 1)
       const easedProgress = getEasingFn(config.easing)(progress)
 
+      // "in" = zoom in (fromNode scales up, toNode fades in from hotspot)
+      // "out" = zoom out (fromNode shrinks, toNode is already visible)
       const currentScale = config.direction === 'in'
-        ? 1 - (1 - 1 / scale) * easedProgress
-        : 1 + (scale - 1) * easedProgress
+        ? 1 + (scale - 1) * easedProgress  // Scale UP from 1 to scale
+        : scale - (scale - 1) * easedProgress  // Scale DOWN from scale to 1
 
       // Calculate translation to keep hotspot position stable
       const tx = (centerX - 0.5) * (1 - currentScale) * 100
@@ -103,10 +105,11 @@ export function ZoomTransitionForm({
 
       if (fromElRef.current) {
         fromElRef.current.style.transform = `scale(${currentScale}) translate(${tx}%, ${ty}%)`
-        fromElRef.current.style.opacity = String(config.direction === 'in' ? 1 : 1 - easedProgress * 0.5)
+        fromElRef.current.style.opacity = String(config.direction === 'in' ? 1 : 1 - easedProgress)
       }
       if (toElRef.current) {
-        toElRef.current.style.opacity = String(progress > 0.3 ? (progress - 0.3) / 0.7 : 0)
+        // toNode fades in as fromNode leaves
+        toElRef.current.style.opacity = String(easedProgress)
       }
 
       if (progress < 1) {

@@ -69,7 +69,10 @@ export function FlipTransitionForm({
       animationRef.current = null
     }
     setPreviewing(false)
-    if (fromElRef.current) fromElRef.current.style.transform = ''
+    if (fromElRef.current) {
+      fromElRef.current.style.transform = ''
+      fromElRef.current.style.opacity = '1'
+    }
     if (toElRef.current) toElRef.current.style.opacity = '0'
   }
 
