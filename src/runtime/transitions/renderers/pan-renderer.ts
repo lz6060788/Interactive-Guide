@@ -13,8 +13,12 @@ export class PanRenderer implements TransitionRenderer {
   private fromEl: HTMLElement | null = null
   private toEl: HTMLElement | null = null
   private styleEl: HTMLStyleElement | null = null
+  private config: PanTransitionConfig | null = null
 
   renderSetup(context: TransitionContext): void {
+    // Store config for later use
+    this.config = context.config as PanTransitionConfig
+
     // Inject CSS if not already present
     if (!document.getElementById('transition-pan-styles')) {
       this.styleEl = document.createElement('style')
@@ -46,26 +50,27 @@ export class PanRenderer implements TransitionRenderer {
     this.toEl.style.objectFit = 'contain'
 
     // Apply initial offset based on direction
-    const config = context.config as PanTransitionConfig
-    const offset = this.calculateOffset(context, config.direction)
+    const offset = this.calculateOffset(context, this.config.direction)
 
     this.containerEl.appendChild(this.fromEl)
     this.containerEl.appendChild(this.toEl)
     context.container.appendChild(this.containerEl)
 
-    // Apply initial transform to toEl
+    // Apply initial transform and opacity to toEl
     this.toEl.style.transform = `translate(${offset.x}px, ${offset.y}px)`
     this.toEl.style.transition = 'none'
+    this.toEl.style.opacity = '0'
   }
 
   applyAnimation(progress: number): void {
-    if (!this.fromEl || !this.toEl) return
+    if (!this.fromEl || !this.toEl || !this.config) return
 
-    const config = this.getConfig()
-    const offset = this.calculateOffsetFromProgress(this.fromEl, this.toEl, config.direction, progress)
+    const offset = this.calculateOffsetFromProgress(this.fromEl, this.toEl, this.config.direction, progress)
 
     this.fromEl.style.transform = `translate(${offset.fromX}px, ${offset.fromY}px)`
+    this.fromEl.style.opacity = String(1 - progress)
     this.toEl.style.transform = `translate(${offset.toX}px, ${offset.toY}px)`
+    this.toEl.style.opacity = String(progress)
   }
 
   renderCleanup(): void {
@@ -75,6 +80,7 @@ export class PanRenderer implements TransitionRenderer {
     this.containerEl = null
     this.fromEl = null
     this.toEl = null
+    this.config = null
     if (this.styleEl && this.styleEl.parentNode) {
       this.styleEl.parentNode.removeChild(this.styleEl)
       this.styleEl = null
@@ -124,14 +130,5 @@ export class PanRenderer implements TransitionRenderer {
     }
 
     return { fromX, fromY, toX, toY }
-  }
-
-  private getConfig(): PanTransitionConfig {
-    return {
-      type: 'pan',
-      direction: 'left',
-      duration: 600,
-      easing: 'ease-in-out',
-    }
   }
 }

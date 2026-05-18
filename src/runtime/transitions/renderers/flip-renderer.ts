@@ -15,8 +15,12 @@ export class FlipRenderer implements TransitionRenderer {
   private fromEl: HTMLElement | null = null
   private toEl: HTMLElement | null = null
   private styleEl: HTMLStyleElement | null = null
+  private config: FlipTransitionConfig | null = null
 
   renderSetup(context: TransitionContext): void {
+    // Store config for later use
+    this.config = context.config as FlipTransitionConfig
+
     if (!document.getElementById('transition-flip-styles')) {
       this.styleEl = document.createElement('style')
       this.styleEl.id = 'transition-flip-styles'
@@ -24,8 +28,7 @@ export class FlipRenderer implements TransitionRenderer {
       document.head.appendChild(this.styleEl)
     }
 
-    const config = context.config as FlipTransitionConfig
-    const isHorizontal = config.direction === 'horizontal'
+    const isHorizontal = this.config.direction === 'horizontal'
 
     // Container with perspective
     this.containerEl = document.createElement('div')
@@ -66,10 +69,9 @@ export class FlipRenderer implements TransitionRenderer {
   }
 
   applyAnimation(progress: number): void {
-    if (!this.sceneEl || !this.fromEl || !this.toEl) return
+    if (!this.sceneEl || !this.fromEl || !this.toEl || !this.config) return
 
-    const config = this.getConfig()
-    const isHorizontal = config.direction === 'horizontal'
+    const isHorizontal = this.config.direction === 'horizontal'
     const axis = isHorizontal ? 'Y' : 'X'
     const maxAngle = 90
 
@@ -77,11 +79,9 @@ export class FlipRenderer implements TransitionRenderer {
     const rotateAngle = progress * maxAngle
     this.sceneEl.style.transform = `rotate${axis}(${rotateAngle}deg)`
 
-    // Fade in toEl as flip progresses (after 50%)
-    if (progress > 0.5) {
-      const toOpacity = (progress - 0.5) * 2  // 0 to 1 in the second half
-      this.toEl!.style.opacity = String(toOpacity)
-    }
+    // Crossfade: fromEl fades out, toEl fades in
+    this.fromEl.style.opacity = String(1 - progress)
+    this.toEl.style.opacity = String(progress)
   }
 
   renderCleanup(): void {
@@ -92,19 +92,10 @@ export class FlipRenderer implements TransitionRenderer {
     this.sceneEl = null
     this.fromEl = null
     this.toEl = null
+    this.config = null
     if (this.styleEl && this.styleEl.parentNode) {
       this.styleEl.parentNode.removeChild(this.styleEl)
       this.styleEl = null
-    }
-  }
-
-  private getConfig(): FlipTransitionConfig {
-    return {
-      type: 'flip',
-      direction: 'horizontal',
-      flipStyle: 'fade',
-      duration: 600,
-      easing: 'ease-in-out',
     }
   }
 }
