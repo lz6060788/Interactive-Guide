@@ -897,6 +897,8 @@ export class BuildPipeline {
         fromNodeId: e.fromNodeId,
         toNodeId: e.toNodeId,
         relationLabel: e.relationLabel,
+        transitionType: e.transitionType,
+        builtinTransition: e.builtinTransition,
         videoUrl: hasVideo ? `${mediaBase}/assets/edges/${e.id}.mp4` : undefined,
       }
     })
@@ -962,6 +964,8 @@ export class BuildPipeline {
         fromNodeId: e.fromNodeId,
         toNodeId: e.toNodeId,
         relationLabel: e.relationLabel,
+        transitionType: e.transitionType,
+        builtinTransition: e.builtinTransition,
         videoUrl: hasVideo ? `${mediaBase}/edges/${e.id}.mp4` : undefined,
       }
     })

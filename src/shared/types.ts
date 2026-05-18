@@ -119,6 +119,8 @@ export interface KnowledgeEdge {
   videoUrl?: string
   videoStatus?: ResourceStatus
   status?: EdgeStatus
+  transitionType?: 'video' | 'builtin' | 'none'
+  builtinTransition?: BuiltinTransitionConfig
   extensions?: Record<string, unknown>
 }
 
