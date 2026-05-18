@@ -1,7 +1,7 @@
 // ============================================================
 // Interactive Guide - Media URL Exposure
 // ============================================================
-// DashScope video API requires HTTP URLs for first_frame / last_frame.
+// Video generation APIs require HTTP-accessible URLs for first_frame / last_frame.
 // This module copies local node images to a publicly accessible HTTP path.
 // Express serves them via /api/media/_build/{buildId}/nodes/{nodeId}.png
 

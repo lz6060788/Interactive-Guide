@@ -21,6 +21,11 @@ import { AppError } from '../middleware/app-error.js'
 export class GuideService {
   constructor(private repo: Repository) {}
 
+  /** Exposes repository for edge hydration. Prefer dedicated methods where possible. */
+  get repository(): Repository {
+    return this.repo
+  }
+
   // ─── Guide CRUD ────────────────────────────────────────
 
   listGuides(): PackageListItem[] {

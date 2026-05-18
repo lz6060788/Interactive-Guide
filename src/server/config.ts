@@ -8,6 +8,10 @@
 import 'dotenv/config'
 import { z } from 'zod'
 
+// ═══════════════════════════════════════════════════════════════════
+// Utility
+// ═══════════════════════════════════════════════════════════════════
+
 function envBoolean(defaultValue: boolean) {
   return z.preprocess((value) => {
     if (typeof value === 'string') {
@@ -18,6 +22,26 @@ function envBoolean(defaultValue: boolean) {
     return value
   }, z.boolean().default(defaultValue))
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Server Config
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// Vision / LLM Provider Config (OpenAI-compatible)
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// Image Generation Config (DashScope)
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// Video Config (Routing + Aishi / WanXiang / MiniMax)
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// Object Storage Config (S3-compatible / OSS)
+// ═══════════════════════════════════════════════════════════════════
 
 const configSchema = z.object({
   PORT: z.coerce.number().default(8788),
@@ -31,14 +55,15 @@ const configSchema = z.object({
   VISION_TIMEOUT_MS: z.coerce.number().default(60000),
   VISION_TEMPERATURE: z.coerce.number().default(0.6),
 
-  // Image Generation Provider (DashScope)
+  // Image Generation Config
+  IMAGE_PROVIDER: z.enum(['dashscope', 'openai']).default('dashscope'),
   IMAGE_API_KEY: z.string().default(''),
   IMAGE_BASE_URL: z.string().default('https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation'),
   IMAGE_MODEL: z.string().default('qwen-image-2.0-pro'),
   IMAGE_TIMEOUT_MS: z.coerce.number().default(120000),
 
   // Video Generation Routing
-  VIDEO_PROVIDER: z.enum(['dashscope', 'minimax', 'wanxiang']).default('dashscope'),
+  VIDEO_PROVIDER: z.enum(['aishi', 'minimax', 'wanxiang']).default('aishi'),
   VIDEO_TIMEOUT_MS: z.coerce.number().default(600000),
   VIDEO_POLL_INTERVAL_MS: z.coerce.number().default(15000),
 
