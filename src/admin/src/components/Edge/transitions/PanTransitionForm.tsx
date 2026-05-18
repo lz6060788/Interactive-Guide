@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Box, Text, Button, Flex, Select, VStack } from '@chakra-ui/react'
+import { Box, Text, Button, Flex, VStack } from '@chakra-ui/react'
 import { Play, Pause } from 'lucide-react'
 
 const BORDER = '#2a2d3a'
@@ -169,16 +169,16 @@ export function PanTransitionForm({
       <VStack align="stretch" gap="3" mb="4">
         <Box>
           <Text fontSize="xs" color="text-tertiary" mb="1">方向</Text>
-          <Select
+          <select
             value={config.direction}
             onChange={(e) => onChange({ ...config, direction: e.target.value as PanConfig['direction'] })}
             disabled={disabled}
-            style={{ background: '#0a0b0f', border: `1px solid ${BORDER}`, color: '#e4e4e7' }}
+            style={{ width: '100%', background: '#0a0b0f', border: `1px solid ${BORDER}`, borderRadius: '6px', color: '#e4e4e7', fontSize: '13px', padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }}
           >
             {DIRECTION_OPTIONS.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
-          </Select>
+          </select>
         </Box>
 
         <Box>
@@ -204,16 +204,16 @@ export function PanTransitionForm({
 
         <Box>
           <Text fontSize="xs" color="text-tertiary" mb="1">缓动函数</Text>
-          <Select
+          <select
             value={config.easing || 'ease-in-out'}
             onChange={(e) => onChange({ ...config, easing: e.target.value as PanConfig['easing'] })}
             disabled={disabled}
-            style={{ background: '#0a0b0f', border: `1px solid ${BORDER}`, color: '#e4e4e7' }}
+            style={{ width: '100%', background: '#0a0b0f', border: `1px solid ${BORDER}`, borderRadius: '6px', color: '#e4e4e7', fontSize: '13px', padding: '8px 12px', outline: 'none', boxSizing: 'border-box' }}
           >
             {EASING_OPTIONS.map(opt => (
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
-          </Select>
+          </select>
         </Box>
       </VStack>
 
