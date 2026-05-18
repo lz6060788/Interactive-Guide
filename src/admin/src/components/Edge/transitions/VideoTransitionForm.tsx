@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Box, Text, Button, Flex } from '@chakra-ui/react'
 import { Upload } from 'lucide-react'
-import { uploadEdgeVideo } from '../../../../services/api'
+import { uploadEdgeVideo } from '../../../services/api'
 
 const BORDER = '#2a2d3a'
 

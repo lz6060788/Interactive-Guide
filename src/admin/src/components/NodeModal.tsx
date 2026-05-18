@@ -4,7 +4,7 @@ import {
   IconButton, VStack, HStack,
 } from '@chakra-ui/react'
 import { X, Crosshair, Save, Image as ImageIcon, Trash2, RefreshCw, Upload } from 'lucide-react'
-import { uploadNodeImage } from '../../services/api'
+import { uploadNodeImage } from '../services/api'
 
 const BORDER = '#2a2d3a'
 

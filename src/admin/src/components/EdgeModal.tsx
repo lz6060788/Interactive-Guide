@@ -4,7 +4,7 @@ import {
   IconButton, VStack, HStack,
 } from '@chakra-ui/react'
 import { X, Save, RefreshCw, Upload } from 'lucide-react'
-import { uploadEdgeVideo } from '../../services/api'
+import { uploadEdgeVideo } from '../services/api'
 import { TransitionSelector, VideoTransitionForm, PanTransitionForm, FlipTransitionForm, ZoomTransitionForm, type TransitionOption } from './Edge/transitions'
 import type { PanConfig, FlipConfig, ZoomConfig } from './Edge/transitions'
 
