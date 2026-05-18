@@ -13,6 +13,38 @@ export type BuildStatus = 'pending' | 'running' | 'partial_failed' | 'success' |
 export type SubTaskStatus = 'pending' | 'running' | 'success' | 'failed'
 export type TransitionStrategyMode = 'element-bridge' | 'fallback-navigation' | 'manual-directed'
 export type TransitionDescriptionMode = 'auto' | 'manual'
+
+// ─── Builtin Transition Types ─────────────────────────────────
+
+export type BuiltinTransitionType = 'pan' | 'flip' | 'zoom'
+export type EasingType = 'ease-in-out' | 'ease-in' | 'ease-out' | 'linear'
+
+export interface PanTransitionConfig {
+  type: 'pan'
+  direction: 'left' | 'right' | 'up' | 'down'
+  duration: number
+  easing: EasingType
+}
+
+export interface FlipTransitionConfig {
+  type: 'flip'
+  direction: 'horizontal' | 'vertical'
+  flipStyle: 'fade' | 'cut' | 'curl'
+  duration: number
+  easing: EasingType
+}
+
+export interface ZoomTransitionConfig {
+  type: 'zoom'
+  direction: 'in' | 'out'
+  scale: number
+  centerX: number
+  centerY: number
+  duration: number
+  easing: EasingType
+}
+
+export type BuiltinTransitionConfig = PanTransitionConfig | FlipTransitionConfig | ZoomTransitionConfig
 export type NodeTopicType =
   | 'general'
   | 'news-report'
@@ -212,6 +244,8 @@ export interface PublishEdge {
   fromNodeId: string
   toNodeId: string
   relationLabel?: string
+  transitionType?: 'video' | 'builtin' | 'none'
+  builtinTransition?: BuiltinTransitionConfig
   videoUrl?: string
 }
 
