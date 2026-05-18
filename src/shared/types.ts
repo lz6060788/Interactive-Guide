@@ -11,7 +11,8 @@ export type NodeStatus = 'draft' | 'ready' | 'archived'
 export type EdgeStatus = 'draft' | 'ready' | 'archived'
 export type BuildStatus = 'pending' | 'running' | 'partial_failed' | 'success' | 'failed'
 export type SubTaskStatus = 'pending' | 'running' | 'success' | 'failed'
-export type TransitionStrategyMode = 'element-bridge' | 'fallback-navigation'
+export type TransitionStrategyMode = 'element-bridge' | 'fallback-navigation' | 'manual-directed'
+export type TransitionDescriptionMode = 'auto' | 'manual'
 export type NodeTopicType =
   | 'general'
   | 'news-report'
@@ -75,6 +76,8 @@ export interface KnowledgeEdge {
   fromNodeId: string
   toNodeId: string
   relationLabel?: string
+  transitionDescriptionMode?: TransitionDescriptionMode
+  manualTransitionPrompt?: string
   promptStatus?: SubTaskStatus
   transitionStrategyMode?: TransitionStrategyMode
   transitionStrategyReason?: string

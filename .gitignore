@@ -16,3 +16,7 @@ data/publish/*
 /data
 docs
 *.png
+
+*.map
+*.d.ts
+*.js
