@@ -21,6 +21,7 @@ export class FsRepository implements Repository {
   private guidesDir: string
   private generatesDir: string
   private publishDir: string
+  private workspaceDir: string
   private guides: Map<string, KnowledgePackage> = new Map()
   private generates: Map<string, PackageBuildRecord> = new Map()
 
@@ -29,6 +30,7 @@ export class FsRepository implements Repository {
     this.guidesDir = path.join(this.dataDir, 'guides')
     this.generatesDir = path.join(this.dataDir, 'generates')
     this.publishDir = path.join(this.dataDir, 'publish')
+    this.workspaceDir = path.join(this.dataDir, 'workspace')
     this.ensureDirs()
     this.loadAllFromDisk()
   }
@@ -36,7 +38,7 @@ export class FsRepository implements Repository {
   // ─── Initialization ──────────────────────────────────────
 
   private ensureDirs() {
-    for (const dir of [this.guidesDir, this.generatesDir, this.publishDir]) {
+    for (const dir of [this.guidesDir, this.generatesDir, this.publishDir, this.workspaceDir]) {
       fs.mkdirSync(dir, { recursive: true })
     }
   }

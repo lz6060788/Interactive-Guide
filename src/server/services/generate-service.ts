@@ -334,6 +334,12 @@ export class GenerateService {
         this.repo.copyFile(imageResult.localPath, publishImagePath)
       }
 
+      // Also update workspace
+      const workspaceImagePath = `workspace/${guide.id}/nodes/${node.id}.png`
+      this.repo.copyFile(imageResult.localPath, workspaceImagePath)
+      const workspaceManifest = this.buildWorkspaceManifest(guide)
+      this.repo.writeJson(`workspace/${guide.id}/manifest.json`, workspaceManifest)
+
       nodeRecord.imageStatus = 'success'
       nodeRecord.imagePath = buildImagePath
       nodeRecord.modelInputUrl = imageResult.modelInputUrl
@@ -403,7 +409,9 @@ export class GenerateService {
     }
 
     try {
-      const visualPlan = await this.planTransitionVisuals(generateId, edge, fromNode, toNode, guide)
+      const visualPlan = this.resolveTransitionDescriptionMode(edge) === 'manual'
+        ? this.buildManualTransitionPlan(edge)
+        : await this.planTransitionVisuals(generateId, edge, fromNode, toNode, guide)
       const transitionPrompt = this.buildTransitionPrompt(edge, fromNode, toNode, guide, visualPlan)
       const transitionJsonPath = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.json`
 
@@ -419,6 +427,8 @@ export class GenerateService {
           fromNodeId: edge.fromNodeId,
           toNodeId: edge.toNodeId,
           relationLabel: edge.relationLabel,
+          descriptionMode: this.resolveTransitionDescriptionMode(edge),
+          manualTransitionPrompt: this.getManualTransitionDescription(edge) || undefined,
           strategyMode: visualPlan.mode,
           strategyReason: visualPlan.reason,
           visualPlan,
@@ -476,6 +486,12 @@ export class GenerateService {
       this.repo.saveGuide(updatedGuide)
       const manifest = this.buildManifest(updatedGuide, generateId)
       this.repo.writeJson(`publish/${guide.id}/${guide.version}/manifest.json`, manifest)
+
+      // Also update workspace
+      const workspaceVideoPath = `workspace/${guide.id}/edges/${edge.id}.mp4`
+      this.repo.copyFile(videoResult.localPath, workspaceVideoPath)
+      const workspaceManifest = this.buildWorkspaceManifest(updatedGuide)
+      this.repo.writeJson(`workspace/${guide.id}/manifest.json`, workspaceManifest)
 
       this.appendLog(generateId, `[Regen] Edge "${edge.id}" done (cached: ${videoResult.fromCache})`)
     } catch (e: any) {
@@ -1096,7 +1112,9 @@ export class GenerateService {
         // Build transition prompt
         const fromNode = guide.nodes.find(n => n.id === edge.fromNodeId)
         const toNode = guide.nodes.find(n => n.id === edge.toNodeId)
-        const visualPlan = await this.planTransitionVisuals(generateId, edge, fromNode, toNode, guide)
+        const visualPlan = this.resolveTransitionDescriptionMode(edge) === 'manual'
+          ? this.buildManualTransitionPlan(edge)
+          : await this.planTransitionVisuals(generateId, edge, fromNode, toNode, guide)
         const transitionPrompt = this.buildTransitionPrompt(edge, fromNode, toNode, guide, visualPlan)
         edgeRecord.promptStatus = 'success'
         edgeRecord.transitionStrategyMode = visualPlan.mode
@@ -1109,6 +1127,8 @@ export class GenerateService {
             fromNodeId: edge.fromNodeId,
             toNodeId: edge.toNodeId,
             relationLabel: edge.relationLabel,
+            descriptionMode: this.resolveTransitionDescriptionMode(edge),
+            manualTransitionPrompt: this.getManualTransitionDescription(edge) || undefined,
             strategyMode: visualPlan.mode,
             strategyReason: visualPlan.reason,
             visualPlan,
@@ -1164,6 +1184,9 @@ export class GenerateService {
   // ─── Stage 6: Publish ──────────────────────────────────
 
   private publishFromGenerate(generateId: string, guide: KnowledgePackage) {
+    // Sync current build assets to workspace first
+    this.syncAssetsToWorkspace(guide, generateId)
+
     const publishDir = `publish/${guide.id}/${guide.version}`
     this.repo.ensureDir(`${publishDir}/assets/nodes`)
     this.repo.ensureDir(`${publishDir}/assets/edges`)
@@ -1258,6 +1281,96 @@ export class GenerateService {
         manifestVersion: '1.0.0',
       },
     }
+  }
+
+  // ─── Workspace Manifest Builder ──────────────────────────
+
+  private buildWorkspaceManifest(guide: KnowledgePackage): PublishManifest {
+    const mediaBase = `/api/media/workspace/${guide.id}`
+
+    const nodes = guide.nodes.map(n => {
+      const summary = this.getNodeSummary(n)
+      const keyPoints = this.getNodeKeyPoints(n)
+
+      return {
+        id: n.id,
+        title: n.title,
+        summary: summary || undefined,
+        keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
+        topicType: n.topicType,
+        sourceText: n.sourceText?.trim() || undefined,
+        imageUrl: `${mediaBase}/nodes/${n.id}.png`,
+        hotspots: (n.hotspots ?? []).map(hs => ({
+          edgeId: hs.edgeId,
+          targetNodeId: hs.targetNodeId,
+          label: hs.label,
+          normalizedX: hs.normalizedX,
+          normalizedY: hs.normalizedY,
+          radius: hs.radius,
+          markerType: 'dot' as const,
+        })),
+      }
+    })
+
+    const edges = guide.edges.map(e => {
+      const videoPath = `workspace/${guide.id}/edges/${e.id}.mp4`
+      const hasVideo = this.repo.fileExists(videoPath)
+
+      return {
+        id: e.id,
+        fromNodeId: e.fromNodeId,
+        toNodeId: e.toNodeId,
+        relationLabel: e.relationLabel,
+        videoUrl: hasVideo ? `${mediaBase}/edges/${e.id}.mp4` : undefined,
+      }
+    })
+
+    const nodeMap: Record<string, (typeof nodes)[0]> = {}
+    for (const n of nodes) nodeMap[n.id] = n
+
+    const edgeMap: Record<string, (typeof edges)[0]> = {}
+    for (const e of edges) edgeMap[e.id] = e
+
+    return {
+      packageId: guide.id,
+      version: guide.version,
+      title: guide.title,
+      rootNodeId: 'root',
+      resolution: guide.resolution,
+      visualStyle: guide.visualStyle,
+      transitionStyle: guide.transitionStyle,
+      nodes,
+      edges,
+      nodeMap,
+      edgeMap,
+      metadata: {
+        generatedAt: nowISO(),
+        manifestVersion: '1.0.0',
+      },
+    }
+  }
+
+  private syncAssetsToWorkspace(guide: KnowledgePackage, generateId: string): void {
+    const workspaceDir = `workspace/${guide.id}`
+    this.repo.ensureDir(`${workspaceDir}/nodes`)
+    this.repo.ensureDir(`${workspaceDir}/edges`)
+
+    for (const node of guide.nodes) {
+      const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
+      if (this.repo.fileExists(src)) {
+        this.repo.copyFile(src, `${workspaceDir}/nodes/${node.id}.png`)
+      }
+    }
+
+    for (const edge of guide.edges) {
+      const src = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.mp4`
+      if (this.repo.fileExists(src)) {
+        this.repo.copyFile(src, `${workspaceDir}/edges/${edge.id}.mp4`)
+      }
+    }
+
+    const manifest = this.buildWorkspaceManifest(guide)
+    this.repo.writeJson(`${workspaceDir}/manifest.json`, manifest)
   }
 
   private buildRuntimeBundleManifest(
@@ -1614,6 +1727,7 @@ export class GenerateService {
     const handoffPhase = visualPlan?.handoffPhase?.trim()
     const landingPhase = visualPlan?.landingPhase?.trim()
     const avoidances = (visualPlan?.avoidances ?? []).slice(0, 4)
+    const directorNotes = this.getManualTransitionDescription(edge)
 
     return [
       'Create a short navigation transition between two connected infographic screens using the provided first frame and last frame as hard visual constraints.',
@@ -1635,6 +1749,9 @@ export class GenerateService {
       openingPhase ? `- Opening: ${openingPhase}.` : '',
       handoffPhase ? `- Handoff: ${handoffPhase}.` : '',
       landingPhase ? `- Landing: ${landingPhase}.` : '',
+      directorNotes ? '' : '',
+      directorNotes ? 'Priority director notes (follow these with higher priority when they remain consistent with the provided first and last frame):' : '',
+      directorNotes || '',
       '',
       'Global rules:',
       '- Match the first frame exactly at the beginning and the last frame exactly at the end.',
@@ -1652,6 +1769,39 @@ export class GenerateService {
         ? `- Avoid: ${avoidances.join('; ')}.`
         : '- Avoid: page-turn, swipe, late hard cut, snap replacement, fake camera shake, major composition drift.',
     ].filter(Boolean).join('\n')
+  }
+
+  private resolveTransitionDescriptionMode(edge: KnowledgeEdge): 'auto' | 'manual' {
+    return edge.transitionDescriptionMode === 'manual' ? 'manual' : 'auto'
+  }
+
+  private getManualTransitionDescription(edge: KnowledgeEdge): string {
+    return (
+      edge.manualTransitionPrompt?.trim()
+      ?? (
+        this.resolveTransitionDescriptionMode(edge) === 'manual'
+          ? edge.transitionPrompt?.trim()
+          : ''
+      )
+      ?? ''
+    )
+  }
+
+  private buildManualTransitionPlan(edge: KnowledgeEdge): TransitionVisualPlan {
+    const relation = edge.relationLabel?.trim() || '当前边'
+    if (!this.getManualTransitionDescription(edge)) {
+      throw new Error(`Edge "${edge.id}" is set to manual transition mode but no manual transition description was provided`)
+    }
+
+    return {
+      mode: 'manual-directed',
+      reason: `该转场使用人工编写的转场描述，跳过 AI 自动转场规划。主题：${relation}`,
+      entryFocus: '优先遵循人工描述中指定的视觉锚点与进入区域。',
+      openingPhase: '按人工描述执行起幅与镜头推进，不再调用 AI 规划首段转场。',
+      handoffPhase: '按人工描述执行中段元素叠化、匹配切换或结构接管。',
+      landingPhase: '按人工描述完成落幅与终帧对齐，确保结尾精确落在目标页。',
+      avoidances: ['不要偏离人工描述', '不要额外发明无关中间层', '不要破坏首尾帧硬约束'],
+    }
   }
 
   private async planTransitionVisuals(

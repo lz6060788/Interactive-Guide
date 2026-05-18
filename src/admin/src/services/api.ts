@@ -61,6 +61,35 @@ export const cancelGenerate = (generateId: string) =>
 export const fetchGenerateLogs = (generateId: string) =>
   request<string[]>(`/generates/${generateId}/logs`)
 
+// Upload
+export const uploadNodeImage = async (guideId: string, nodeId: string, file: File): Promise<{ imageUrl: string }> => {
+  const res = await fetch(`${BASE_URL}/guides/${guideId}/nodes/${nodeId}/upload-image`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'image/png' },
+    body: await file.arrayBuffer(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  const json = await res.json()
+  return json.data !== undefined ? json.data : json
+}
+
+export const uploadEdgeVideo = async (guideId: string, edgeId: string, file: File): Promise<{ videoUrl: string }> => {
+  const res = await fetch(`${BASE_URL}/guides/${guideId}/edges/${edgeId}/upload-video`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'video/mp4' },
+    body: await file.arrayBuffer(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  const json = await res.json()
+  return json.data !== undefined ? json.data : json
+}
+
 // Manifest
 export const fetchManifest = (guideId: string) => {
   // If ?t= is passed in guideId, pass it correctly to backend via query string

@@ -59,6 +59,14 @@ export class GuideService {
 
     if (latest) {
       for (const node of guide.nodes) {
+        // Prefer workspace assets over generate history
+        const workspaceImagePath = `workspace/${guide.id}/nodes/${node.id}.png`
+        if (this.repo.fileExists(workspaceImagePath)) {
+          node.imageStatus = 'success'
+          node.imageUrl = `/api/media/workspace/${guide.id}/nodes/${node.id}.png`
+          continue
+        }
+
         const record = this.repo.readJson<{
           status?: string
           imageStatus?: string
@@ -74,6 +82,14 @@ export class GuideService {
       }
 
       for (const edge of guide.edges) {
+        // Prefer workspace assets over generate history
+        const workspaceVideoPath = `workspace/${guide.id}/edges/${edge.id}.mp4`
+        if (this.repo.fileExists(workspaceVideoPath)) {
+          edge.videoStatus = 'success'
+          edge.videoUrl = `/api/media/workspace/${guide.id}/edges/${edge.id}.mp4`
+          continue
+        }
+
         const record = this.repo.readJson<{
           status?: string
           videoStatus?: string
@@ -351,10 +367,78 @@ export class GuideService {
     const guide = this.repo.loadAllGuides().get(guideId)
     if (!guide) return null
 
-    // We must pass bypassCache flag or refresh the disk state explicitly if needed,
-    // but repo.readJson handles this if fs.readFileSync is used (which bypasses memory cache).
+    // Try workspace first, then fall back to publish
+    const workspaceManifest = this.repo.readJson<PublishManifest>(
+      `workspace/${guideId}/manifest.json`,
+    )
+    if (workspaceManifest) return workspaceManifest
+
     return this.repo.readJson<PublishManifest>(
       `publish/${guideId}/${guide.version}/manifest.json`,
     )
+  }
+
+  // ─── Upload ──────────────────────────────────────────────
+
+  uploadNodeImage(guideId: string, nodeId: string, buffer: Buffer): { imageUrl: string } {
+    this.repo.refresh()
+    const guide = this.repo.loadAllGuides().get(guideId)
+    if (!guide) throw AppError.notFound(`Guide "${guideId}" not found`)
+    if (!guide.nodes.some(n => n.id === nodeId)) {
+      throw AppError.notFound(`Node "${nodeId}" not found in guide "${guideId}"`)
+    }
+
+    const filePath = `workspace/${guideId}/nodes/${nodeId}.png`
+    this.repo.ensureDir(`workspace/${guideId}/nodes`)
+    this.repo.writeFile(filePath, buffer)
+
+    // Update workspace manifest if it exists
+    this.patchWorkspaceManifest(guideId, manifest => {
+      const node = manifest.nodes.find(n => n.id === nodeId)
+      if (node) {
+        node.imageUrl = `/api/media/workspace/${guideId}/nodes/${nodeId}.png`
+      }
+      if (manifest.nodeMap?.[nodeId]) {
+        manifest.nodeMap[nodeId].imageUrl = `/api/media/workspace/${guideId}/nodes/${nodeId}.png`
+      }
+    })
+
+    return { imageUrl: `/api/media/workspace/${guideId}/nodes/${nodeId}.png` }
+  }
+
+  uploadEdgeVideo(guideId: string, edgeId: string, buffer: Buffer): { videoUrl: string } {
+    this.repo.refresh()
+    const guide = this.repo.loadAllGuides().get(guideId)
+    if (!guide) throw AppError.notFound(`Guide "${guideId}" not found`)
+    if (!guide.edges.some(e => e.id === edgeId)) {
+      throw AppError.notFound(`Edge "${edgeId}" not found in guide "${guideId}"`)
+    }
+
+    const filePath = `workspace/${guideId}/edges/${edgeId}.mp4`
+    this.repo.ensureDir(`workspace/${guideId}/edges`)
+    this.repo.writeFile(filePath, buffer)
+
+    // Update workspace manifest if it exists
+    this.patchWorkspaceManifest(guideId, manifest => {
+      const edge = manifest.edges.find(e => e.id === edgeId)
+      if (edge) {
+        edge.videoUrl = `/api/media/workspace/${guideId}/edges/${edgeId}.mp4`
+      }
+      if (manifest.edgeMap?.[edgeId]) {
+        manifest.edgeMap[edgeId].videoUrl = `/api/media/workspace/${guideId}/edges/${edgeId}.mp4`
+      }
+    })
+
+    return { videoUrl: `/api/media/workspace/${guideId}/edges/${edgeId}.mp4` }
+  }
+
+  private patchWorkspaceManifest(
+    guideId: string,
+    patcher: (manifest: PublishManifest) => void,
+  ): void {
+    const manifest = this.getManifest(guideId)
+    if (!manifest) return
+    patcher(manifest)
+    this.repo.writeJson(`workspace/${guideId}/manifest.json`, manifest)
   }
 }

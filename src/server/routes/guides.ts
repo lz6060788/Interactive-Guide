@@ -6,7 +6,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { Router, type Request, type Response, type NextFunction } from 'express'
+import express, { Router, type Request, type Response, type NextFunction } from 'express'
 import { GuideService } from '../services/guide-service.js'
 import type { KnowledgePackage } from '../../shared/types.js'
 
@@ -39,8 +39,15 @@ function hydrateGuideEdgeTransitions(guide: KnowledgePackage): KnowledgePackage 
 
     try {
       const transition = JSON.parse(fs.readFileSync(transitionPath, 'utf-8'))
+      const manualTransitionPrompt = edge.manualTransitionPrompt
+        ?? (
+          edge.transitionDescriptionMode === 'manual' && edge.transitionPrompt
+            ? edge.transitionPrompt
+            : undefined
+        )
       return {
         ...edge,
+        manualTransitionPrompt,
         transitionStrategyMode: transition.strategyMode ?? edge.transitionStrategyMode,
         transitionStrategyReason: transition.strategyReason ?? edge.transitionStrategyReason,
         transitionPlan: transition.visualPlan ?? edge.transitionPlan,
@@ -167,6 +174,42 @@ export function createGuidesRouter(guideService: GuideService): Router {
       next(err)
     }
   })
+
+  // ─── Upload ────────────────────────────────────────────
+
+  router.post(
+    '/guides/:guideId/nodes/:nodeId/upload-image',
+    express.raw({ type: '*/*', limit: '50mb' }),
+    (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const result = guideService.uploadNodeImage(
+          String(req.params.guideId),
+          String(req.params.nodeId),
+          req.body as Buffer,
+        )
+        res.json({ data: result })
+      } catch (err) {
+        next(err)
+      }
+    },
+  )
+
+  router.post(
+    '/guides/:guideId/edges/:edgeId/upload-video',
+    express.raw({ type: '*/*', limit: '50mb' }),
+    (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const result = guideService.uploadEdgeVideo(
+          String(req.params.guideId),
+          String(req.params.edgeId),
+          req.body as Buffer,
+        )
+        res.json({ data: result })
+      } catch (err) {
+        next(err)
+      }
+    },
+  )
 
   // ─── Manifest ──────────────────────────────────────────
 

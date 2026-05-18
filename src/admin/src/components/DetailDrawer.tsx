@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Box, Flex, Text, Button, Heading, Badge,
   IconButton, VStack, HStack,
 } from '@chakra-ui/react'
-import { X, Crosshair, Save, Image as ImageIcon, Trash2, RefreshCw } from 'lucide-react'
+import { X, Crosshair, Save, Image as ImageIcon, Trash2, RefreshCw, Upload } from 'lucide-react'
+import { uploadNodeImage, uploadEdgeVideo } from '../services/api'
 
 interface Props {
   pkg: any
@@ -80,6 +81,7 @@ export function DetailDrawer({
           )}
           {selected.type === 'node' && (
             <NodeForm
+              guideId={pkg.id}
               node={pkg.nodes.find((n: any) => n.id === selected.id)}
               onSave={onSave}
               saving={saving}
@@ -91,6 +93,7 @@ export function DetailDrawer({
           )}
           {selected.type === 'edge' && (
             <EdgeForm
+              guideId={pkg.id}
               edge={pkg.edges.find((e: any) => e.id === selected.id)}
               onSave={onSave}
               saving={saving}
@@ -291,8 +294,8 @@ function PackageForm({ pkg, onSave, saving }: { pkg: any; onSave: (d: any) => vo
 
 // ─── Node Form ───────────────────────────────────
 
-function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode, onRegenerateNode, onRegenerateHotspots }: {
-  node: any; onSave: (d: any) => void; saving: boolean; onOpenHotspotEditor: (id: string) => void
+function NodeForm({ guideId, node, onSave, saving, onOpenHotspotEditor, onDeleteNode, onRegenerateNode, onRegenerateHotspots }: {
+  guideId: string; node: any; onSave: (d: any) => void; saving: boolean; onOpenHotspotEditor: (id: string) => void
   onDeleteNode?: (id: string) => void
   onRegenerateNode?: (id: string) => void
   onRegenerateHotspots?: (id: string) => Promise<void>
@@ -307,6 +310,11 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode, onR
   const [hotspotHintsText, setHotspotHintsText] = useState((node.hotspotHints || []).join('\n'))
   const [hotspotLoading, setHotspotLoading] = useState(false)
   const [hotspotMsg, setHotspotMsg] = useState<string | null>(null)
+  const [imageUrl, setImageUrl] = useState(node.imageUrl)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [uploadImageMsg, setUploadImageMsg] = useState<string | null>(null)
+
+  useEffect(() => { setImageUrl(node.imageUrl) }, [node.imageUrl])
 
   return (
     <div>
@@ -336,7 +344,7 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode, onR
       </Flex>
 
       {/* 图片预览 */}
-      {node.imageUrl && (
+      {imageUrl && (
         <Box mb="4">
           <Text fontSize="xs" color="text-tertiary" mb="1.5">图片预览</Text>
           <Box
@@ -345,15 +353,56 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode, onR
             style={{ border: `1px solid ${BORDER}` }}
           >
             <img
-              src={node.imageUrl}
+              src={imageUrl}
               alt={node.title}
               style={{ width: '100%', height: 'auto', maxHeight: '400px', objectFit: 'contain', display: 'block' }}
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
             />
           </Box>
+          <input
+            type="file"
+            accept="image/*"
+            id={`node-upload-${node.id}`}
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              setUploadingImage(true)
+              setUploadImageMsg(null)
+              try {
+                const result = await uploadNodeImage(guideId, node.id, file)
+                setImageUrl(result.imageUrl)
+                setUploadImageMsg('图片上传成功')
+                setTimeout(() => setUploadImageMsg(null), 3000)
+              } catch (err: any) {
+                setUploadImageMsg(err.message || '上传失败')
+              } finally {
+                setUploadingImage(false)
+                e.target.value = ''
+              }
+            }}
+          />
+          <Button
+            w="100%"
+            mt="2"
+            size="sm"
+            variant="ghost"
+            color="text-secondary"
+            _hover={{ bg: 'surface-raised' }}
+            loading={uploadingImage}
+            onClick={() => document.getElementById(`node-upload-${node.id}`)?.click()}
+          >
+            <Upload size={14} style={{ marginRight: 6 }} />
+            上传图片替换
+          </Button>
+          {uploadImageMsg && (
+            <Text fontSize="xs" color={uploadImageMsg.includes('成功') ? '#22c55e' : '#ef4444'} mt="1" px="1">
+              {uploadImageMsg}
+            </Text>
+          )}
         </Box>
       )}
-      {!node.imageUrl && (
+      {!imageUrl && (
         <Flex
           align="center"
           gap="2"
@@ -522,24 +571,35 @@ function NodeForm({ node, onSave, saving, onOpenHotspotEditor, onDeleteNode, onR
 // ─── Edge Form ───────────────────────────────────
 
 function EdgeForm({
+  guideId,
   edge,
   onSave,
   saving,
   onRegenerateEdge,
 }: {
+  guideId: string
   edge: any
   onSave: (d: any) => void
   saving: boolean
   onRegenerateEdge?: (id: string) => Promise<void>
 }) {
   const [relationLabel, setRelationLabel] = useState(edge.relationLabel || '')
+  const [transitionDescriptionMode, setTransitionDescriptionMode] = useState(edge.transitionDescriptionMode || 'auto')
+  const [manualTransitionPrompt, setManualTransitionPrompt] = useState(edge.manualTransitionPrompt || '')
   const [videoLoading, setVideoLoading] = useState(false)
   const [videoMsg, setVideoMsg] = useState<string | null>(null)
+  const [videoUrl, setVideoUrl] = useState(edge.videoUrl)
+  const [uploadingVideo, setUploadingVideo] = useState(false)
+  const [uploadVideoMsg, setUploadVideoMsg] = useState<string | null>(null)
   const transitionPlan = edge.transitionPlan
+
+  useEffect(() => { setVideoUrl(edge.videoUrl) }, [edge.videoUrl])
   const strategyModeLabel =
     edge.transitionStrategyMode === 'element-bridge' ? '元素桥接' :
     edge.transitionStrategyMode === 'fallback-navigation' ? '兜底导览' :
+    edge.transitionStrategyMode === 'manual-directed' ? '人工导演' :
     ''
+  const isManualMode = transitionDescriptionMode === 'manual'
   const hasTransitionDescription = Boolean(
     edge.transitionStrategyReason ||
     transitionPlan ||
@@ -552,6 +612,53 @@ function EdgeForm({
       <Field label="起始节点" value={edge.fromNodeId} disabled />
       <Field label="目标节点" value={edge.toNodeId} disabled />
       <Field label="关系文案" value={relationLabel} onChange={setRelationLabel} />
+
+      <Box mb="4">
+        <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3">
+          转场描述模式
+        </Text>
+        <HStack gap="2" align="stretch">
+          <Button
+            flex="1"
+            size="sm"
+            variant="ghost"
+            bg={!isManualMode ? 'rgba(59,130,246,0.14)' : 'rgba(92,95,119,0.08)'}
+            color={!isManualMode ? '#7dd3fc' : 'text-secondary'}
+            style={{ border: `1px solid ${!isManualMode ? 'rgba(59,130,246,0.45)' : BORDER}` }}
+            _hover={{ bg: !isManualMode ? 'rgba(59,130,246,0.2)' : 'rgba(92,95,119,0.12)' }}
+            onClick={() => setTransitionDescriptionMode('auto')}
+          >
+            AI 自动生成
+          </Button>
+          <Button
+            flex="1"
+            size="sm"
+            variant="ghost"
+            bg={isManualMode ? 'rgba(16,185,129,0.14)' : 'rgba(92,95,119,0.08)'}
+            color={isManualMode ? '#6ee7b7' : 'text-secondary'}
+            style={{ border: `1px solid ${isManualMode ? 'rgba(16,185,129,0.45)' : BORDER}` }}
+            _hover={{ bg: isManualMode ? 'rgba(16,185,129,0.2)' : 'rgba(92,95,119,0.12)' }}
+            onClick={() => setTransitionDescriptionMode('manual')}
+          >
+            手动设置
+          </Button>
+        </HStack>
+        <Text fontSize="xs" color="text-tertiary" mt="2" px="1">
+          {isManualMode
+            ? '保存后重新生成转场时，将跳过 AI 转场规划，直接使用你编写的转场描述。'
+            : '重新生成转场时，会调用 AI 自动规划转场描述。'}
+        </Text>
+      </Box>
+
+      {isManualMode && (
+        <Field
+          label="手动转场描述"
+          value={manualTransitionPrompt}
+          onChange={setManualTransitionPrompt}
+          multiline
+          rows={8}
+        />
+      )}
 
       {(edge.status || edge.promptStatus || edge.videoStatus) && (
         <Box mb="4">
@@ -575,6 +682,8 @@ function EdgeForm({
         </Box>
       )}
 
+      {!isManualMode && (
+        <>
       <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
         AI 转场描述
       </Text>
@@ -626,7 +735,7 @@ function EdgeForm({
             </Box>
           )}
           {edge.transitionPrompt && (
-            <Field label="生成提示词（只读）" value={edge.transitionPrompt} disabled multiline rows={8} mono />
+            <Field label="最终视频提示词（只读）" value={edge.transitionPrompt} disabled multiline rows={8} mono />
           )}
         </Box>
       ) : (
@@ -642,19 +751,62 @@ function EdgeForm({
           <Text fontSize="xs" color="text-tertiary">暂无 AI 转场描述，请先生成转场。</Text>
         </Flex>
       )}
+        </>
+      )}
 
-      {edge.videoUrl && (
+      {videoUrl && (
         <Box mb="4">
           <Text fontSize="xs" color="text-tertiary" mb="1.5">转场预览</Text>
           <Box rounded="md" overflow="hidden" style={{ border: `1px solid ${BORDER}` }}>
             <video
-              src={edge.videoUrl}
+              src={videoUrl}
               controls
               muted
               playsInline
               style={{ width: '100%', display: 'block', background: '#05060a' }}
             />
           </Box>
+          <input
+            type="file"
+            accept="video/*"
+            id={`edge-upload-${edge.id}`}
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              setUploadingVideo(true)
+              setUploadVideoMsg(null)
+              try {
+                const result = await uploadEdgeVideo(guideId, edge.id, file)
+                setVideoUrl(result.videoUrl)
+                setUploadVideoMsg('视频上传成功')
+                setTimeout(() => setUploadVideoMsg(null), 3000)
+              } catch (err: any) {
+                setUploadVideoMsg(err.message || '上传失败')
+              } finally {
+                setUploadingVideo(false)
+                e.target.value = ''
+              }
+            }}
+          />
+          <Button
+            w="100%"
+            mt="2"
+            size="sm"
+            variant="ghost"
+            color="text-secondary"
+            _hover={{ bg: 'surface-raised' }}
+            loading={uploadingVideo}
+            onClick={() => document.getElementById(`edge-upload-${edge.id}`)?.click()}
+          >
+            <Upload size={14} style={{ marginRight: 6 }} />
+            上传视频替换
+          </Button>
+          {uploadVideoMsg && (
+            <Text fontSize="xs" color={uploadVideoMsg.includes('成功') ? '#22c55e' : '#ef4444'} mt="1" px="1">
+              {uploadVideoMsg}
+            </Text>
+          )}
         </Box>
       )}
 
@@ -669,7 +821,14 @@ function EdgeForm({
         </Text>
       )}
 
-      <SaveButton saving={saving} onClick={() => onSave({ relationLabel })} />
+      <SaveButton
+        saving={saving}
+        onClick={() => onSave({
+          relationLabel,
+          transitionDescriptionMode,
+          manualTransitionPrompt: isManualMode ? manualTransitionPrompt : manualTransitionPrompt,
+        })}
+      />
 
       {onRegenerateEdge && (
         <Button

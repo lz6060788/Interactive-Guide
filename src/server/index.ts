@@ -49,6 +49,7 @@ app.use(express.json({ limit: '50mb' }))
 // Static file serving for build outputs and temp media
 app.use('/api/media', express.static(path.resolve('data/publish')))
 app.use('/api/media/generates', express.static(path.resolve('data/generates')))
+app.use('/api/media/workspace', express.static(path.resolve('data/workspace')))
 app.use('/api/runtime-bundles', express.static(path.resolve('data/runtime-bundles')))
 
 // API routes
