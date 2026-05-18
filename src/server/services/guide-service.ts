@@ -362,6 +362,30 @@ export class GuideService {
     guide.edges[idx] = { ...guide.edges[idx], ...safeUpdates, id: guide.edges[idx].id }
     guide.metadata = { ...guide.metadata, updatedAt: nowISO() }
     this.repo.saveGuide(guide)
+
+    // Sync builtin transition settings to workspace manifest
+    if (updates.transitionType !== undefined || updates.builtinTransition !== undefined) {
+      this.patchWorkspaceManifest(guideId, manifest => {
+        const edge = manifest.edges.find(e => e.id === edgeId)
+        if (edge) {
+          if (updates.transitionType !== undefined) {
+            edge.transitionType = updates.transitionType
+          }
+          if (updates.builtinTransition !== undefined) {
+            edge.builtinTransition = updates.builtinTransition
+          }
+        }
+        if (manifest.edgeMap?.[edgeId]) {
+          if (updates.transitionType !== undefined) {
+            manifest.edgeMap[edgeId].transitionType = updates.transitionType
+          }
+          if (updates.builtinTransition !== undefined) {
+            manifest.edgeMap[edgeId].builtinTransition = updates.builtinTransition
+          }
+        }
+      })
+    }
+
     return guide.edges[idx]
   }
 
