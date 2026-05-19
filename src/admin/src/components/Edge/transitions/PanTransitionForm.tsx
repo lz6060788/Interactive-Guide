@@ -70,18 +70,16 @@ export function PanTransitionForm({
       fromElRef.current.style.opacity = '1'
     }
     if (toElRef.current && containerRef.current) {
-      const m = 1.5
       const w = containerRef.current.offsetWidth
       const h = containerRef.current.offsetHeight
       let tx = 0
       switch (config.direction) {
-        case 'left': tx = -w * m; break
-        case 'right': tx = w * m; break
+        case 'left': tx = w; break
+        case 'right': tx = -w; break
         default: tx = 0
       }
-      const ty = config.direction === 'up' ? -h * m : config.direction === 'down' ? h * m : 0
+      const ty = config.direction === 'up' ? h : config.direction === 'down' ? -h : 0
       toElRef.current.style.transform = `translate(${tx}px, ${ty}px)`
-      toElRef.current.style.opacity = '0'
     }
   }
 
@@ -103,35 +101,32 @@ export function PanTransitionForm({
 
       const w = containerRef.current!.offsetWidth
       const h = containerRef.current!.offsetHeight
-      const m = 1.5
 
       let fx = 0, fy = 0, tx = 0, ty = 0
       switch (config.direction) {
         case 'left':
           fx = -w * easedProgress
-          tx = -w * m + w * m * easedProgress
+          tx = w - w * easedProgress
           break
         case 'right':
           fx = w * easedProgress
-          tx = w * m - w * m * easedProgress
+          tx = -w + w * easedProgress
           break
         case 'up':
           fy = -h * easedProgress
-          ty = -h * m + h * m * easedProgress
+          ty = h - h * easedProgress
           break
         case 'down':
           fy = h * easedProgress
-          ty = h * m - h * m * easedProgress
+          ty = -h + h * easedProgress
           break
       }
 
       if (fromElRef.current) {
         fromElRef.current.style.transform = `translate(${fx}px, ${fy}px)`
-        fromElRef.current.style.opacity = String(1 - easedProgress)
       }
       if (toElRef.current) {
         toElRef.current.style.transform = `translate(${tx}px, ${ty}px)`
-        toElRef.current.style.opacity = String(easedProgress)
       }
 
       if (progress < 1) {
@@ -153,18 +148,16 @@ export function PanTransitionForm({
   // Initialize toEl position when direction or images change
   useEffect(() => {
     if (toElRef.current && containerRef.current) {
-      const m = 1.5
       const w = containerRef.current.offsetWidth
       const h = containerRef.current.offsetHeight
       let tx = 0, ty = 0
       switch (config.direction) {
-        case 'left': tx = -w * m; break
-        case 'right': tx = w * m; break
-        case 'up': ty = -h * m; break
-        case 'down': ty = h * m; break
+        case 'left': tx = w; break
+        case 'right': tx = -w; break
+        case 'up': ty = h; break
+        case 'down': ty = -h; break
       }
       toElRef.current.style.transform = `translate(${tx}px, ${ty}px)`
-      toElRef.current.style.opacity = '0'  // Start fully transparent
     }
   }, [config.direction, fromImageUrl, toImageUrl])
 
@@ -275,7 +268,6 @@ export function PanTransitionForm({
                 width: '100%',
                 height: '100%',
                 objectFit: 'contain',
-                opacity: 0,
               }}
             />
           )}

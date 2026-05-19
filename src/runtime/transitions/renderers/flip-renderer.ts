@@ -2,9 +2,9 @@ import type { TransitionContext, TransitionRenderer, FlipTransitionConfig } from
 
 const FLIP_CSS = `
   .transition-flip-container { position: absolute; inset: 0; perspective: 1000px; overflow: hidden; }
-  .transition-flip-scene { position: absolute; inset: 0; transform-style: preserve-3d; }
-  .transition-flip-from { position: absolute; inset: 0; backface-visibility: hidden; }
-  .transition-flip-to { position: absolute; inset: 0; backface-visibility: hidden; }
+  .transition-flip-scene { position: absolute; inset: 0; transform-style: preserve-3d; will-change: transform; }
+  .transition-flip-from { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+  .transition-flip-to { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
 `
 
 export class FlipRenderer implements TransitionRenderer {
@@ -46,8 +46,9 @@ export class FlipRenderer implements TransitionRenderer {
     this.fromEl.style.width = '100%'
     this.fromEl.style.height = '100%'
     this.fromEl.style.objectFit = 'contain'
+    this.fromEl.style.opacity = '1'
 
-    // To element (back face, initially hidden)
+    // To element (back face)
     this.toEl = context.toNodeEl.cloneNode(true) as HTMLElement
     this.toEl.className = 'transition-flip-to'
     this.toEl.style.position = 'absolute'
@@ -55,15 +56,16 @@ export class FlipRenderer implements TransitionRenderer {
     this.toEl.style.width = '100%'
     this.toEl.style.height = '100%'
     this.toEl.style.objectFit = 'contain'
-    this.toEl.style.opacity = '0'
+    this.toEl.style.opacity = '1'
 
     this.sceneEl.appendChild(this.fromEl)
     this.sceneEl.appendChild(this.toEl)
     this.containerEl.appendChild(this.sceneEl)
     context.container.appendChild(this.containerEl)
 
-    // Set initial rotate
     const axis = isHorizontal ? 'Y' : 'X'
+    this.fromEl.style.transform = `rotate${axis}(0deg)`
+    this.toEl.style.transform = `rotate${axis}(180deg)`
     this.sceneEl.style.transform = `rotate${axis}(0deg)`
     this.sceneEl.style.transition = 'none'
   }
@@ -73,15 +75,10 @@ export class FlipRenderer implements TransitionRenderer {
 
     const isHorizontal = this.config.direction === 'horizontal'
     const axis = isHorizontal ? 'Y' : 'X'
-    const maxAngle = 90
+    const maxAngle = 180
 
-    // Rotate scene
     const rotateAngle = progress * maxAngle
     this.sceneEl.style.transform = `rotate${axis}(${rotateAngle}deg)`
-
-    // Crossfade: fromEl fades out, toEl fades in
-    this.fromEl.style.opacity = String(1 - progress)
-    this.toEl.style.opacity = String(progress)
   }
 
   renderCleanup(): void {

@@ -48,9 +48,8 @@ export function ZoomTransitionForm({
   const [previewing, setPreviewing] = useState(false)
   const animationRef = useRef<number | null>(null)
   const startTimeRef = useRef<number>(0)
-  const containerRef = useRef<HTMLDivElement>(null)
   const fromElRef = useRef<HTMLDivElement>(null)
-  const toElRef = useRef<HTMLImageElement>(null)
+  const toElRef = useRef<HTMLDivElement>(null)
 
   const duration = config.duration || 600
   const scale = config.scale || 1.5
@@ -77,12 +76,13 @@ export function ZoomTransitionForm({
       fromElRef.current.style.opacity = '1'
     }
     if (toElRef.current) {
+      toElRef.current.style.transform = `scale(${config.direction === 'out' ? scale : 1})`
       toElRef.current.style.opacity = '0'
     }
   }
 
   const runPreview = () => {
-    if (!fromElRef.current || !toElRef.current || !containerRef.current) return
+    if (!fromElRef.current || !toElRef.current) return
 
     stopPreview()
     setPreviewing(true)
@@ -93,23 +93,24 @@ export function ZoomTransitionForm({
       const progress = Math.min(elapsed / duration, 1)
       const easedProgress = getEasingFn(config.easing)(progress)
 
-      // "in" = zoom in (fromNode scales up, toNode fades in from hotspot)
-      // "out" = zoom out (fromNode shrinks, toNode is already visible)
-      const currentScale = config.direction === 'in'
-        ? 1 + (scale - 1) * easedProgress  // Scale UP from 1 to scale
-        : scale - (scale - 1) * easedProgress  // Scale DOWN from scale to 1
-
-      // Calculate translation to keep hotspot position stable
-      const tx = (centerX - 0.5) * (1 - currentScale) * 100
-      const ty = (centerY - 0.5) * (1 - currentScale) * 100
-
-      if (fromElRef.current) {
-        fromElRef.current.style.transform = `scale(${currentScale}) translate(${tx}%, ${ty}%)`
-        fromElRef.current.style.opacity = String(config.direction === 'in' ? 1 : 1 - easedProgress)
-      }
-      if (toElRef.current) {
-        // toNode fades in as fromNode leaves
-        toElRef.current.style.opacity = String(easedProgress)
+      if (config.direction === 'in') {
+        const currentScale = 1 + (scale - 1) * easedProgress
+        if (fromElRef.current) {
+          fromElRef.current.style.transform = `scale(${currentScale})`
+          fromElRef.current.style.opacity = '1'
+        }
+        if (toElRef.current) {
+          toElRef.current.style.opacity = '0'
+        }
+      } else {
+        const currentScale = scale - (scale - 1) * easedProgress
+        if (fromElRef.current) {
+          fromElRef.current.style.opacity = '0'
+        }
+        if (toElRef.current) {
+          toElRef.current.style.transform = `scale(${currentScale})`
+          toElRef.current.style.opacity = '1'
+        }
       }
 
       if (progress < 1) {
@@ -284,7 +285,6 @@ export function ZoomTransitionForm({
         </Flex>
 
         <Box
-          ref={containerRef}
           position="relative"
           h="120px"
           rounded="md"
@@ -310,19 +310,26 @@ export function ZoomTransitionForm({
             </div>
           )}
           {toImageUrl && (
-            <img
+            <div
               ref={toElRef}
-              src={toImageUrl}
-              alt="to"
               style={{
                 position: 'absolute',
                 inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
+                transformOrigin: `${centerX * 100}% ${centerY * 100}%`,
+                transform: `scale(${config.direction === 'out' ? scale : 1})`,
                 opacity: 0,
               }}
-            />
+            >
+              <img
+                src={toImageUrl}
+                alt="to"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                }}
+              />
+            </div>
           )}
         </Box>
       </Box>

@@ -2,8 +2,8 @@ import type { TransitionContext, TransitionRenderer, PanTransitionConfig } from 
 
 const PAN_CSS = `
   .transition-pan-container { position: absolute; inset: 0; overflow: hidden; }
-  .transition-pan-from { position: absolute; inset: 0; }
-  .transition-pan-to { position: absolute; inset: 0; }
+  .transition-pan-from { position: absolute; inset: 0; will-change: transform; }
+  .transition-pan-to { position: absolute; inset: 0; will-change: transform; }
 `
 
 export class PanRenderer implements TransitionRenderer {
@@ -39,6 +39,7 @@ export class PanRenderer implements TransitionRenderer {
     this.fromEl.style.width = '100%'
     this.fromEl.style.height = '100%'
     this.fromEl.style.objectFit = 'contain'
+    this.fromEl.style.opacity = '1'
 
     // Clone toNodeEl as toEl
     this.toEl = context.toNodeEl.cloneNode(true) as HTMLElement
@@ -48,6 +49,7 @@ export class PanRenderer implements TransitionRenderer {
     this.toEl.style.width = '100%'
     this.toEl.style.height = '100%'
     this.toEl.style.objectFit = 'contain'
+    this.toEl.style.opacity = '1'
 
     // Apply initial offset based on direction
     const offset = this.calculateOffset(context, this.config.direction)
@@ -56,10 +58,10 @@ export class PanRenderer implements TransitionRenderer {
     this.containerEl.appendChild(this.toEl)
     context.container.appendChild(this.containerEl)
 
-    // Apply initial transform and opacity to toEl
+    // Position the incoming node just outside the viewport on the opposite side,
+    // so both nodes travel in the same direction during the pan.
     this.toEl.style.transform = `translate(${offset.x}px, ${offset.y}px)`
     this.toEl.style.transition = 'none'
-    this.toEl.style.opacity = '0'
   }
 
   applyAnimation(progress: number): void {
@@ -68,9 +70,7 @@ export class PanRenderer implements TransitionRenderer {
     const offset = this.calculateOffsetFromProgress(this.fromEl, this.toEl, this.config.direction, progress)
 
     this.fromEl.style.transform = `translate(${offset.fromX}px, ${offset.fromY}px)`
-    this.fromEl.style.opacity = String(1 - progress)
     this.toEl.style.transform = `translate(${offset.toX}px, ${offset.toY}px)`
-    this.toEl.style.opacity = String(progress)
   }
 
   renderCleanup(): void {
@@ -90,13 +90,11 @@ export class PanRenderer implements TransitionRenderer {
   private calculateOffset(context: TransitionContext, direction: string): { x: number, y: number } {
     const containerWidth = context.container.offsetWidth
     const containerHeight = context.container.offsetHeight
-    const multiplier = 1.5
-
     switch (direction) {
-      case 'left': return { x: -containerWidth * multiplier, y: 0 }
-      case 'right': return { x: containerWidth * multiplier, y: 0 }
-      case 'up': return { x: 0, y: -containerHeight * multiplier }
-      case 'down': return { x: 0, y: containerHeight * multiplier }
+      case 'left': return { x: containerWidth, y: 0 }
+      case 'right': return { x: -containerWidth, y: 0 }
+      case 'up': return { x: 0, y: containerHeight }
+      case 'down': return { x: 0, y: -containerHeight }
       default: return { x: 0, y: 0 }
     }
   }
@@ -106,26 +104,25 @@ export class PanRenderer implements TransitionRenderer {
   ): { fromX: number, fromY: number, toX: number, toY: number } {
     const containerWidth = fromEl.offsetWidth
     const containerHeight = fromEl.offsetHeight
-    const multiplier = 1.5
 
     let fromX = 0, fromY = 0, toX = 0, toY = 0
 
     switch (direction) {
       case 'left':
         fromX = -containerWidth * progress
-        toX = -containerWidth * multiplier + containerWidth * multiplier * progress
+        toX = containerWidth - containerWidth * progress
         break
       case 'right':
         fromX = containerWidth * progress
-        toX = containerWidth * multiplier - containerWidth * multiplier * progress
+        toX = -containerWidth + containerWidth * progress
         break
       case 'up':
         fromY = -containerHeight * progress
-        toY = -containerHeight * multiplier + containerHeight * multiplier * progress
+        toY = containerHeight - containerHeight * progress
         break
       case 'down':
         fromY = containerHeight * progress
-        toY = containerHeight * multiplier - containerHeight * multiplier * progress
+        toY = -containerHeight + containerHeight * progress
         break
     }
 

@@ -2,8 +2,8 @@ import type { TransitionContext, TransitionRenderer, ZoomTransitionConfig } from
 
 const ZOOM_CSS = `
   .transition-zoom-container { position: absolute; inset: 0; overflow: hidden; }
-  .transition-zoom-from { position: absolute; inset: 0; transform-origin: var(--zoom-origin-x, 50%) var(--zoom-origin-y, 50%); }
-  .transition-zoom-to { position: absolute; inset: 0; opacity: 0; }
+  .transition-zoom-from { position: absolute; inset: 0; transform-origin: var(--zoom-origin-x, 50%) var(--zoom-origin-y, 50%); will-change: transform; }
+  .transition-zoom-to { position: absolute; inset: 0; transform-origin: var(--zoom-origin-x, 50%) var(--zoom-origin-y, 50%); will-change: transform; }
 `
 
 export class ZoomRenderer implements TransitionRenderer {
@@ -52,41 +52,34 @@ export class ZoomRenderer implements TransitionRenderer {
     this.toEl.style.width = '100%'
     this.toEl.style.height = '100%'
     this.toEl.style.objectFit = 'contain'
+    this.toEl.style.setProperty('--zoom-origin-x', `${centerX * 100}%`)
+    this.toEl.style.setProperty('--zoom-origin-y', `${centerY * 100}%`)
 
     this.containerEl.appendChild(this.fromEl)
     this.containerEl.appendChild(this.toEl)
     context.container.appendChild(this.containerEl)
 
-    // Initial transform
     this.fromEl.style.transform = 'scale(1) translate(0, 0)'
+    this.toEl.style.transform = `scale(${this.config.direction === 'out' ? this.config.scale ?? 1.5 : 1})`
     this.fromEl.style.transition = 'none'
+    this.toEl.style.transition = 'none'
+    this.toEl.style.opacity = this.config.direction === 'out' ? '1' : '0'
   }
 
   applyAnimation(progress: number): void {
     if (!this.fromEl || !this.toEl || !this.config) return
 
     const scale = this.config.scale ?? 1.5
-    const centerX = this.config.centerX ?? 0.5
-    const centerY = this.config.centerY ?? 0.5
-
     if (this.config.direction === 'in') {
-      // Zoom in: fromNode scales UP (1 to scale), toNode fades in
       const scaleVal = 1 + (scale - 1) * progress
-      const tx = (centerX - 0.5) * (1 - scaleVal) * 100
-      const ty = (centerY - 0.5) * (1 - scaleVal) * 100
-
-      this.fromEl.style.transform = `scale(${scaleVal}) translate(${tx}%, ${ty}%)`
+      this.fromEl.style.transform = `scale(${scaleVal})`
       this.fromEl.style.opacity = '1'
-      this.toEl.style.opacity = String(progress)
+      this.toEl.style.opacity = '0'
     } else {
-      // Zoom out: fromNode scales DOWN (scale to 1), toNode fades in
       const scaleVal = scale - (scale - 1) * progress
-      const tx = (centerX - 0.5) * (1 - scaleVal) * 100
-      const ty = (centerY - 0.5) * (1 - scaleVal) * 100
-
-      this.fromEl.style.transform = `scale(${scaleVal}) translate(${tx}%, ${ty}%)`
-      this.fromEl.style.opacity = String(1 - progress)
-      this.toEl.style.opacity = String(progress)
+      this.fromEl.style.opacity = '0'
+      this.toEl.style.transform = `scale(${scaleVal})`
+      this.toEl.style.opacity = '1'
     }
   }
 

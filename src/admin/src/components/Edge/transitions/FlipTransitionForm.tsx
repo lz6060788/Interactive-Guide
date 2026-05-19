@@ -48,9 +48,9 @@ export function FlipTransitionForm({
   const [previewing, setPreviewing] = useState(false)
   const animationRef = useRef<number | null>(null)
   const startTimeRef = useRef<number>(0)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const sceneRef = useRef<HTMLDivElement>(null)
   const fromElRef = useRef<HTMLDivElement>(null)
-  const toElRef = useRef<HTMLImageElement>(null)
+  const toElRef = useRef<HTMLDivElement>(null)
 
   const duration = config.duration || 600
 
@@ -69,15 +69,21 @@ export function FlipTransitionForm({
       animationRef.current = null
     }
     setPreviewing(false)
-    if (fromElRef.current) {
-      fromElRef.current.style.transform = ''
-      fromElRef.current.style.opacity = '1'
+    const isH = config.direction === 'horizontal'
+    const axis = isH ? 'Y' : 'X'
+    if (sceneRef.current) {
+      sceneRef.current.style.transform = `rotate${axis}(0deg)`
     }
-    if (toElRef.current) toElRef.current.style.opacity = '0'
+    if (fromElRef.current) {
+      fromElRef.current.style.transform = `rotate${axis}(0deg)`
+    }
+    if (toElRef.current) {
+      toElRef.current.style.transform = `rotate${axis}(180deg)`
+    }
   }
 
   const runPreview = () => {
-    if (!fromElRef.current || !toElRef.current) return
+    if (!sceneRef.current || !fromElRef.current || !toElRef.current) return
 
     stopPreview()
     setPreviewing(true)
@@ -91,12 +97,9 @@ export function FlipTransitionForm({
       const progress = Math.min(elapsed / duration, 1)
       const easedProgress = getEasingFn(config.easing)(progress)
 
-      const angle = easedProgress * 90
-      if (fromElRef.current) {
-        fromElRef.current.style.transform = `rotate${axis}(${angle}deg)`
-      }
-      if (toElRef.current) {
-        toElRef.current.style.opacity = progress > 0.5 ? String((progress - 0.5) * 2) : '0'
+      const angle = easedProgress * 180
+      if (sceneRef.current) {
+        sceneRef.current.style.transform = `rotate${axis}(${angle}deg)`
       }
 
       if (progress < 1) {
@@ -203,46 +206,59 @@ export function FlipTransitionForm({
         </Flex>
 
         <Box
-          ref={containerRef}
           position="relative"
           h="120px"
           rounded="md"
           overflow="hidden"
           bg="#05060a"
-          style={{ border: `1px solid ${BORDER}`, perspective: '200px' }}
+          style={{ border: `1px solid ${BORDER}`, perspective: '800px' }}
         >
           <div
-            ref={fromElRef}
+            ref={sceneRef}
             style={{
               position: 'absolute',
               inset: 0,
               transformStyle: 'preserve-3d',
-              backfaceVisibility: 'hidden',
+              transform: `rotate${config.direction === 'horizontal' ? 'Y' : 'X'}(0deg)`,
             }}
           >
-            {fromImageUrl && (
-              <img
-                src={fromImageUrl}
-                alt="from"
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-              />
-            )}
-          </div>
-          {toImageUrl && (
-            <img
-              ref={toElRef}
-              src={toImageUrl}
-              alt="to"
+            <div
+              ref={fromElRef}
               style={{
                 position: 'absolute',
                 inset: 0,
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                opacity: 0,
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+                transform: `rotate${config.direction === 'horizontal' ? 'Y' : 'X'}(0deg)`,
               }}
-            />
-          )}
+            >
+              {fromImageUrl && (
+                <img
+                  src={fromImageUrl}
+                  alt="from"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              )}
+            </div>
+            <div
+              ref={toElRef}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+                transform: `rotate${config.direction === 'horizontal' ? 'Y' : 'X'}(180deg)`,
+              }}
+            >
+              {toImageUrl && (
+                <img
+                  src={toImageUrl}
+                  alt="to"
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              )}
+            </div>
+          </div>
         </Box>
       </Box>
     </Box>

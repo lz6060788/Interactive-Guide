@@ -52,13 +52,15 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const manifestRef = useRef<PublishManifest | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const nodeImageRef = useRef<HTMLImageElement>(null)
   const [imgRect, setImgRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
   const infoPanelHeight = infoExpanded ? INFO_PANEL_EXPANDED_PX : INFO_PANEL_COLLAPSED_PX
+  const isTransitionOverlayVisible = transitioning || !!pendingTransition || !!pendingBuiltinTransition
 
   const updateImgRect = useCallback(() => {
     const container = containerRef.current
     if (!container) return
-    const img = container.querySelector('img') as HTMLImageElement | null
+    const img = nodeImageRef.current
     if (!img) return
 
     // Use the browser's actual rendered image box instead of re-deriving object-fit math.
@@ -284,7 +286,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
     }
 
     // Get the current node image element (the main img element)
-    const imgEl = container.querySelector('img')
+    const imgEl = nodeImageRef.current
     if (!imgEl) {
       setTransitioning(false)
       setPendingBuiltinTransition(null)
@@ -293,7 +295,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
 
     // Create a temporary container for transition elements
     const tempContainer = document.createElement('div')
-    tempContainer.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%;'
+    tempContainer.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; z-index: 20; pointer-events: none;'
     container.appendChild(tempContainer)
 
     // Clone the current image as fromEl
@@ -304,13 +306,9 @@ export function PreviewModal({ packageId, onClose }: Props) {
     const targetNode = manifestRef.current.nodeMap[pendingBuiltinTransition.targetNodeId]
     const toImg = document.createElement('img')
     toImg.src = targetNode.imageUrl
-    toImg.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0;'
+    toImg.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;'
 
-    tempContainer.appendChild(fromEl)
-    tempContainer.appendChild(toImg)
-
-    // Wait for toImg to load
-    toImg.onload = () => {
+    const startBuiltinTransition = () => {
       const context = {
         container: tempContainer,
         fromNodeEl: fromEl,
@@ -326,6 +324,13 @@ export function PreviewModal({ packageId, onClose }: Props) {
         }
         switchNode(pendingBuiltinTransition.targetNodeId)
       })
+    }
+
+    // Wait for toImg to load before letting the renderer clone it into the animated layer.
+    if (toImg.complete) {
+      startBuiltinTransition()
+    } else {
+      toImg.onload = startBuiltinTransition
     }
 
     toImg.onerror = () => {
@@ -463,9 +468,18 @@ export function PreviewModal({ packageId, onClose }: Props) {
               >
                 {/* Node image */}
                 <img
+                  ref={nodeImageRef}
                   src={currentNode.imageUrl}
                   alt={currentNode.title}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', userSelect: 'none' }}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    display: 'block',
+                    userSelect: 'none',
+                    opacity: isTransitionOverlayVisible ? 0 : 1,
+                    transition: 'opacity 80ms linear',
+                  }}
                   onLoad={updateImgRect}
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                 />
