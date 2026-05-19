@@ -9,6 +9,7 @@
     "build:server": "tsc -p tsconfig.server.json",
     "build:admin": "cd src/admin && vite build",
     "build:pipeline": "tsx src/server/build-pipeline.ts",
+    "build:player-core": "cd src/runtime/player-core && npx vite build",
     "typecheck": "tsc --noEmit",
     "validate:package": "tsx src/shared/validate-package.ts"
   },
@@ -27,6 +28,7 @@
     "@types/node": "^22.15.17",
     "@types/uuid": "^10.0.0",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5"
   }
 }

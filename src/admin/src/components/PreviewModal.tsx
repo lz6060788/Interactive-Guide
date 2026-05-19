@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useReducer } from 'react'
 import {
   Box, Flex, Text, Heading, Badge, Spinner, IconButton,
 } from '@chakra-ui/react'
 import { X, ArrowLeft } from 'lucide-react'
 import * as api from '../services/api'
-import type { PublishManifest, PublishHotspot, BuiltinTransitionConfig } from '../../../shared/types'
-import type { Transition } from '../../../runtime/transitions/index.js'
-import { createTransition } from '../../../runtime/transitions/index.js'
+import type { PublishManifest } from '../../../shared/types'
+import { PlayerCore } from '../../../runtime/player-core/player-core.js'
 
 interface Props {
   packageId: string
@@ -14,8 +13,6 @@ interface Props {
 }
 
 type PlayerStatus = 'loading' | 'ready' | 'error'
-type PendingTransition = { targetNodeId: string; videoUrl: string } | null
-type PendingBuiltinTransition = { targetNodeId: string; transition: Transition; builtinConfig: BuiltinTransitionConfig } | null
 
 const POLL_INTERVAL_MS = 2000
 const MAX_POLL_COUNT = 45
@@ -39,23 +36,58 @@ function sleep(ms: number) {
   return new Promise(resolve => window.setTimeout(resolve, ms))
 }
 
+function toAbsoluteUrl(url: string) {
+  return new URL(url, window.location.href).href
+}
+
 export function PreviewModal({ packageId, onClose }: Props) {
   const [manifest, setManifest] = useState<PublishManifest | null>(null)
-  const [currentNodeId, setCurrentNodeId] = useState('root')
-  const [history, setHistory] = useState<string[]>([])
   const [status, setStatus] = useState<PlayerStatus>('loading')
   const [error, setError] = useState<string | null>(null)
-  const [transitioning, setTransitioning] = useState(false)
-  const [pendingTransition, setPendingTransition] = useState<PendingTransition>(null)
-  const [pendingBuiltinTransition, setPendingBuiltinTransition] = useState<PendingBuiltinTransition>(null)
   const [infoExpanded, setInfoExpanded] = useState(false)
-  const manifestRef = useRef<PublishManifest | null>(null)
+  const [imgRect, setImgRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
+
+  // Re-render trigger synced from PlayerCore engine events
+  const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
+
+  const engineRef = useRef<PlayerCore | null>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const nodeImageRef = useRef<HTMLImageElement>(null)
-  const [imgRect, setImgRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
+  const manifestRef = useRef<PublishManifest | null>(null)
+
   const infoPanelHeight = infoExpanded ? INFO_PANEL_EXPANDED_PX : INFO_PANEL_COLLAPSED_PX
-  const isTransitionOverlayVisible = transitioning || !!pendingTransition || !!pendingBuiltinTransition
+
+  // Read live state from engine
+  const engine = engineRef.current
+  const currentNodeId = engine?.getCurrentNodeId() ?? manifest?.rootNodeId ?? 'root'
+  const transitioning = engine?.isTransitioning() ?? false
+  const preloading = engine?.isPreloading() ?? false
+  const currentHistory = engine?.getHistory() ?? []
+  const currentNode = manifest?.nodeMap?.[currentNodeId] ?? null
+  const breadcrumb = engine?.buildBreadcrumb() ?? []
+
+  const confirmHostVisualCommitIfReady = useCallback((reason: string) => {
+    const liveEngine = engineRef.current
+    const img = nodeImageRef.current
+    const liveNode = liveEngine?.getCurrentNode()
+    if (!liveEngine || !img || !liveNode) return
+    if (liveEngine.isTransitioning()) return
+
+    const pendingKind = liveEngine.getPendingVisualCommitKind()
+    if (pendingKind === 'builtin' && reason !== 'node-image:onLoad:next-frame') {
+      return
+    }
+
+    const expectedSrc = toAbsoluteUrl(liveNode.imageUrl)
+    const actualSrc = img.currentSrc || img.src
+    const liveNodeId = liveEngine.getCurrentNodeId()
+
+    if (!img.complete || actualSrc !== expectedSrc) {
+      return
+    }
+    liveEngine.confirmHostVisualCommitted()
+  }, [])
 
   const updateImgRect = useCallback(() => {
     const container = containerRef.current
@@ -63,7 +95,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
     const img = nodeImageRef.current
     if (!img) return
 
-    // Use the browser's actual rendered image box instead of re-deriving object-fit math.
     if (img.naturalWidth === 0 || img.naturalHeight === 0) return
 
     const cRect = container.getBoundingClientRect()
@@ -73,16 +104,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
     const renderY = iRect.top - cRect.top
     const renderW = iRect.width
     const renderH = iRect.height
-
-    console.log('[PreviewModal] updateImgRect', {
-      cRect,
-      iRect,
-      renderW,
-      renderH,
-      renderX,
-      renderY,
-      natural: { w: img.naturalWidth, h: img.naturalHeight },
-    })
 
     setImgRect({
       x: renderX,
@@ -102,6 +123,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
     }
   }, [status, currentNodeId, updateImgRect])
 
+  // Phase 1: Load manifest
   useEffect(() => {
     const load = async () => {
       try {
@@ -110,7 +132,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
 
         let m: PublishManifest | null = null
         try {
-          // Add a timestamp to bypass browser cache
           const manifest = await api.fetchManifest(`${packageId}?t=${Date.now()}`)
           if (isPublishManifest(manifest)) {
             m = manifest
@@ -137,9 +158,8 @@ export function PreviewModal({ packageId, onClose }: Props) {
             }
             await sleep(POLL_INTERVAL_MS)
           }
-          
+
           if (buildFinished) {
-            // Add a timestamp to bypass browser cache
             const manifest = await api.fetchManifest(`${packageId}?t=${Date.now()}`)
             if (isPublishManifest(manifest)) {
               m = manifest
@@ -148,9 +168,9 @@ export function PreviewModal({ packageId, onClose }: Props) {
         }
 
         if (!m) throw new Error('无法加载 manifest')
+
         setManifest(m)
         manifestRef.current = m
-        setCurrentNodeId(m.rootNodeId)
         setInfoExpanded(false)
         setStatus('ready')
       } catch (e: any) {
@@ -161,201 +181,38 @@ export function PreviewModal({ packageId, onClose }: Props) {
     load()
   }, [packageId])
 
-  const currentNode = manifest?.nodeMap?.[currentNodeId] ?? null
-
-  // --- Add debug logs for hotspot rendering ---
+  // Phase 2: Create engine once DOM is mounted (after status === 'ready' render)
   useEffect(() => {
-    if (currentNode && imgRect.w > 0) {
-      console.log(`[PreviewModal] Render Hotspots for Node: ${currentNode.title}`, {
-        imgRect,
-        hotspots: currentNode.hotspots?.map(hs => ({
-          label: hs.label,
-          normalizedX: hs.normalizedX,
-          normalizedY: hs.normalizedY,
-          pixelX: hs.normalizedX * imgRect.w,
-          pixelY: hs.normalizedY * imgRect.h,
-        }))
-      })
-    }
-  }, [currentNode, imgRect])
-
-  const handleHotspotClick = (hotspot: PublishHotspot) => {
-    if (!manifest || transitioning) return
-    const edge = manifest.edgeMap?.[hotspot.edgeId]
-
-    // Push current node to history before navigating
-    setHistory(prev => [...prev, currentNodeId])
-
-    if (edge?.transitionType === 'builtin' && edge.builtinTransition) {
-      // Builtin transition
-      setTransitioning(true)
-      const transition = createTransition(edge.builtinTransition.type, edge.builtinTransition)
-      setPendingBuiltinTransition({
-        targetNodeId: hotspot.targetNodeId,
-        transition,
-        builtinConfig: edge.builtinTransition,
-      })
-    } else if (edge?.videoUrl) {
-      // Video transition (existing behavior)
-      setTransitioning(true)
-      setPendingTransition({
-        targetNodeId: hotspot.targetNodeId,
-        videoUrl: edge.videoUrl,
-      })
-    } else if (edge?.transitionType === 'none') {
-      // No transition - immediate switch
-      switchNode(hotspot.targetNodeId)
-    } else {
-      // Default: immediate switch (no video, no builtin, no 'none' flag)
-      switchNode(hotspot.targetNodeId)
-    }
-  }
-
-  const handleBack = () => {
-    if (history.length === 0) return
-    const prevNodeId = history[history.length - 1]
-    setHistory(prev => prev.slice(0, -1))
-    setCurrentNodeId(prevNodeId)
-    setTransitioning(false)
-    setPendingTransition(null)
-    setInfoExpanded(false)
-  }
-
-  const switchNode = (nodeId: string) => {
-    setCurrentNodeId(nodeId)
-    setTransitioning(false)
-    setPendingTransition(null)
-    setPendingBuiltinTransition(null)
-    setInfoExpanded(false)
-  }
-
-  useEffect(() => {
-    if (!transitioning || !pendingTransition) return
+    if (status !== 'ready') return
+    const m = manifestRef.current
+    const container = containerRef.current
+    const nodeImage = nodeImageRef.current
     const video = videoRef.current
-    if (!video) return
+    if (!m || !container || !nodeImage || !video) return
 
-    const handleEnded = () => switchNode(pendingTransition.targetNodeId)
-    const handleError = () => switchNode(pendingTransition.targetNodeId)
-
-    video.onended = handleEnded
-    video.onerror = handleError
-    video.src = pendingTransition.videoUrl
-    video.currentTime = 0
-    video.load()
-    video.play().catch(() => switchNode(pendingTransition.targetNodeId))
+    const engine = new PlayerCore({ container, nodeImage, video })
+    engineRef.current = engine
+    engine.on('stateChange', () => {
+      setInfoExpanded(false)
+      forceUpdate()
+      requestAnimationFrame(() => {
+        confirmHostVisualCommitIfReady('engine:stateChange:next-frame')
+      })
+    })
+    engine.loadManifest(m)
 
     return () => {
-      video.onended = null
-      video.onerror = null
+      engine.destroy()
+      engineRef.current = null
     }
-  }, [pendingTransition, transitioning])
+  }, [status, confirmHostVisualCommitIfReady])
 
-  // Handle builtin transitions
   useEffect(() => {
-    if (!pendingBuiltinTransition || !manifestRef.current) return
-
-    const edgeId = Object.keys(manifestRef.current.edgeMap).find(
-      key => manifestRef.current!.edgeMap[key].toNodeId === pendingBuiltinTransition.targetNodeId
-    )
-
-    if (!edgeId) {
-      setTransitioning(false)
-      setPendingBuiltinTransition(null)
-      return
-    }
-
-    const edge = manifestRef.current.edgeMap[edgeId]
-    const fromNodeId = edge.fromNodeId
-
-    // Find the hotspot on the source node to get hotspot position
-    const fromNode = manifestRef.current.nodeMap[fromNodeId]
-    const hotspot = fromNode?.hotspots?.find(h => h.targetNodeId === pendingBuiltinTransition.targetNodeId)
-
-    if (!hotspot) {
-      setTransitioning(false)
-      setPendingBuiltinTransition(null)
-      return
-    }
-
-    // Get the container element
-    const container = containerRef.current
-    if (!container) {
-      setTransitioning(false)
-      setPendingBuiltinTransition(null)
-      return
-    }
-
-    // Get the current node image element (the main img element)
-    const imgEl = nodeImageRef.current
-    if (!imgEl) {
-      setTransitioning(false)
-      setPendingBuiltinTransition(null)
-      return
-    }
-
-    // Create a temporary container for transition elements
-    const tempContainer = document.createElement('div')
-    tempContainer.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; z-index: 20; pointer-events: none;'
-    container.appendChild(tempContainer)
-
-    // Clone the current image as fromEl
-    const fromEl = imgEl.cloneNode(true) as HTMLElement
-    fromEl.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;'
-
-    // Create the toEl with the target node image
-    const targetNode = manifestRef.current.nodeMap[pendingBuiltinTransition.targetNodeId]
-    const toImg = document.createElement('img')
-    toImg.src = targetNode.imageUrl
-    toImg.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;'
-
-    const startBuiltinTransition = () => {
-      const context = {
-        container: tempContainer,
-        fromNodeEl: fromEl,
-        toNodeEl: toImg,
-        hotspot: { x: hotspot.normalizedX, y: hotspot.normalizedY },
-        config: pendingBuiltinTransition.builtinConfig,
-      }
-
-      pendingBuiltinTransition.transition.play(context).then(() => {
-        // Cleanup temp container
-        if (tempContainer.parentNode) {
-          tempContainer.parentNode.removeChild(tempContainer)
-        }
-        switchNode(pendingBuiltinTransition.targetNodeId)
-      })
-    }
-
-    // Wait for toImg to load before letting the renderer clone it into the animated layer.
-    if (toImg.complete) {
-      startBuiltinTransition()
-    } else {
-      toImg.onload = startBuiltinTransition
-    }
-
-    toImg.onerror = () => {
-      if (tempContainer.parentNode) {
-        tempContainer.parentNode.removeChild(tempContainer)
-      }
-      setTransitioning(false)
-      setPendingBuiltinTransition(null)
-    }
-  }, [pendingBuiltinTransition])
-
-  // Build breadcrumb path from root to current node
-  const buildBreadcrumb = (m: PublishManifest, nodeId: string): { id: string; title: string }[] => {
-    const path: { id: string; title: string }[] = [{ id: nodeId, title: m.nodeMap[nodeId]?.title ?? nodeId }]
-    let current = nodeId
-    while (current !== m.rootNodeId) {
-      const edge = m.edges.find(e => e.toNodeId === current)
-      if (!edge) break
-      current = edge.fromNodeId
-      path.unshift({ id: current, title: m.nodeMap[current]?.title ?? current })
-    }
-    return path
-  }
-
-  const breadcrumb = manifest ? buildBreadcrumb(manifest, currentNodeId) : []
+    if (status !== 'ready' || !currentNode) return
+    requestAnimationFrame(() => {
+      confirmHostVisualCommitIfReady('render:next-frame')
+    })
+  }, [status, currentNode, currentNodeId, transitioning, confirmHostVisualCommitIfReady])
 
   return (
     <Flex position="fixed" inset="0" zIndex={200} align="center" justify="center">
@@ -379,8 +236,14 @@ export function PreviewModal({ packageId, onClose }: Props) {
         {/* Header */}
         <Flex align="center" gap="3" px="5" py="3" style={{ borderBottom: '1px solid #2a2d3a' }}>
           <Heading size="sm" fontWeight="600" color="text-primary">运行时预览</Heading>
-          {history.length > 0 && (
-            <IconButton size="sm" variant="ghost" color="text-secondary" onClick={handleBack} aria-label="后退">
+          {currentHistory.length > 0 && (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              color="text-secondary"
+              onClick={() => engine?.handleBack()}
+              aria-label="后退"
+            >
               <ArrowLeft size={16} />
             </IconButton>
           )}
@@ -405,8 +268,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
                       _hover={{ textDecoration: 'underline' }}
                       onClick={() => {
                         if (i < breadcrumb.length - 1) {
-                          setHistory(prev => [...prev, currentNodeId])
-                          setCurrentNodeId(item.id)
+                          engine?.navigateTo(item.id)
                         }
                       }}
                       whiteSpace="nowrap"
@@ -466,6 +328,22 @@ export function PreviewModal({ packageId, onClose }: Props) {
                   margin: '0 auto',
                 }}
               >
+                {preloading && (
+                  <Flex
+                    position="absolute"
+                    inset="0"
+                    zIndex={30}
+                    direction="column"
+                    align="center"
+                    justify="center"
+                    gap="3"
+                    bg="rgba(2, 3, 5, 0.82)"
+                  >
+                    <Spinner color="brand" />
+                    <Text color="text-secondary" fontSize="sm">预加载运行时资源...</Text>
+                  </Flex>
+                )}
+
                 {/* Node image */}
                 <img
                   ref={nodeImageRef}
@@ -477,11 +355,19 @@ export function PreviewModal({ packageId, onClose }: Props) {
                     objectFit: 'contain',
                     display: 'block',
                     userSelect: 'none',
-                    opacity: isTransitionOverlayVisible ? 0 : 1,
-                    transition: 'opacity 80ms linear',
+                    opacity: transitioning ? 0 : 1,
                   }}
-                  onLoad={updateImgRect}
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                  onLoad={(e) => {
+                    const img = e.target as HTMLImageElement
+                    updateImgRect()
+                    requestAnimationFrame(() => {
+                      confirmHostVisualCommitIfReady('node-image:onLoad:next-frame')
+                    })
+                  }}
+                  onError={(e) => {
+                    const img = e.target as HTMLImageElement
+                    img.style.display = 'none'
+                  }}
                 />
 
                 {/* Hotspot overlay — positioned exactly over the image content area */}
@@ -525,7 +411,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
                             background: 'radial-gradient(circle, rgba(158,214,255,0.72) 0%, rgba(110,186,255,0.42) 38%, rgba(58,137,255,0.18) 68%, rgba(58,137,255,0) 100%)',
                           },
                         }}
-                        onClick={() => handleHotspotClick(hs)}
+                        onClick={() => engine?.handleHotspotClick(hs)}
                         title={hs.label}
                       >
                         <Box
@@ -548,16 +434,22 @@ export function PreviewModal({ packageId, onClose }: Props) {
                   </Box>
                 )}
 
-                {/* Video overlay */}
-                {transitioning && (
-                  <video
-                    ref={videoRef}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 20 }}
-                    muted
-                    playsInline
-                    autoPlay
-                  />
-                )}
+                {/* Video overlay — always in DOM for PlayerCore ref access */}
+                <video
+                  ref={videoRef}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    zIndex: 20,
+                    opacity: 0,
+                    pointerEvents: 'none',
+                  }}
+                  muted
+                  playsInline
+                />
 
                 <Box
                   position="absolute"

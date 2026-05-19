@@ -42,16 +42,6 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
     const renderW = iRect.width
     const renderH = iRect.height
 
-    console.log('[HotspotEditor] updateImgRect', {
-      cRect,
-      iRect,
-      renderW,
-      renderH,
-      renderX,
-      renderY,
-      natural: { w: img.naturalWidth, h: img.naturalHeight },
-    })
-
     setImgRect({
       x: renderX,
       y: renderY,
@@ -111,22 +101,6 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
   )
 
   const handleMouseUp = useCallback(() => { setDragging(false) }, [])
-
-  // --- Add debug logs for hotspot rendering ---
-  useEffect(() => {
-    if (imgRect.w > 0) {
-      console.log(`[HotspotEditor] Render Hotspots for Node: ${node.title}`, {
-        imgRect,
-        drafts: drafts.map(hs => ({
-          label: hs.label,
-          normalizedX: hs.normalizedX,
-          normalizedY: hs.normalizedY,
-          pixelX: hs.normalizedX * imgRect.w,
-          pixelY: hs.normalizedY * imgRect.h,
-        }))
-      })
-    }
-  }, [imgRect, drafts, node.title])
 
   useEffect(() => {
     if (dragging) {
