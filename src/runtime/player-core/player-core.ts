@@ -126,12 +126,23 @@ export class PlayerCore {
       targetNodeId: pending.targetNodeId,
     })
 
-    pending.cleanup()
-    this.emit('transitionEnd')
+    if (pending.kind === 'builtin') {
+      this.debugLog('host-commit:builtin-cleanup-deferred', {
+        targetNodeId: pending.targetNodeId,
+      })
+    }
 
-    this.debugLog('host-commit:cleanup-finished', {
-      pendingKind: pending.kind,
-      targetNodeId: pending.targetNodeId,
+    requestAnimationFrame(() => {
+      this.transitioning = false
+      this.refs.nodeImage.style.opacity = '1'
+      pending.cleanup()
+      this.emit('stateChange')
+      this.emit('transitionEnd')
+
+      this.debugLog('host-commit:cleanup-finished', {
+        pendingKind: pending.kind,
+        targetNodeId: pending.targetNodeId,
+      })
     })
   }
 
@@ -193,7 +204,9 @@ export class PlayerCore {
     }
 
     this.currentNodeId = nodeId
-    this.transitioning = false
+    if (!options.preserveVisualLayer) {
+      this.transitioning = false
+    }
 
     if (!options.preserveVisualLayer) {
       this.cleanupVideo()
@@ -267,6 +280,8 @@ export class PlayerCore {
     const tc = document.createElement('div')
     tc.style.cssText =
       'position:absolute;inset:0;z-index:20;pointer-events:none;overflow:hidden;'
+    tc.dataset.transitionOverlay = 'builtin'
+    tc.dataset.targetNodeId = targetNodeId
     container.appendChild(tc)
     this.transitionContainer = tc
 
@@ -296,10 +311,11 @@ export class PlayerCore {
           transitionType: config.type,
         })
 
-        const frozenFrame = toImg.cloneNode(true) as HTMLElement
-        frozenFrame.style.cssText =
-          'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:1;'
-        tc.replaceChildren(frozenFrame)
+        const frozenFrame = tc.firstElementChild as HTMLElement | null
+        if (frozenFrame) {
+          frozenFrame.setAttribute('data-builtin-frozen-frame', 'true')
+          frozenFrame.setAttribute('data-target-node-id', targetNodeId)
+        }
 
         this.activeTransition = null
 

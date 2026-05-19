@@ -40,6 +40,33 @@ function toAbsoluteUrl(url: string) {
   return new URL(url, window.location.href).href
 }
 
+function captureElementVisualSnapshot(el: HTMLElement | null) {
+  if (!el) return null
+
+  const rect = el.getBoundingClientRect()
+  const style = window.getComputedStyle(el)
+
+  return {
+    rect: {
+      x: Number(rect.x.toFixed(2)),
+      y: Number(rect.y.toFixed(2)),
+      width: Number(rect.width.toFixed(2)),
+      height: Number(rect.height.toFixed(2)),
+    },
+    style: {
+      width: style.width,
+      height: style.height,
+      display: style.display,
+      objectFit: style.objectFit,
+      objectPosition: style.objectPosition,
+      transform: style.transform,
+      transformOrigin: style.transformOrigin,
+      opacity: style.opacity,
+      borderRadius: style.borderRadius,
+    },
+  }
+}
+
 export function PreviewModal({ packageId, onClose }: Props) {
   const [manifest, setManifest] = useState<PublishManifest | null>(null)
   const [status, setStatus] = useState<PlayerStatus>('loading')
@@ -70,11 +97,12 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const confirmHostVisualCommitIfReady = useCallback((reason: string) => {
     const liveEngine = engineRef.current
     const img = nodeImageRef.current
+    const container = containerRef.current
     const liveNode = liveEngine?.getCurrentNode()
-    if (!liveEngine || !img || !liveNode) return
-    if (liveEngine.isTransitioning()) return
+    if (!liveEngine || !img || !container || !liveNode) return
 
     const pendingKind = liveEngine.getPendingVisualCommitKind()
+    if (liveEngine.isTransitioning() && !pendingKind) return
     if (pendingKind === 'builtin' && reason !== 'node-image:onLoad:next-frame') {
       return
     }
@@ -86,6 +114,19 @@ export function PreviewModal({ packageId, onClose }: Props) {
     if (!img.complete || actualSrc !== expectedSrc) {
       return
     }
+
+    if (pendingKind === 'builtin') {
+      const frozenFrame = container.querySelector('[data-builtin-frozen-frame="true"]') as HTMLElement | null
+      console.log('[PreviewModal][builtin-handoff]', {
+        reason,
+        currentNodeId: liveNodeId,
+        expectedSrc,
+        actualSrc,
+        frozenFrame: captureElementVisualSnapshot(frozenFrame),
+        nodeImage: captureElementVisualSnapshot(img),
+      })
+    }
+
     liveEngine.confirmHostVisualCommitted()
   }, [])
 

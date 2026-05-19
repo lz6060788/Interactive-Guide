@@ -44,7 +44,6 @@ export class FlipTransition implements Transition {
         if (progress < 1) {
           this.animationId = requestAnimationFrame(animate)
         } else {
-          renderer.renderCleanup()
           resolve()
         }
       }
