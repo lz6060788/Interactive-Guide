@@ -2,8 +2,8 @@ import type { TransitionContext, TransitionRenderer, PanTransitionConfig } from 
 
 const PAN_CSS = `
   .transition-pan-container { position: absolute; inset: 0; overflow: hidden; }
-  .transition-pan-from { position: absolute; inset: 0; will-change: transform; }
-  .transition-pan-to { position: absolute; inset: 0; will-change: transform; }
+  .transition-pan-from { position: absolute; inset: 0; }
+  .transition-pan-to { position: absolute; inset: 0; }
 `
 
 export class PanRenderer implements TransitionRenderer {
@@ -18,6 +18,8 @@ export class PanRenderer implements TransitionRenderer {
   renderSetup(context: TransitionContext): void {
     // Store config for later use
     this.config = context.config as PanTransitionConfig
+    const fromStyle = window.getComputedStyle(context.fromNodeEl)
+    const toStyle = window.getComputedStyle(context.toNodeEl)
 
     // Inject CSS if not already present
     if (!document.getElementById('transition-pan-styles')) {
@@ -38,7 +40,10 @@ export class PanRenderer implements TransitionRenderer {
     this.fromEl.style.inset = '0'
     this.fromEl.style.width = '100%'
     this.fromEl.style.height = '100%'
-    this.fromEl.style.objectFit = 'contain'
+    this.fromEl.style.display = 'block'
+    this.fromEl.style.objectFit = fromStyle.objectFit || 'contain'
+    this.fromEl.style.objectPosition = fromStyle.objectPosition || '50% 50%'
+    this.fromEl.style.borderRadius = fromStyle.borderRadius
     this.fromEl.style.opacity = '1'
 
     // Clone toNodeEl as toEl
@@ -48,7 +53,10 @@ export class PanRenderer implements TransitionRenderer {
     this.toEl.style.inset = '0'
     this.toEl.style.width = '100%'
     this.toEl.style.height = '100%'
-    this.toEl.style.objectFit = 'contain'
+    this.toEl.style.display = 'block'
+    this.toEl.style.objectFit = toStyle.objectFit || 'contain'
+    this.toEl.style.objectPosition = toStyle.objectPosition || '50% 50%'
+    this.toEl.style.borderRadius = toStyle.borderRadius
     this.toEl.style.opacity = '1'
 
     // Apply initial offset based on direction
@@ -88,8 +96,9 @@ export class PanRenderer implements TransitionRenderer {
   }
 
   private calculateOffset(context: TransitionContext, direction: string): { x: number, y: number } {
-    const containerWidth = context.container.offsetWidth
-    const containerHeight = context.container.offsetHeight
+    const containerRect = context.container.getBoundingClientRect()
+    const containerWidth = containerRect.width
+    const containerHeight = containerRect.height
     switch (direction) {
       case 'left': return { x: containerWidth, y: 0 }
       case 'right': return { x: -containerWidth, y: 0 }
@@ -102,8 +111,9 @@ export class PanRenderer implements TransitionRenderer {
   private calculateOffsetFromProgress(
     fromEl: HTMLElement, toEl: HTMLElement, direction: string, progress: number
   ): { fromX: number, fromY: number, toX: number, toY: number } {
-    const containerWidth = fromEl.offsetWidth
-    const containerHeight = fromEl.offsetHeight
+    const fromRect = fromEl.getBoundingClientRect()
+    const containerWidth = fromRect.width
+    const containerHeight = fromRect.height
 
     let fromX = 0, fromY = 0, toX = 0, toY = 0
 

@@ -84,6 +84,64 @@ export class PlayerCore {
     })
   }
 
+  private debugJson(label: string, payload: Record<string, unknown>): void {
+    const now =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now().toFixed(2)
+        : 'n/a'
+
+    console.log(
+      `[PlayerCore][${now}ms] ${label}:json ${JSON.stringify(payload)}`,
+    )
+  }
+
+  private captureElementVisualSnapshot(
+    el: Element | null,
+  ): Record<string, unknown> | null {
+    if (!(el instanceof HTMLElement)) return null
+
+    const rect = el.getBoundingClientRect()
+    const style = window.getComputedStyle(el)
+
+    return {
+      tagName: el.tagName,
+      className: el.className,
+      childElementCount: el.childElementCount,
+      rect: {
+        x: Number(rect.x.toFixed(2)),
+        y: Number(rect.y.toFixed(2)),
+        width: Number(rect.width.toFixed(2)),
+        height: Number(rect.height.toFixed(2)),
+      },
+      style: {
+        display: style.display,
+        opacity: style.opacity,
+        width: style.width,
+        height: style.height,
+        objectFit: style.objectFit,
+        objectPosition: style.objectPosition,
+        willChange: style.willChange,
+        transform: style.transform,
+        transformOrigin: style.transformOrigin,
+        overflow: style.overflow,
+      },
+    }
+  }
+
+  private captureBuiltinLayerSnapshots(container: HTMLElement): Record<string, unknown> {
+    const root = container.firstElementChild
+    const fromLayer = container.querySelector('[class*="from"]')
+    const toLayer = container.querySelector('[class*="to"]')
+
+    return {
+      overlay: this.captureElementVisualSnapshot(container),
+      overlayRoot: this.captureElementVisualSnapshot(root),
+      fromLayer: this.captureElementVisualSnapshot(fromLayer),
+      toLayer: this.captureElementVisualSnapshot(toLayer),
+      nodeImage: this.captureElementVisualSnapshot(this.refs.nodeImage),
+    }
+  }
+
   // ─── State Accessors ───────────────────────────────────────
 
   getCurrentNodeId(): string {
@@ -268,14 +326,29 @@ export class PlayerCore {
     }
 
     const container = this.refs.container
+    const nodeImageStyle = window.getComputedStyle(this.refs.nodeImage)
+    const imageFit = nodeImageStyle.objectFit || 'contain'
+    const imagePosition = nodeImageStyle.objectPosition || '50% 50%'
+    const imageBorderRadius = nodeImageStyle.borderRadius || '0px'
+
+    const applyImageLayoutStyle = (el: HTMLElement) => {
+      el.style.position = 'absolute'
+      el.style.inset = '0'
+      el.style.width = '100%'
+      el.style.height = '100%'
+      el.style.display = 'block'
+      el.style.objectFit = imageFit
+      el.style.objectPosition = imagePosition
+      el.style.borderRadius = imageBorderRadius
+      el.style.opacity = '1'
+    }
+
     const fromEl = this.refs.nodeImage.cloneNode(true) as HTMLElement
-    fromEl.style.cssText =
-      'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:1;'
+    applyImageLayoutStyle(fromEl)
 
     const toImg = document.createElement('img')
     toImg.src = targetNode.imageUrl
-    toImg.style.cssText =
-      'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:1;'
+    applyImageLayoutStyle(toImg)
 
     const tc = document.createElement('div')
     tc.style.cssText =
@@ -288,6 +361,29 @@ export class PlayerCore {
     this.activeTransition = createTransition(config.type, config)
 
     const startTransition = () => {
+      const context = {
+        container: tc,
+        fromNodeEl: fromEl,
+        toNodeEl: toImg,
+        hotspot: { x: hotspot.normalizedX, y: hotspot.normalizedY },
+        config,
+      }
+
+      const transitionPromise = this.activeTransition!.play(context)
+
+      this.debugLog('builtin:after-play-setup', {
+        targetNodeId,
+        transitionType: config.type,
+        overlayChildCount: tc.childElementCount,
+        layers: this.captureBuiltinLayerSnapshots(tc),
+      })
+      this.debugJson('builtin:after-play-setup', {
+        targetNodeId,
+        transitionType: config.type,
+        overlayChildCount: tc.childElementCount,
+        layers: this.captureBuiltinLayerSnapshots(tc),
+      })
+
       this.refs.nodeImage.style.opacity = '0'
       this.emit('stateChange')
       this.emit('transitionStart')
@@ -297,15 +393,8 @@ export class PlayerCore {
         transitionType: config.type,
         targetImageUrl: targetNode.imageUrl,
       })
-      const context = {
-        container: tc,
-        fromNodeEl: fromEl,
-        toNodeEl: toImg,
-        hotspot: { x: hotspot.normalizedX, y: hotspot.normalizedY },
-        config,
-      }
 
-      this.activeTransition!.play(context).then(() => {
+      transitionPromise.then(() => {
         this.debugLog('builtin:promise-resolved', {
           targetNodeId,
           transitionType: config.type,

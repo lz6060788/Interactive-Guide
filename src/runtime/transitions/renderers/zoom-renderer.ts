@@ -18,6 +18,8 @@ export class ZoomRenderer implements TransitionRenderer {
   renderSetup(context: TransitionContext): void {
     // Store config for later use
     this.config = context.config as ZoomTransitionConfig
+    const fromStyle = window.getComputedStyle(context.fromNodeEl)
+    const toStyle = window.getComputedStyle(context.toNodeEl)
 
     if (!document.getElementById('transition-zoom-styles')) {
       this.styleEl = document.createElement('style')
@@ -40,7 +42,10 @@ export class ZoomRenderer implements TransitionRenderer {
     this.fromEl.style.inset = '0'
     this.fromEl.style.width = '100%'
     this.fromEl.style.height = '100%'
-    this.fromEl.style.objectFit = 'contain'
+    this.fromEl.style.display = 'block'
+    this.fromEl.style.objectFit = fromStyle.objectFit || 'contain'
+    this.fromEl.style.objectPosition = fromStyle.objectPosition || '50% 50%'
+    this.fromEl.style.borderRadius = fromStyle.borderRadius
     this.fromEl.style.setProperty('--zoom-origin-x', `${centerX * 100}%`)
     this.fromEl.style.setProperty('--zoom-origin-y', `${centerY * 100}%`)
 
@@ -51,7 +56,10 @@ export class ZoomRenderer implements TransitionRenderer {
     this.toEl.style.inset = '0'
     this.toEl.style.width = '100%'
     this.toEl.style.height = '100%'
-    this.toEl.style.objectFit = 'contain'
+    this.toEl.style.display = 'block'
+    this.toEl.style.objectFit = toStyle.objectFit || 'contain'
+    this.toEl.style.objectPosition = toStyle.objectPosition || '50% 50%'
+    this.toEl.style.borderRadius = toStyle.borderRadius
     this.toEl.style.setProperty('--zoom-origin-x', `${centerX * 100}%`)
     this.toEl.style.setProperty('--zoom-origin-y', `${centerY * 100}%`)
 
