@@ -8,6 +8,7 @@ type PreloadEntry = {
 export class RuntimeResourcePreloader {
   private imageEntries = new Map<string, PreloadEntry>()
   private videoEntries = new Map<string, PreloadEntry>()
+  private htmlEntries = new Map<string, PreloadEntry>()
   private fullPreloadPromise: Promise<void> | null = null
 
   preloadImage(url?: string): Promise<void> {
@@ -90,12 +91,40 @@ export class RuntimeResourcePreloader {
     return promise
   }
 
+  preloadHtml(url?: string): Promise<void> {
+    if (!url) return Promise.resolve()
+    const existing = this.htmlEntries.get(url)
+    if (existing) return existing.promise
+
+    const promise = new Promise<void>((resolve) => {
+      fetch(url)
+        .then(response => {
+          const entry = this.htmlEntries.get(url)
+          if (entry) entry.status = response.ok ? 'fulfilled' : 'rejected'
+          resolve()
+        })
+        .catch(() => {
+          const entry = this.htmlEntries.get(url)
+          if (entry) entry.status = 'rejected'
+          resolve()
+        })
+    })
+
+    this.htmlEntries.set(url, { status: 'pending', promise })
+    return promise
+  }
+
   preloadAllResources(manifest: PublishManifest): Promise<void> {
     if (this.fullPreloadPromise) return this.fullPreloadPromise
 
     const imageJobs: Promise<void>[] = []
+    const htmlJobs: Promise<void>[] = []
     for (const node of manifest.nodes) {
-      imageJobs.push(this.preloadImage(node.imageUrl))
+      if (node.contentType === 'html') {
+        htmlJobs.push(this.preloadHtml(node.htmlUrl))
+      } else {
+        imageJobs.push(this.preloadImage(node.imageUrl))
+      }
     }
 
     const videoJobs: Promise<void>[] = []
@@ -105,7 +134,7 @@ export class RuntimeResourcePreloader {
       }
     }
 
-    this.fullPreloadPromise = Promise.allSettled([...imageJobs, ...videoJobs]).then(() => {
+    this.fullPreloadPromise = Promise.allSettled([...imageJobs, ...videoJobs, ...htmlJobs]).then(() => {
       this.fullPreloadPromise = null
     })
 
@@ -116,5 +145,6 @@ export class RuntimeResourcePreloader {
     this.fullPreloadPromise = null
     this.imageEntries.clear()
     this.videoEntries.clear()
+    this.htmlEntries.clear()
   }
 }

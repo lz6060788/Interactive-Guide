@@ -81,6 +81,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const nodeImageRef = useRef<HTMLImageElement>(null)
+  const nodeIframeRef = useRef<HTMLIFrameElement>(null)
   const manifestRef = useRef<PublishManifest | null>(null)
 
   const infoPanelHeight = infoExpanded ? INFO_PANEL_EXPANDED_PX : INFO_PANEL_COLLAPSED_PX
@@ -97,9 +98,10 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const confirmHostVisualCommitIfReady = useCallback((reason: string) => {
     const liveEngine = engineRef.current
     const img = nodeImageRef.current
+    const iframe = nodeIframeRef.current
     const container = containerRef.current
     const liveNode = liveEngine?.getCurrentNode()
-    if (!liveEngine || !img || !container || !liveNode) return
+    if (!liveEngine || !container || !liveNode) return
 
     const pendingKind = liveEngine.getPendingVisualCommitKind()
     if (liveEngine.isTransitioning() && !pendingKind) return
@@ -107,24 +109,33 @@ export function PreviewModal({ packageId, onClose }: Props) {
       return
     }
 
-    const expectedSrc = toAbsoluteUrl(liveNode.imageUrl)
-    const actualSrc = img.currentSrc || img.src
-    const liveNodeId = liveEngine.getCurrentNodeId()
+    // HTML node: check iframe src instead of image
+    if (liveNode.contentType === 'html') {
+      if (!iframe) return
+      const expectedSrc = toAbsoluteUrl(liveNode.htmlUrl ?? '')
+      const actualSrc = iframe.src
+      if (actualSrc !== expectedSrc) return
+    } else {
+      if (!img) return
+      const expectedSrc = toAbsoluteUrl(liveNode.imageUrl ?? '')
+      const actualSrc = img.currentSrc || img.src
+      const liveNodeId = liveEngine.getCurrentNodeId()
 
-    if (!img.complete || actualSrc !== expectedSrc) {
-      return
-    }
+      if (!img.complete || actualSrc !== expectedSrc) {
+        return
+      }
 
-    if (pendingKind === 'builtin') {
-      const frozenFrame = container.querySelector('[data-builtin-frozen-frame="true"]') as HTMLElement | null
-      console.log('[PreviewModal][builtin-handoff]', {
-        reason,
-        currentNodeId: liveNodeId,
-        expectedSrc,
-        actualSrc,
-        frozenFrame: captureElementVisualSnapshot(frozenFrame),
-        nodeImage: captureElementVisualSnapshot(img),
-      })
+      if (pendingKind === 'builtin') {
+        const frozenFrame = container.querySelector('[data-builtin-frozen-frame="true"]') as HTMLElement | null
+        console.log('[PreviewModal][builtin-handoff]', {
+          reason,
+          currentNodeId: liveNodeId,
+          expectedSrc,
+          actualSrc,
+          frozenFrame: captureElementVisualSnapshot(frozenFrame),
+          nodeImage: captureElementVisualSnapshot(img),
+        })
+      }
     }
 
     liveEngine.confirmHostVisualCommitted()
@@ -231,7 +242,12 @@ export function PreviewModal({ packageId, onClose }: Props) {
     const video = videoRef.current
     if (!m || !container || !nodeImage || !video) return
 
-    const engine = new PlayerCore({ container, nodeImage, video })
+    const engine = new PlayerCore({
+      container,
+      nodeImage,
+      video,
+      nodeIframe: nodeIframeRef.current ?? undefined,
+    })
     engineRef.current = engine
     engine.on('stateChange', () => {
       setInfoExpanded(false)
@@ -247,6 +263,17 @@ export function PreviewModal({ packageId, onClose }: Props) {
       engineRef.current = null
     }
   }, [status, confirmHostVisualCommitIfReady])
+
+  // Listen for postMessage from HTML node iframes
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'hotspot-click' && event.data?.edgeId) {
+        engineRef.current?.handleHotspotById(event.data.edgeId)
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [])
 
   useEffect(() => {
     if (status !== 'ready' || !currentNode) return
@@ -394,7 +421,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
                     width: '100%',
                     height: '100%',
                     objectFit: 'contain',
-                    display: 'block',
+                    display: currentNode.contentType === 'html' ? 'none' : 'block',
                     userSelect: 'none',
                     opacity: transitioning ? 0 : 1,
                   }}
@@ -411,8 +438,29 @@ export function PreviewModal({ packageId, onClose }: Props) {
                   }}
                 />
 
-                {/* Hotspot overlay — positioned exactly over the image content area */}
-                {imgRect.w > 0 && (
+                {/* Node iframe for HTML nodes */}
+                <iframe
+                  ref={nodeIframeRef}
+                  src={currentNode.contentType === 'html' ? currentNode.htmlUrl : undefined}
+                  sandbox="allow-scripts allow-same-origin"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                    display: currentNode.contentType === 'html' ? 'block' : 'none',
+                    opacity: transitioning ? 0 : 1,
+                  }}
+                  onLoad={() => {
+                    requestAnimationFrame(() => {
+                      confirmHostVisualCommitIfReady('node-iframe:onLoad:next-frame')
+                    })
+                  }}
+                />
+
+                {/* Hotspot overlay — positioned exactly over the image content area (hidden for HTML nodes) */}
+                {imgRect.w > 0 && currentNode.contentType !== 'html' && (
                   <Box
                     position="absolute"
                     left={`${imgRect.x}px`}

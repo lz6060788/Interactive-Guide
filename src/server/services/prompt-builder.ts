@@ -163,7 +163,7 @@ export class PromptBuilder {
       return keyPoints.slice(0, 2).join('；').slice(0, 200)
     }
 
-    return node.keyContent.trim().slice(0, 200)
+    return (node.keyContent ?? '').trim().slice(0, 200)
   }
 
   getNodeKeyPoints(node: KnowledgeNode): string[] {

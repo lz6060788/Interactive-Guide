@@ -604,39 +604,73 @@ export class BuildPipeline {
       }
 
       try {
-        const imagePrompt = this.promptBuilder.buildImagePrompt(node, guide)
+        // HTML nodes: skip AI image generation, copy HTML file
+        if (node.contentType === 'html') {
+          const htmlSource = node.htmlSource!
+          const guideDir = `guides/${guide.id}/current`
+          const srcPath = `${guideDir}/${htmlSource}`
 
-        this.repo.writeJson(
-          `${GENERATES_DIR}/${generateId}/nodes/${node.id}/planner.json`,
-          {
-            nodeId: node.id,
-            title: node.title,
-            style: guide.style ?? 'morandi-journal',
-            imagePrompt,
-            summary: this.promptBuilder.getNodeSummary(node),
-            status: 'success',
-          },
-        )
+          if (!this.repo.fileExists(srcPath)) {
+            throw new Error(`HTML source file not found: ${srcPath}`)
+          }
 
-        nodeRecord.imageStatus = 'running'
-        this.appendLog(generateId, `[Node] Generating image for "${node.id}"...`)
-        const imageResult = await this.imageModule.generateNodeImage(
-          node.id,
-          imagePrompt,
-          guide.resolution.width,
-          guide.resolution.height,
-        )
+          const destPath = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/content.html`
+          this.repo.copyFile(srcPath, destPath)
 
-        const buildImagePath = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
-        this.repo.copyFile(imageResult.localPath, buildImagePath)
+          nodeRecord.imageStatus = 'success'
+          nodeRecord.status = 'success'
+          record.summary.nodeSuccess++
 
-        nodeRecord.imageStatus = 'success'
-        nodeRecord.imagePath = buildImagePath
-        nodeRecord.modelInputUrl = imageResult.modelInputUrl
-        nodeRecord.status = 'success'
-        record.summary.nodeSuccess++
+          this.appendLog(generateId, `[Node] "${node.id}" HTML file copied from ${htmlSource}`)
+        } else {
+          // Check for pre-existing image asset in guide directory
+          const guideAssetPath = `guides/${guide.id}/current/assets/nodes/${node.id}.png`
+          if (this.repo.fileExists(guideAssetPath)) {
+            const buildImagePath = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
+            this.repo.copyFile(guideAssetPath, buildImagePath)
 
-        this.appendLog(generateId, `[Node] "${node.id}" done (cached: ${imageResult.fromCache})`)
+            nodeRecord.imageStatus = 'success'
+            nodeRecord.imagePath = buildImagePath
+            nodeRecord.status = 'success'
+            record.summary.nodeSuccess++
+
+            this.appendLog(generateId, `[Node] "${node.id}" using pre-existing asset`)
+          } else {
+            const imagePrompt = this.promptBuilder.buildImagePrompt(node, guide)
+
+            this.repo.writeJson(
+              `${GENERATES_DIR}/${generateId}/nodes/${node.id}/planner.json`,
+              {
+                nodeId: node.id,
+                title: node.title,
+                style: guide.style ?? 'morandi-journal',
+                imagePrompt,
+                summary: this.promptBuilder.getNodeSummary(node),
+                status: 'success',
+              },
+            )
+
+            nodeRecord.imageStatus = 'running'
+            this.appendLog(generateId, `[Node] Generating image for "${node.id}"...`)
+            const imageResult = await this.imageModule.generateNodeImage(
+              node.id,
+              imagePrompt,
+              guide.resolution.width,
+              guide.resolution.height,
+            )
+
+            const buildImagePath = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
+            this.repo.copyFile(imageResult.localPath, buildImagePath)
+
+            nodeRecord.imageStatus = 'success'
+            nodeRecord.imagePath = buildImagePath
+            nodeRecord.modelInputUrl = imageResult.modelInputUrl
+            nodeRecord.status = 'success'
+            record.summary.nodeSuccess++
+
+            this.appendLog(generateId, `[Node] "${node.id}" done (cached: ${imageResult.fromCache})`)
+          }
+        }
       } catch (e: any) {
         nodeRecord.status = 'failed'
         nodeRecord.errorMessage = e.message
@@ -657,6 +691,44 @@ export class BuildPipeline {
     record: PackageBuildRecord,
   ) {
     for (const node of guide.nodes) {
+      // HTML nodes: skip visual hotspot recommendation, use hotspotEdgeIds for validation only
+      if (node.contentType === 'html') {
+        if (node.hotspotEdgeIds && node.hotspotEdgeIds.length > 0) {
+          this.appendLog(generateId, `[Hotspot] Node "${node.id}": HTML node, ${node.hotspotEdgeIds.length} declared edge ids (no visual hotspots)`)
+        }
+        continue
+      }
+
+      // Nodes without keyContent (pre-existing assets): skip vision, use manual hotspots directly
+      if (!node.keyContent) {
+        if (node.hotspots && node.hotspots.length > 0) {
+          const manualHotspots = node.hotspots.map(hs => ({
+            edgeId: hs.edgeId,
+            targetNodeId: hs.targetNodeId,
+            label: hs.label,
+            normalizedX: hs.normalizedX,
+            normalizedY: hs.normalizedY,
+            radius: hs.radius ?? 12,
+            source: 'manual' as 'manual' | 'vision',
+          }))
+          record.summary.hotspotReady += manualHotspots.length
+          this.repo.writeJson(
+            `${GENERATES_DIR}/${generateId}/nodes/${node.id}/hotspots.recommended.json`,
+            manualHotspots,
+          )
+          this.repo.writeJson(
+            `${GENERATES_DIR}/${generateId}/nodes/${node.id}/hotspots.final.json`,
+            manualHotspots,
+          )
+          this.repo.writeJson(
+            `${GENERATES_DIR}/${generateId}/hotspots/${node.id}/final.json`,
+            manualHotspots,
+          )
+          this.appendLog(generateId, `[Hotspot] Node "${node.id}": pre-existing asset, ${manualHotspots.length} hotspots (manual, no vision)`)
+        }
+        continue
+      }
+
       if (!node.hotspots || node.hotspots.length === 0) continue
 
       const manualHotspots = node.hotspots.map(hs => ({
@@ -737,61 +809,76 @@ export class BuildPipeline {
       }
 
       try {
-        const fromNode = guide.nodes.find(n => n.id === edge.fromNodeId)
-        const toNode = guide.nodes.find(n => n.id === edge.toNodeId)
-        const visualPlan = this.promptBuilder.resolveTransitionDescriptionMode(edge) === 'manual'
-          ? this.promptBuilder.buildManualTransitionPlan(edge)
-          : await this.promptBuilder.planTransitionVisuals(generateId, edge, fromNode, toNode, guide, this.repo)
+        // Check for pre-existing video asset in guide directory
+        const guideVideoPath = `guides/${guide.id}/current/assets/edges/${edge.id}.mp4`
+        if (this.repo.fileExists(guideVideoPath)) {
+          const buildVideoPath = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.mp4`
+          this.repo.copyFile(guideVideoPath, buildVideoPath)
 
-        const transitionPrompt = this.promptBuilder.buildTransitionPrompt(edge, fromNode, toNode, guide, visualPlan)
-        edgeRecord.promptStatus = 'success'
-        edgeRecord.transitionStrategyMode = visualPlan.mode
-        edgeRecord.transitionStrategyReason = visualPlan.reason
+          edgeRecord.promptStatus = 'success'
+          edgeRecord.videoStatus = 'success'
+          edgeRecord.videoPath = buildVideoPath
+          edgeRecord.status = 'success'
+          record.summary.edgeSuccess++
 
-        this.repo.writeJson(
-          `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.json`,
-          {
-            edgeId: edge.id,
-            fromNodeId: edge.fromNodeId,
-            toNodeId: edge.toNodeId,
-            relationLabel: edge.relationLabel,
-            descriptionMode: this.promptBuilder.resolveTransitionDescriptionMode(edge),
-            manualTransitionPrompt: this.promptBuilder.getManualTransitionDescription(edge) || undefined,
-            strategyMode: visualPlan.mode,
-            strategyReason: visualPlan.reason,
-            visualPlan,
-            prompt: transitionPrompt,
-            status: 'running',
-          },
-        )
+          this.appendLog(generateId, `[Edge] "${edge.id}" using pre-existing video asset`)
+        } else {
+          const fromNode = guide.nodes.find(n => n.id === edge.fromNodeId)
+          const toNode = guide.nodes.find(n => n.id === edge.toNodeId)
+          const visualPlan = this.promptBuilder.resolveTransitionDescriptionMode(edge) === 'manual'
+            ? this.promptBuilder.buildManualTransitionPlan(edge)
+            : await this.promptBuilder.planTransitionVisuals(generateId, edge, fromNode, toNode, guide, this.repo)
 
-        const firstFrame = await this.mediaModule.exposeNodeImage(generateId, edge.fromNodeId)
-        const lastFrame = await this.mediaModule.exposeNodeImage(generateId, edge.toNodeId)
+          const transitionPrompt = this.promptBuilder.buildTransitionPrompt(edge, fromNode, toNode, guide, visualPlan)
+          edgeRecord.promptStatus = 'success'
+          edgeRecord.transitionStrategyMode = visualPlan.mode
+          edgeRecord.transitionStrategyReason = visualPlan.reason
 
-        edgeRecord.videoStatus = 'running'
-        this.appendLog(generateId, `[Edge] Generating video "${edge.id}" (${edge.fromNodeId} → ${edge.toNodeId})...`)
+          this.repo.writeJson(
+            `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.json`,
+            {
+              edgeId: edge.id,
+              fromNodeId: edge.fromNodeId,
+              toNodeId: edge.toNodeId,
+              relationLabel: edge.relationLabel,
+              descriptionMode: this.promptBuilder.resolveTransitionDescriptionMode(edge),
+              manualTransitionPrompt: this.promptBuilder.getManualTransitionDescription(edge) || undefined,
+              strategyMode: visualPlan.mode,
+              strategyReason: visualPlan.reason,
+              visualPlan,
+              prompt: transitionPrompt,
+              status: 'running',
+            },
+          )
 
-        const videoResult = await this.videoModule.generateTransitionVideo(
-          edge.id,
-          edge.fromNodeId,
-          edge.toNodeId,
-          transitionPrompt,
-          firstFrame.url,
-          lastFrame.url,
-          (status, taskId) => {
-            this.appendLog(generateId, `[Edge] "${edge.id}" video task ${taskId}: ${status}`)
-          },
-        )
+          const firstFrame = await this.mediaModule.exposeNodeImage(generateId, edge.fromNodeId)
+          const lastFrame = await this.mediaModule.exposeNodeImage(generateId, edge.toNodeId)
 
-        const buildVideoPath = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.mp4`
-        this.repo.copyFile(videoResult.localPath, buildVideoPath)
+          edgeRecord.videoStatus = 'running'
+          this.appendLog(generateId, `[Edge] Generating video "${edge.id}" (${edge.fromNodeId} → ${edge.toNodeId})...`)
 
-        edgeRecord.videoStatus = 'success'
-        edgeRecord.videoPath = buildVideoPath
-        edgeRecord.status = 'success'
-        record.summary.edgeSuccess++
+          const videoResult = await this.videoModule.generateTransitionVideo(
+            edge.id,
+            edge.fromNodeId,
+            edge.toNodeId,
+            transitionPrompt,
+            firstFrame.url,
+            lastFrame.url,
+            (status, taskId) => {
+              this.appendLog(generateId, `[Edge] "${edge.id}" video task ${taskId}: ${status}`)
+            },
+          )
 
-        this.appendLog(generateId, `[Edge] "${edge.id}" done (cached: ${videoResult.fromCache})`)
+          const buildVideoPath = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.mp4`
+          this.repo.copyFile(videoResult.localPath, buildVideoPath)
+
+          edgeRecord.videoStatus = 'success'
+          edgeRecord.videoPath = buildVideoPath
+          edgeRecord.status = 'success'
+          record.summary.edgeSuccess++
+
+          this.appendLog(generateId, `[Edge] "${edge.id}" done (cached: ${videoResult.fromCache})`)
+        }
       } catch (e: any) {
         edgeRecord.status = 'failed'
         edgeRecord.videoStatus = 'failed'
@@ -815,9 +902,16 @@ export class BuildPipeline {
     this.repo.ensureDir(`${publishDir}/assets/edges`)
 
     for (const node of guide.nodes) {
-      const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
-      if (this.repo.fileExists(src)) {
-        this.repo.copyFile(src, `${publishDir}/assets/nodes/${node.id}.png`)
+      if (node.contentType === 'html') {
+        const htmlSrc = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/content.html`
+        if (this.repo.fileExists(htmlSrc)) {
+          this.repo.copyFile(htmlSrc, `${publishDir}/assets/nodes/${node.id}.html`)
+        }
+      } else {
+        const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
+        if (this.repo.fileExists(src)) {
+          this.repo.copyFile(src, `${publishDir}/assets/nodes/${node.id}.png`)
+        }
       }
     }
 
@@ -842,9 +936,16 @@ export class BuildPipeline {
     this.repo.ensureDir(`${workspaceDir}/edges`)
 
     for (const node of guide.nodes) {
-      const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
-      if (this.repo.fileExists(src)) {
-        this.repo.copyFile(src, `${workspaceDir}/nodes/${node.id}.png`)
+      if (node.contentType === 'html') {
+        const htmlSrc = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/content.html`
+        if (this.repo.fileExists(htmlSrc)) {
+          this.repo.copyFile(htmlSrc, `${workspaceDir}/nodes/${node.id}.html`)
+        }
+      } else {
+        const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
+        if (this.repo.fileExists(src)) {
+          this.repo.copyFile(src, `${workspaceDir}/nodes/${node.id}.png`)
+        }
       }
     }
 
@@ -867,6 +968,25 @@ export class BuildPipeline {
     const nodes = guide.nodes.map(n => {
       const summary = this.promptBuilder.getNodeSummary(n)
       const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
+
+      if (n.contentType === 'html') {
+        return {
+          id: n.id,
+          title: n.title,
+          summary: summary || undefined,
+          keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
+          topicType: n.topicType,
+          sourceText: n.sourceText?.trim() || undefined,
+          contentType: 'html' as const,
+          htmlUrl: `${mediaBase}/assets/nodes/${n.id}.html`,
+          hotspotEdgeIds: n.hotspotEdgeIds,
+          hotspots: [] as Array<{
+            edgeId: string; targetNodeId: string; label: string
+            normalizedX: number; normalizedY: number; radius?: number
+            markerType: 'dot'
+          }>,
+        }
+      }
 
       return {
         id: n.id,
@@ -934,6 +1054,25 @@ export class BuildPipeline {
     const nodes = guide.nodes.map(n => {
       const summary = this.promptBuilder.getNodeSummary(n)
       const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
+
+      if (n.contentType === 'html') {
+        return {
+          id: n.id,
+          title: n.title,
+          summary: summary || undefined,
+          keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
+          topicType: n.topicType,
+          sourceText: n.sourceText?.trim() || undefined,
+          contentType: 'html' as const,
+          htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
+          hotspotEdgeIds: n.hotspotEdgeIds,
+          hotspots: [] as Array<{
+            edgeId: string; targetNodeId: string; label: string
+            normalizedX: number; normalizedY: number; radius?: number
+            markerType: 'dot'
+          }>,
+        }
+      }
 
       return {
         id: n.id,

@@ -42,9 +42,16 @@ export class RuntimeBundleGenerator {
     this.repo.ensureDir(bundleEdgesDir)
 
     for (const node of manifest.nodes) {
-      const src = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
-      if (this.repo.fileExists(src)) {
-        this.repo.copyFile(src, `${bundleNodesDir}/${node.id}.png`)
+      if (node.contentType === 'html') {
+        const src = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.html`
+        if (this.repo.fileExists(src)) {
+          this.repo.copyFile(src, `${bundleNodesDir}/${node.id}.html`)
+        }
+      } else {
+        const src = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
+        if (this.repo.fileExists(src)) {
+          this.repo.copyFile(src, `${bundleNodesDir}/${node.id}.png`)
+        }
       }
     }
 
@@ -90,6 +97,19 @@ export class RuntimeBundleGenerator {
     manifest: PublishManifest,
   ): PublishManifest {
     const nodes = manifest.nodes.map(node => {
+      if (node.contentType === 'html') {
+        const localHtmlPath = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.html`
+        if (!this.repo.fileExists(localHtmlPath)) {
+          throw AppError.validation(`Missing HTML asset for standalone bundle: ${node.id}.html`)
+        }
+        return {
+          ...node,
+          contentType: 'html' as const,
+          htmlUrl: `./assets/nodes/${node.id}.html`,
+          imageUrl: undefined,
+        }
+      }
+
       const localImagePath = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
       if (!this.repo.fileExists(localImagePath)) {
         throw AppError.validation(`Missing node asset for standalone bundle: ${node.id}.png`)
@@ -153,6 +173,7 @@ export class RuntimeBundleGenerator {
       '        <div id="stage" class="stage" hidden>',
       '          <div id="media-root" class="media-root">',
       '            <img id="node-image" class="node-image" alt="" />',
+      '            <iframe id="node-iframe" class="node-iframe" sandbox="allow-scripts allow-same-origin" style="display:none;"></iframe>',
       '            <video id="transition-video" class="transition-video" muted playsinline></video>',
       '            <div id="hotspots" class="hotspots"></div>',
       '          </div>',
@@ -199,6 +220,7 @@ export class RuntimeBundleGenerator {
       '.stage { position: relative; width: min(100%, 1280px); height: min(calc(100vh - 132px), calc(100vw * 1.2)); max-height: 100%; border-radius: 20px; overflow: hidden; background: #020305; }',
       '.media-root { position: relative; width: 100%; height: 100%; }',
       '.node-image, .transition-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }',
+      '.node-iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: none; background: #000; }',
       '.transition-video { opacity: 0; pointer-events: none; z-index: 3; }',
       '.transition-video.visible { opacity: 1; }',
       '.hotspots { position: absolute; z-index: 4; pointer-events: none; opacity: 1; transition: opacity 180ms ease; }',
@@ -243,6 +265,7 @@ export class RuntimeBundleGenerator {
       '  refs.stage = document.getElementById("stage")',
       '  refs.mediaRoot = document.getElementById("media-root")',
       '  refs.nodeImage = document.getElementById("node-image")',
+      '  refs.nodeIframe = document.getElementById("node-iframe")',
       '  refs.hotspots = document.getElementById("hotspots")',
       '  refs.video = document.getElementById("transition-video")',
       '',
@@ -252,6 +275,16 @@ export class RuntimeBundleGenerator {
       '    requestAnimationFrame(() => {',
       '      confirmHostVisualCommitIfReady("node-image:load:next-frame")',
       '    })',
+      '  })',
+      '  refs.nodeIframe.addEventListener("load", () => {',
+      '    requestAnimationFrame(() => {',
+      '      confirmHostVisualCommitIfReady("node-iframe:load:next-frame")',
+      '    })',
+      '  })',
+      '  window.addEventListener("message", (event) => {',
+      '    if (event.data?.type === "hotspot-click" && event.data?.edgeId) {',
+      '      engine?.handleHotspotById(event.data.edgeId)',
+      '    }',
       '  })',
       '  window.addEventListener("resize", updateHotspotViewport)',
       '  init().catch(error => showError(error instanceof Error ? error.message : String(error)))',
@@ -267,6 +300,7 @@ export class RuntimeBundleGenerator {
       '    container: refs.mediaRoot,',
       '    nodeImage: refs.nodeImage,',
       '    video: refs.video,',
+      '    nodeIframe: refs.nodeIframe,',
       '  })',
       '',
       '  engine.on("stateChange", render)',
@@ -308,23 +342,32 @@ export class RuntimeBundleGenerator {
       'function confirmHostVisualCommitIfReady(reason) {',
       '  if (!engine) return',
       '  const currentNode = engine.getCurrentNode()',
-      '  if (!currentNode || !refs.nodeImage) return',
+      '  if (!currentNode) return',
       '  const pendingKind = engine.getPendingVisualCommitKind()',
       '  if (engine.isTransitioning() && !pendingKind) return',
       '  if (pendingKind === "builtin" && reason !== "node-image:load:next-frame") return',
-      '  const expectedSrc = toAbsoluteUrl(currentNode.imageUrl)',
-      '  const actualSrc = refs.nodeImage.currentSrc || refs.nodeImage.src',
-      '  if (!refs.nodeImage.complete || actualSrc !== expectedSrc) return',
-      '  if (pendingKind === "builtin") {',
-      '    const frozenFrame = refs.mediaRoot.querySelector(\'[data-builtin-frozen-frame="true"]\')',
-      '    console.log("[RuntimeBundle][builtin-handoff]", {',
-      '      reason,',
-      '      currentNodeId: engine.getCurrentNodeId(),',
-      '      expectedSrc,',
-      '      actualSrc,',
-      '      frozenFrame: captureElementVisualSnapshot(frozenFrame),',
-      '      nodeImage: captureElementVisualSnapshot(refs.nodeImage),',
-      '    })',
+      '',
+      '  if (currentNode.contentType === "html") {',
+      '    if (!refs.nodeIframe) return',
+      '    const expectedSrc = toAbsoluteUrl(currentNode.htmlUrl)',
+      '    const actualSrc = refs.nodeIframe.src',
+      '    if (actualSrc !== expectedSrc) return',
+      '  } else {',
+      '    if (!refs.nodeImage) return',
+      '    const expectedSrc = toAbsoluteUrl(currentNode.imageUrl)',
+      '    const actualSrc = refs.nodeImage.currentSrc || refs.nodeImage.src',
+      '    if (!refs.nodeImage.complete || actualSrc !== expectedSrc) return',
+      '    if (pendingKind === "builtin") {',
+      '      const frozenFrame = refs.mediaRoot.querySelector(\'[data-builtin-frozen-frame="true"]\')',
+      '      console.log("[RuntimeBundle][builtin-handoff]", {',
+      '        reason,',
+      '        currentNodeId: engine.getCurrentNodeId(),',
+      '        expectedSrc,',
+      '        actualSrc,',
+      '        frozenFrame: captureElementVisualSnapshot(frozenFrame),',
+      '        nodeImage: captureElementVisualSnapshot(refs.nodeImage),',
+      '      })',
+      '    }',
       '  }',
       '  engine.confirmHostVisualCommitted()',
       '}',
@@ -339,27 +382,43 @@ export class RuntimeBundleGenerator {
       '',
       '  const transitioning = engine.isTransitioning()',
       '  const preloading = engine.isPreloading()',
+      '  const isHtml = currentNode.contentType === "html"',
       '',
       '  refs.stage.hidden = preloading',
       '  refs.status.textContent = preloading ? "预加载运行时资源..." : ""',
       '  if (preloading) return',
       '  refs.backButton.disabled = engine.getHistory().length === 0',
-      '  refs.nodeImage.src = currentNode.imageUrl',
-      '  refs.nodeImage.alt = currentNode.title || currentNode.id',
-      '  refs.nodeImage.onerror = () => { refs.status.textContent = "当前节点图片缺失"; refs.stage.hidden = false }',
-      '  refs.hotspots.style.left = "0px"',
-      '  refs.hotspots.style.top = "0px"',
-      '  refs.hotspots.style.width = "100%"',
-      '  refs.hotspots.style.height = "100%"',
+      '',
+      '  if (isHtml) {',
+      '    refs.nodeImage.style.display = "none"',
+      '    refs.nodeIframe.style.display = "block"',
+      '    refs.nodeIframe.src = currentNode.htmlUrl',
+      '    refs.hotspots.classList.add("hidden")',
+      '  } else {',
+      '    refs.nodeImage.style.display = "block"',
+      '    refs.nodeIframe.style.display = "none"',
+      '    refs.nodeIframe.src = "about:blank"',
+      '    refs.nodeImage.src = currentNode.imageUrl',
+      '    refs.nodeImage.alt = currentNode.title || currentNode.id',
+      '    refs.nodeImage.onerror = () => { refs.status.textContent = "当前节点图片缺失"; refs.stage.hidden = false }',
+      '    refs.hotspots.style.left = "0px"',
+      '    refs.hotspots.style.top = "0px"',
+      '    refs.hotspots.style.width = "100%"',
+      '    refs.hotspots.style.height = "100%"',
+      '    renderHotspots()',
+      '    requestAnimationFrame(() => {',
+      '      updateHotspotViewport()',
+      '    })',
+      '    refs.hotspots.classList.toggle("hidden", transitioning)',
+      '  }',
       '',
       '  renderBreadcrumb()',
-      '  renderHotspots()',
       '  requestAnimationFrame(() => {',
-      '    updateHotspotViewport()',
       '    confirmHostVisualCommitIfReady("render:next-frame")',
       '  })',
-      '  refs.hotspots.classList.toggle("hidden", transitioning)',
-      '  refs.nodeImage.style.opacity = transitioning ? "0" : "1"',
+      '  if (!isHtml) {',
+      '    refs.nodeImage.style.opacity = transitioning ? "0" : "1"',
+      '  }',
       '}',
       '',
       'function renderBreadcrumb() {',

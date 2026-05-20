@@ -51,7 +51,7 @@ function getNodeSummary(node: KnowledgeNode): string {
     .filter(Boolean)
   if (keyPoints.length > 0) return keyPoints.slice(0, 2).join('；').slice(0, 200)
 
-  return node.keyContent.trim().slice(0, 200)
+  return (node.keyContent ?? '').trim().slice(0, 200)
 }
 
 function getNodeKeyPoints(node: KnowledgeNode): string[] {

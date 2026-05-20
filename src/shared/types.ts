@@ -88,7 +88,7 @@ export interface NodeHotspot {
 export interface KnowledgeNode {
   id: string
   title: string
-  keyContent: string
+  keyContent?: string
   sourceText?: string
   summary?: string
   keyPoints?: string[]
@@ -101,6 +101,12 @@ export interface KnowledgeNode {
   hotspots?: NodeHotspot[]
   status?: NodeStatus
   extensions?: Record<string, unknown>
+  /** Node content type: 'image' (default, AI-generated PNG) or 'html' (local HTML file) */
+  contentType?: 'image' | 'html'
+  /** HTML file path relative to guide data directory (required when contentType === 'html') */
+  htmlSource?: string
+  /** Edge IDs declared by this HTML node for interaction hotspots (used for validation) */
+  hotspotEdgeIds?: string[]
 }
 
 export interface KnowledgeEdge {
@@ -237,8 +243,14 @@ export interface PublishNode {
   keyPoints?: string[]
   topicType?: NodeTopicType
   sourceText?: string
-  imageUrl: string
+  imageUrl?: string
   hotspots: PublishHotspot[]
+  /** Node content type: 'image' (default) or 'html' */
+  contentType?: 'image' | 'html'
+  /** HTML resource URL (API media path or bundle relative path) */
+  htmlUrl?: string
+  /** Edge IDs declared by this HTML node for interaction hotspots */
+  hotspotEdgeIds?: string[]
 }
 
 export interface PublishEdge {

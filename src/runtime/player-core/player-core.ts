@@ -11,6 +11,7 @@ export interface PlayerRefs {
   container: HTMLElement
   nodeImage: HTMLImageElement
   video: HTMLVideoElement
+  nodeIframe?: HTMLIFrameElement
 }
 
 type EventName = 'stateChange' | 'transitionStart' | 'transitionEnd' | 'error'
@@ -228,7 +229,12 @@ export class PlayerCore {
     // Push current node to history before navigating
     this.history.push(this.currentNodeId)
 
-    if (edge?.transitionType === 'builtin' && edge.builtinTransition) {
+    // Builtin transitions don't work with HTML nodes (iframe can't be cloned for CSS animation)
+    // Fall back to hard switch when fromNode or toNode is HTML
+    const fromIsHtml = this.isHtmlNode(this.currentNodeId)
+    const toIsHtml = this.isHtmlNode(hotspot.targetNodeId)
+
+    if (edge?.transitionType === 'builtin' && edge.builtinTransition && !fromIsHtml && !toIsHtml) {
       this.transitioning = true
       this.playBuiltinTransition(
         hotspot.targetNodeId,
@@ -241,6 +247,26 @@ export class PlayerCore {
     } else {
       this.switchNode(hotspot.targetNodeId)
     }
+  }
+
+  handleHotspotById(edgeId: string): void {
+    if (!this.manifest || this.transitioning) return
+    const edge = this.manifest.edgeMap[edgeId]
+    if (!edge) return
+    const hotspot: PublishHotspot = {
+      edgeId: edge.id,
+      targetNodeId: edge.toNodeId,
+      label: edge.relationLabel || '',
+      normalizedX: 0.5,
+      normalizedY: 0.5,
+      markerType: 'dot',
+    }
+    this.handleHotspotClick(hotspot)
+  }
+
+  isHtmlNode(nodeId: string): boolean {
+    const node = this.manifest?.nodeMap[nodeId]
+    return node?.contentType === 'html'
   }
 
   handleBack(): void {
@@ -347,7 +373,7 @@ export class PlayerCore {
     applyImageLayoutStyle(fromEl)
 
     const toImg = document.createElement('img')
-    toImg.src = targetNode.imageUrl
+    toImg.src = targetNode.imageUrl!
     applyImageLayoutStyle(toImg)
 
     const tc = document.createElement('div')

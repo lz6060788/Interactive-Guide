@@ -81,6 +81,15 @@ export function validateKnowledgePackage(pkg: KnowledgePackage): ValidationResul
           }
         }
       }
+      // Check hotspotEdgeIds references (for HTML nodes)
+      if (node.hotspotEdgeIds) {
+        for (const edgeId of node.hotspotEdgeIds) {
+          const edgeExists = pkg.edges.some(e => e.id === edgeId)
+          if (!edgeExists) {
+            errors.push(`Node "${node.id}" hotspotEdgeIds references non-existent edge "${edgeId}"`)
+          }
+        }
+      }
     }
   } else {
     warnings.push('KnowledgePackage.edges is empty — single-node guide')
@@ -107,9 +116,20 @@ function validateNode(
   if (!node.title || typeof node.title !== 'string') {
     errors.push(`Node "${node.id}" title is required`)
   }
-  if (!node.keyContent || typeof node.keyContent !== 'string' || node.keyContent.trim() === '') {
-    errors.push(`Node "${node.id}" keyContent must be a non-empty string`)
+
+  const contentType = node.contentType ?? 'image'
+
+  // Content type validation
+  if (contentType === 'html') {
+    if (!node.htmlSource || typeof node.htmlSource !== 'string' || node.htmlSource.trim() === '') {
+      errors.push(`Node "${node.id}" contentType is 'html' but htmlSource is missing or empty`)
+    }
+  } else {
+    if (!node.keyContent || typeof node.keyContent !== 'string' || node.keyContent.trim() === '') {
+      errors.push(`Node "${node.id}" keyContent must be a non-empty string`)
+    }
   }
+
   if (node.summary != null && typeof node.summary !== 'string') {
     errors.push(`Node "${node.id}" summary must be a string when provided`)
   }
@@ -217,8 +237,24 @@ export function validatePublishManifest(manifest: PublishManifest): ValidationRe
     }
   }
 
-  // Hotspot validation
+  // Hotspot validation & HTML node validation
   for (const node of manifest.nodes) {
+    // HTML node must have htmlUrl
+    if (node.contentType === 'html' && !node.htmlUrl) {
+      errors.push(`HTML Node "${node.id}" must have htmlUrl`)
+    }
+    // Image node (or default) must have imageUrl
+    if ((node.contentType ?? 'image') === 'image' && !node.imageUrl) {
+      errors.push(`Image Node "${node.id}" must have imageUrl`)
+    }
+    // hotspotEdgeIds validation for HTML nodes
+    if (node.hotspotEdgeIds) {
+      for (const edgeId of node.hotspotEdgeIds) {
+        if (!manifest.edgeMap[edgeId]) {
+          errors.push(`Node "${node.id}" hotspotEdgeIds references non-existent edge "${edgeId}"`)
+        }
+      }
+    }
     for (const hs of node.hotspots) {
       if (typeof hs.normalizedX !== 'number' || hs.normalizedX < 0 || hs.normalizedX > 1) {
         errors.push(`Node "${node.id}" hotspot normalizedX must be 0~1, got ${hs.normalizedX}`)
