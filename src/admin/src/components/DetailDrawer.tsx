@@ -122,6 +122,11 @@ const STYLE_OPTIONS = [
   { value: 'craft-handmade', label: 'Craft Handmade — 手工拼贴' },
 ]
 
+const RESOLUTION_OPTIONS = [
+  { value: '16:9', label: '16:9 横屏' },
+  { value: '9:16', label: '9:16 竖屏' },
+]
+
 function Field({ label, value, onChange, disabled, multiline, rows, mono }: {
   label: string
   value: string
@@ -235,6 +240,7 @@ function PackageForm({ pkg, onSave, saving }: { pkg: any; onSave: (d: any) => vo
   const [title, setTitle] = useState(pkg.title)
   const [version, setVersion] = useState(pkg.version)
   const [description, setDescription] = useState(pkg.description || '')
+  const [resolution, setResolution] = useState(pkg.resolution || '16:9')
   const [visualStyle, setVisualStyle] = useState(pkg.visualStyle || '')
   const [transitionStyle, setTransitionStyle] = useState(pkg.transitionStyle || '')
   const [style, setStyle] = useState(pkg.style || 'morandi-journal')
@@ -244,10 +250,11 @@ function PackageForm({ pkg, onSave, saving }: { pkg: any; onSave: (d: any) => vo
       <Field label="标题" value={title} onChange={setTitle} />
       <Field label="版本" value={version} onChange={setVersion} />
       <Field label="描述" value={description} onChange={setDescription} multiline />
+      <SelectField label="画面比例" value={resolution} onChange={setResolution} options={RESOLUTION_OPTIONS} />
       <SelectField label="信息图风格" value={style} onChange={setStyle} options={STYLE_OPTIONS} />
       <Field label="画面风格 (补充)" value={visualStyle} onChange={setVisualStyle} multiline />
       <Field label="转场风格" value={transitionStyle} onChange={setTransitionStyle} multiline />
-      <SaveButton saving={saving} onClick={() => onSave({ title, version, description, style, visualStyle, transitionStyle })} />
+      <SaveButton saving={saving} onClick={() => onSave({ title, version, description, resolution, style, visualStyle, transitionStyle })} />
     </div>
   )
 }

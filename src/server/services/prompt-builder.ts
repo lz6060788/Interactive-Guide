@@ -11,6 +11,7 @@ import type {
   KnowledgeEdge,
   TransitionVisualPlan,
 } from '../../shared/types.js'
+import { getResolutionDimensions } from '../../shared/utils.js'
 
 // ─── Style Definitions ────────────────────────────────────────
 
@@ -98,8 +99,8 @@ export class PromptBuilder {
   buildImagePrompt(node: KnowledgeNode, guide: KnowledgePackage): string {
     const lang = guide.locale ?? 'zh-CN'
     const langName = lang.startsWith('zh') ? 'Chinese' : lang.startsWith('ja') ? 'Japanese' : 'English'
-    const w = guide.resolution.width
-    const h = guide.resolution.height
+    const w = getResolutionDimensions(guide.resolution).width
+    const h = getResolutionDimensions(guide.resolution).height
     const aspectLabel = w > h ? 'landscape' : w < h ? 'portrait' : 'square'
     const styleKey = guide.style ?? 'morandi-journal'
     const styleDef = STYLE_DEFS[styleKey]
@@ -261,7 +262,7 @@ export class PromptBuilder {
       guide?.visualStyle?.trim(),
     ].filter(Boolean).join(' | ') || 'clean infographic interface'
     const canvasDescriptor = guide
-      ? `${guide.resolution.width}:${guide.resolution.height} portrait mobile canvas`
+      ? `${guide.resolution} canvas`
       : 'portrait mobile canvas'
     const sourceHotspot = fromNode?.hotspots?.find(hs => hs.edgeId === edge.id)
     const hotspotCue = sourceHotspot

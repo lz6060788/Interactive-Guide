@@ -35,6 +35,12 @@ const TOPIC_TYPE_OPTIONS = [
   { value: 'content-analysis', label: 'Content Analysis — 内容解读' },
 ]
 
+const IMAGE_FIT_OPTIONS = [
+  { value: 'fill', label: 'Fill — 拉伸填满（默认）' },
+  { value: 'fitHeight', label: 'Fit Height — 等比按高度（可横拖）' },
+  { value: 'fitWidth', label: 'Fit Width — 等比按宽度（可纵拖）' },
+]
+
 function Field({ label, value, onChange, disabled, multiline, rows, mono }: {
   label: string
   value: string
@@ -197,6 +203,7 @@ export function NodeModal({
   const [imageUrl, setImageUrl] = useState(node.imageUrl)
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadImageMsg, setUploadImageMsg] = useState<string | null>(null)
+  const [imageFitMode, setImageFitMode] = useState(node.imageFitMode || 'fill')
 
   useEffect(() => { setImageUrl(node.imageUrl) }, [node.imageUrl])
 
@@ -250,6 +257,7 @@ export function NodeModal({
           <SelectField label="主题类型" value={topicType} onChange={setTopicType} options={TOPIC_TYPE_OPTIONS} />
           <Field label="页面摘要" value={summary} onChange={setSummary} multiline rows={3} />
           <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
+          <SelectField label="图片填充模式" value={imageFitMode} onChange={setImageFitMode} options={IMAGE_FIT_OPTIONS} />
 
           {/* 状态信息（只读） */}
           <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
@@ -451,6 +459,7 @@ export function NodeModal({
               keyContent: keyContentValue,
               keyPoints: linesToArray(keyPointsText),
               hotspotHints: linesToArray(hotspotHintsText),
+              imageFitMode,
             })}
           />
 

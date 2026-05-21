@@ -11,7 +11,7 @@ interface GuideListItem {
   id: string
   title: string
   version: string
-  resolution: { width: number; height: number }
+  resolution: string
   nodeCount: number
   edgeCount: number
   latestBuildStatus?: string
@@ -43,8 +43,7 @@ export function PackageListPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newVersion, setNewVersion] = useState('0.1.0')
-  const [newWidth, setNewWidth] = useState('1440')
-  const [newHeight, setNewHeight] = useState('810')
+  const [newResolution, setNewResolution] = useState('16:9')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
@@ -119,8 +118,7 @@ export function PackageListPage() {
   const handleCreate = () => {
     setNewTitle('')
     setNewVersion('0.1.0')
-    setNewWidth('1440')
-    setNewHeight('810')
+    setNewResolution('16:9')
     setShowCreateDialog(true)
   }
 
@@ -132,10 +130,7 @@ export function PackageListPage() {
         id: `guide_${Date.now()}`,
         title: newTitle.trim(),
         version: newVersion.trim() || '0.1.0',
-        resolution: {
-          width: parseInt(newWidth) || 1440,
-          height: parseInt(newHeight) || 810,
-        },
+        resolution: newResolution as '16:9' | '9:16',
         nodes: [{ id: 'root', title: '首页', keyContent: '待补充', status: 'draft' }],
         edges: [],
       }
@@ -287,7 +282,7 @@ export function PackageListPage() {
                   {/* Meta info */}
                   <Flex gap="4" mb="4">
                     <Text fontSize="xs" color="text-secondary">
-                      {guide.resolution.width}x{guide.resolution.height}
+                      {guide.resolution}
                     </Text>
                     <Text fontSize="xs" color="text-secondary">
                       {guide.nodeCount} 节点
@@ -400,28 +395,17 @@ export function PackageListPage() {
               />
             </Box>
 
-            <Flex gap="3" mb="4">
-              <Box flex="1">
-                <Text fontSize="xs" color="text-tertiary" mb="1.5">画面宽度</Text>
-                <input
-                  type="number"
-                  value={newWidth}
-                  onChange={e => setNewWidth(e.target.value)}
-                  placeholder="1440"
-                  style={inputStyle}
-                />
-              </Box>
-              <Box flex="1">
-                <Text fontSize="xs" color="text-tertiary" mb="1.5">画面高度</Text>
-                <input
-                  type="number"
-                  value={newHeight}
-                  onChange={e => setNewHeight(e.target.value)}
-                  placeholder="810"
-                  style={inputStyle}
-                />
-              </Box>
-            </Flex>
+            <Box mb="4">
+              <Text fontSize="xs" color="text-tertiary" mb="1.5">画面比例</Text>
+              <select
+                value={newResolution}
+                onChange={e => setNewResolution(e.target.value)}
+                style={inputStyle}
+              >
+                <option value="16:9">16:9 横屏</option>
+                <option value="9:16">9:16 竖屏</option>
+              </select>
+            </Box>
 
             <Flex gap="2" justify="flex-end">
               <Button

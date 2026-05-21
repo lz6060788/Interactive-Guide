@@ -16,7 +16,7 @@ import type {
   PublishManifest,
 } from '../../shared/types.js'
 import { validateKnowledgePackage, validatePublishManifest } from '../../shared/validators.js'
-import { generateGenerateId, nowISO } from '../../shared/utils.js'
+import { generateGenerateId, nowISO, getResolutionDimensions } from '../../shared/utils.js'
 import { AppError } from '../middleware/app-error.js'
 import { PromptBuilder } from './prompt-builder.js'
 import { RuntimeBundleGenerator } from './runtime-bundle.js'
@@ -321,8 +321,8 @@ export class BuildPipeline {
       const imageResult = await this.imageModule.generateNodeImage(
         node.id,
         imagePrompt,
-        guide.resolution.width,
-        guide.resolution.height,
+        getResolutionDimensions(guide.resolution).width,
+        getResolutionDimensions(guide.resolution).height,
       )
 
       const buildImagePath = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
@@ -655,8 +655,8 @@ export class BuildPipeline {
             const imageResult = await this.imageModule.generateNodeImage(
               node.id,
               imagePrompt,
-              guide.resolution.width,
-              guide.resolution.height,
+              getResolutionDimensions(guide.resolution).width,
+              getResolutionDimensions(guide.resolution).height,
             )
 
             const buildImagePath = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
@@ -980,6 +980,7 @@ export class BuildPipeline {
           contentType: 'html' as const,
           htmlUrl: `${mediaBase}/assets/nodes/${n.id}.html`,
           hotspotEdgeIds: n.hotspotEdgeIds,
+          imageFitMode: n.imageFitMode,
           hotspots: [] as Array<{
             edgeId: string; targetNodeId: string; label: string
             normalizedX: number; normalizedY: number; radius?: number
@@ -996,6 +997,7 @@ export class BuildPipeline {
         topicType: n.topicType,
         sourceText: n.sourceText?.trim() || undefined,
         imageUrl: `${mediaBase}/assets/nodes/${n.id}.png`,
+        imageFitMode: n.imageFitMode,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
           targetNodeId: hs.targetNodeId,
@@ -1066,6 +1068,7 @@ export class BuildPipeline {
           contentType: 'html' as const,
           htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
           hotspotEdgeIds: n.hotspotEdgeIds,
+          imageFitMode: n.imageFitMode,
           hotspots: [] as Array<{
             edgeId: string; targetNodeId: string; label: string
             normalizedX: number; normalizedY: number; radius?: number
@@ -1082,6 +1085,7 @@ export class BuildPipeline {
         topicType: n.topicType,
         sourceText: n.sourceText?.trim() || undefined,
         imageUrl: `${mediaBase}/nodes/${n.id}.png`,
+        imageFitMode: n.imageFitMode,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
           targetNodeId: hs.targetNodeId,

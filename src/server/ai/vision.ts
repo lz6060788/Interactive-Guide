@@ -7,6 +7,7 @@
 
 import { loadConfig } from '../config.js'
 import { buildCacheKey, getCachedPlannerResult, persistPlannerResult } from './cache.js'
+import { getResolutionDimensions } from '../../shared/utils.js'
 import type {
   KnowledgeEdge,
   KnowledgeNode,
@@ -149,9 +150,9 @@ export async function planNodeImage(node: KnowledgeNode, pkg: KnowledgePackage, 
 
   let userMessage = `知识包标题：${pkg.title}
 视觉风格：${pkg.visualStyle ?? '现代简洁'}
-默认分辨率：${pkg.resolution.width}x${pkg.resolution.height}
+默认分辨率：${pkg.resolution}
 画布构图要求：
-${getCanvasGuidance(pkg.resolution.width, pkg.resolution.height)}
+${getCanvasGuidance(getResolutionDimensions(pkg.resolution).width, getResolutionDimensions(pkg.resolution).height)}
 
 节点标题：${node.title}
 主题类型：${topicType}
@@ -370,7 +371,7 @@ export async function planTransitionVisuals(
   const userMessage = `知识包：${pkg.title}
 边ID：${edge.id}
 导航语义：${edge.relationLabel ?? '无'}
-画布：${pkg.resolution.width}x${pkg.resolution.height}
+画布：${pkg.resolution}
 整体风格：${pkg.style ?? pkg.visualStyle ?? '未指定'}
 
 源节点标题：${fromNode.title}

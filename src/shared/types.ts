@@ -17,6 +17,7 @@ export type TransitionDescriptionMode = 'auto' | 'manual'
 // ─── Builtin Transition Types ─────────────────────────────────
 
 export type BuiltinTransitionType = 'pan' | 'flip' | 'zoom'
+export type ImageFitMode = 'fill' | 'fitHeight' | 'fitWidth'
 export type EasingType = 'ease-in-out' | 'ease-in' | 'ease-out' | 'linear'
 
 export interface PanTransitionConfig {
@@ -66,10 +67,8 @@ export type GenerateCurrentStage = BuildCurrentStage
 
 // ─── Resolution ─────────────────────────────────────────────
 
-export interface PackageResolution {
-  width: number
-  height: number
-}
+/** Aspect ratio of the knowledge package canvas. Only 16:9 (landscape) or 9:16 (portrait). */
+export type PackageResolution = '16:9' | '9:16'
 
 // ─── Knowledge Layer ────────────────────────────────────────
 
@@ -107,6 +106,8 @@ export interface KnowledgeNode {
   htmlSource?: string
   /** Edge IDs declared by this HTML node for interaction hotspots (used for validation) */
   hotspotEdgeIds?: string[]
+  /** Image fill mode: 'fill' (stretch, default), 'fitHeight' (equal ratio by height, draggable), 'fitWidth' (equal ratio by width, draggable) */
+  imageFitMode?: ImageFitMode
 }
 
 export interface KnowledgeEdge {
@@ -251,6 +252,8 @@ export interface PublishNode {
   htmlUrl?: string
   /** Edge IDs declared by this HTML node for interaction hotspots */
   hotspotEdgeIds?: string[]
+  /** Image fill mode: 'fill' (stretch, default), 'fitHeight' (equal ratio by height, draggable), 'fitWidth' (equal ratio by width, draggable) */
+  imageFitMode?: ImageFitMode
 }
 
 export interface PublishEdge {

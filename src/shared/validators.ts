@@ -33,15 +33,8 @@ export function validateKnowledgePackage(pkg: KnowledgePackage): ValidationResul
   if (!pkg.version || typeof pkg.version !== 'string') {
     errors.push('KnowledgePackage.version is required and must be a non-empty string')
   }
-  if (!pkg.resolution || typeof pkg.resolution.width !== 'number' || typeof pkg.resolution.height !== 'number') {
-    errors.push('KnowledgePackage.resolution must have numeric width and height')
-  } else {
-    if (pkg.resolution.width <= 0 || !Number.isInteger(pkg.resolution.width)) {
-      errors.push('resolution.width must be a positive integer')
-    }
-    if (pkg.resolution.height <= 0 || !Number.isInteger(pkg.resolution.height)) {
-      errors.push('resolution.height must be a positive integer')
-    }
+  if (!pkg.resolution || !['16:9', '9:16'].includes(pkg.resolution)) {
+    errors.push('KnowledgePackage.resolution must be "16:9" or "9:16"')
   }
 
   // Nodes
@@ -164,6 +157,11 @@ function validateNode(
       }
     }
   }
+
+  // imageFitMode validation
+  if (node.imageFitMode != null && !['fill', 'fitHeight', 'fitWidth'].includes(node.imageFitMode)) {
+    errors.push(`Node "${node.id}" imageFitMode must be 'fill', 'fitHeight', or 'fitWidth', got '${node.imageFitMode}'`)
+  }
 }
 
 function validateEdge(
@@ -254,6 +252,10 @@ export function validatePublishManifest(manifest: PublishManifest): ValidationRe
           errors.push(`Node "${node.id}" hotspotEdgeIds references non-existent edge "${edgeId}"`)
         }
       }
+    }
+    // imageFitMode validation
+    if (node.imageFitMode != null && !['fill', 'fitHeight', 'fitWidth'].includes(node.imageFitMode)) {
+      errors.push(`Node "${node.id}" imageFitMode must be 'fill', 'fitHeight', or 'fitWidth', got '${node.imageFitMode}'`)
     }
     for (const hs of node.hotspots) {
       if (typeof hs.normalizedX !== 'number' || hs.normalizedX < 0 || hs.normalizedX > 1) {

@@ -3,7 +3,18 @@
 // ============================================================
 
 import { v4 as uuidv4 } from 'uuid'
-import type { KnowledgePackage, PackageListItem } from './types.js'
+import type { KnowledgePackage, PackageListItem, PackageResolution } from './types.js'
+
+/** Base pixel dimensions for each aspect ratio. Used for absolute coordinate computation and AI prompts. */
+const RESOLUTION_BASES: Record<PackageResolution, { width: number; height: number }> = {
+  '16:9': { width: 1920, height: 1080 },
+  '9:16': { width: 1080, height: 1920 },
+}
+
+/** Convert a resolution ratio string to base pixel dimensions. */
+export function getResolutionDimensions(resolution: PackageResolution): { width: number; height: number } {
+  return RESOLUTION_BASES[resolution]
+}
 
 /**
  * Generate a unique generate ID.

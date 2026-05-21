@@ -15,7 +15,7 @@ import type {
   PublishManifest,
 } from '../../shared/types.js'
 import { validateKnowledgePackage } from '../../shared/validators.js'
-import { nowISO } from '../../shared/utils.js'
+import { nowISO, getResolutionDimensions } from '../../shared/utils.js'
 import { AppError } from '../middleware/app-error.js'
 
 export class GuideService {
@@ -153,6 +153,14 @@ export class GuideService {
     }
 
     this.repo.saveGuide(updated)
+
+    // Always sync resolution to workspace manifest when present
+    if (updates.resolution) {
+      this.patchWorkspaceManifest(id, manifest => {
+        manifest.resolution = updates.resolution as any
+      })
+    }
+
     return updated
   }
 
@@ -215,37 +223,44 @@ export class GuideService {
 
     node.hotspots = hotspots.map(hs => ({
       ...hs,
-      x: Math.round(hs.normalizedX * guide.resolution.width),
-      y: Math.round(hs.normalizedY * guide.resolution.height),
+      x: Math.round(hs.normalizedX * getResolutionDimensions(guide.resolution).width),
+      y: Math.round(hs.normalizedY * getResolutionDimensions(guide.resolution).height),
       radius: hs.radius ?? 12,
     }))
 
     guide.metadata = { ...guide.metadata, updatedAt: nowISO() }
     this.repo.saveGuide(guide)
 
-    // --- Sync to manifest if it exists ---
+    // Build the hotspot data for manifest sync
+    const updatedHotspots = node.hotspots?.map(hs => ({
+      edgeId: hs.edgeId,
+      targetNodeId: hs.targetNodeId,
+      label: hs.label,
+      normalizedX: hs.normalizedX,
+      normalizedY: hs.normalizedY,
+      radius: hs.radius,
+      markerType: 'dot' as const,
+    })) || []
+
+    // Sync to workspace manifest (preview source of truth)
+    this.patchWorkspaceManifest(guideId, manifest => {
+      const manifestNode = manifest.nodes.find(n => n.id === nodeId)
+      if (manifestNode) {
+        manifestNode.hotspots = updatedHotspots
+      }
+      if (manifest.nodeMap?.[nodeId]) {
+        manifest.nodeMap[nodeId].hotspots = updatedHotspots
+      }
+    })
+
+    // Also sync to publish manifest if it exists
     try {
       const manifestPath = `publish/${guideId}/${guide.version}/manifest.json`
-      // We must clear fs-repository cache for this file before reading
-      // to ensure we're reading the latest content before modifying
       const manifest = this.repo.readJson<any>(manifestPath)
       if (manifest && manifest.nodes) {
-        const updatedHotspots = node.hotspots?.map(hs => ({
-          edgeId: hs.edgeId,
-          targetNodeId: hs.targetNodeId,
-          label: hs.label,
-          normalizedX: hs.normalizedX,
-          normalizedY: hs.normalizedY,
-          radius: hs.radius,
-          markerType: 'dot',
-        })) || []
-
         manifest.nodes = manifest.nodes.map((n: any) => {
           if (n.id === nodeId) {
-            return {
-              ...n,
-              hotspots: updatedHotspots,
-            }
+            return { ...n, hotspots: updatedHotspots }
           }
           return n
         })
@@ -256,12 +271,10 @@ export class GuideService {
           }
         }
         this.repo.writeJson(manifestPath, manifest)
-        
-        // Ensure changes are flushed immediately (though fs is sync, good practice)
-        console.log(`[updateHotspots] Synced to manifest: ${manifestPath}`)
+        console.log(`[updateHotspots] Synced to publish manifest: ${manifestPath}`)
       }
     } catch (e) {
-      console.warn(`Failed to sync hotspots to manifest for guide ${guideId}:`, e)
+      console.warn(`Failed to sync hotspots to publish manifest for guide ${guideId}:`, e)
     }
 
     return node
@@ -301,8 +314,8 @@ export class GuideService {
       edgeId,
       targetNodeId: nodeId,
       label: nodeData.title,
-      x: Math.round(0.5 * guide.resolution.width),
-      y: Math.round(0.5 * guide.resolution.height),
+      x: Math.round(0.5 * getResolutionDimensions(guide.resolution).width),
+      y: Math.round(0.5 * getResolutionDimensions(guide.resolution).height),
       normalizedX: 0.5,
       normalizedY: 0.5,
       radius: 12,
