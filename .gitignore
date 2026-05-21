@@ -16,6 +16,8 @@ data/publish/*
 /data
 docs
 *.png
+*.mp4
+*.html
 
 *.map
 *.d.ts
