@@ -26,6 +26,7 @@ interface PlayerHostOptions {
 
 type DragState = {
   active: boolean
+  pointerId: number | null
   startX: number
   startY: number
   startOffsetX: number
@@ -38,6 +39,7 @@ export class PlayerHost {
   private engine: PlayerCore
   private dragState: DragState = {
     active: false,
+    pointerId: null,
     startX: 0,
     startY: 0,
     startOffsetX: 0,
@@ -119,15 +121,16 @@ export class PlayerHost {
 
     this.refs.nodeImage.addEventListener('load', this.handleNodeImageLoad)
     this.refs.nodeIframe.addEventListener('load', this.handleNodeIframeLoad)
-    this.refs.nodeImage.addEventListener('mousedown', this.handleNodeImageMouseDown)
+    this.refs.nodeImage.addEventListener('pointerdown', this.handleNodeImagePointerDown)
     window.addEventListener('message', this.handleWindowMessage)
     window.addEventListener('resize', this.handleWindowResize)
 
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('load', this.handleNodeImageLoad))
     this.destroyers.push(() => this.refs.nodeIframe.removeEventListener('load', this.handleNodeIframeLoad))
-    this.destroyers.push(() => this.refs.nodeImage.removeEventListener('mousedown', this.handleNodeImageMouseDown))
+    this.destroyers.push(() => this.refs.nodeImage.removeEventListener('pointerdown', this.handleNodeImagePointerDown))
     this.destroyers.push(() => window.removeEventListener('message', this.handleWindowMessage))
     this.destroyers.push(() => window.removeEventListener('resize', this.handleWindowResize))
+    this.destroyers.push(() => this.detachDragListeners())
   }
 
   private handleEngineStateChange = (): void => {
@@ -165,28 +168,34 @@ export class PlayerHost {
     this.updateHotspotViewport()
   }
 
-  private handleNodeImageMouseDown = (event: MouseEvent): void => {
+  private handleNodeImagePointerDown = (event: PointerEvent): void => {
     const currentNode = this.engine.getCurrentNode()
     if (!currentNode) return
 
     const fitMode = currentNode.imageFitMode ?? 'fill'
     if (fitMode === 'fill') return
+    if (!event.isPrimary) return
 
     event.preventDefault()
     this.dragState = {
       active: true,
+      pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       startOffsetX: this.imageOffset.x,
       startOffsetY: this.imageOffset.y,
     }
 
-    document.addEventListener('mousemove', this.handleDragMove)
-    document.addEventListener('mouseup', this.handleDragEnd)
+    this.refs.nodeImage.style.cursor = 'grabbing'
+    this.refs.nodeImage.setPointerCapture?.(event.pointerId)
+    document.addEventListener('pointermove', this.handleDragMove)
+    document.addEventListener('pointerup', this.handleDragEnd)
+    document.addEventListener('pointercancel', this.handleDragEnd)
   }
 
-  private handleDragMove = (event: MouseEvent): void => {
+  private handleDragMove = (event: PointerEvent): void => {
     if (!this.dragState.active) return
+    if (this.dragState.pointerId !== null && event.pointerId !== this.dragState.pointerId) return
 
     const currentNode = this.engine.getCurrentNode()
     if (!currentNode) return
@@ -225,9 +234,17 @@ export class PlayerHost {
   }
 
   private handleDragEnd = (): void => {
+    const pointerId = this.dragState.pointerId
     this.dragState.active = false
-    document.removeEventListener('mousemove', this.handleDragMove)
-    document.removeEventListener('mouseup', this.handleDragEnd)
+    this.dragState.pointerId = null
+    this.detachDragListeners()
+    if (pointerId !== null && this.refs.nodeImage.hasPointerCapture?.(pointerId)) {
+      this.refs.nodeImage.releasePointerCapture(pointerId)
+    }
+
+    const currentNode = this.engine.getCurrentNode()
+    const fitMode = currentNode?.imageFitMode ?? 'fill'
+    this.refs.nodeImage.style.cursor = fitMode === 'fill' ? 'default' : 'grab'
   }
 
   private emitState(): void {
@@ -376,6 +393,7 @@ export class PlayerHost {
     nodeImage.style.maxWidth = 'none'
     nodeImage.style.maxHeight = 'none'
     nodeImage.style.cursor = fitMode === 'fill' ? 'default' : 'grab'
+    nodeImage.style.touchAction = fitMode === 'fill' ? 'auto' : 'none'
     nodeImage.style.position = 'absolute'
     nodeImage.style.left = ''
     nodeImage.style.top = ''
@@ -412,6 +430,12 @@ export class PlayerHost {
     const nextY = fitMode === 'fitWidth' ? offsetY : 0
     this.imageOffset = { x: nextX, y: nextY }
     this.refs.nodeImage.style.transform = `translate(-50%, -50%) translate(${nextX}px, ${nextY}px)`
+  }
+
+  private detachDragListeners(): void {
+    document.removeEventListener('pointermove', this.handleDragMove)
+    document.removeEventListener('pointerup', this.handleDragEnd)
+    document.removeEventListener('pointercancel', this.handleDragEnd)
   }
 
   private renderHotspots(): void {
