@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useReducer } from 'react'
 import {
-  Box, Flex, Text, Heading, Badge, Spinner, IconButton,
+  Box, Flex, Text, Spinner, IconButton,
 } from '@chakra-ui/react'
 import { X, ArrowLeft } from 'lucide-react'
 import * as api from '../services/api'
-import type { PublishManifest } from '../../../shared/types'
+import type { PublishManifest, ImageFitMode } from '../../../shared/types'
 import { PlayerCore } from '../../../runtime/player-core/player-core.js'
 
 interface Props {
@@ -16,8 +16,6 @@ type PlayerStatus = 'loading' | 'ready' | 'error'
 
 const POLL_INTERVAL_MS = 2000
 const MAX_POLL_COUNT = 45
-const INFO_PANEL_COLLAPSED_PX = 52
-const INFO_PANEL_EXPANDED_PX = 176
 
 function isPublishManifest(value: unknown): value is PublishManifest {
   if (!value || typeof value !== 'object') return false
@@ -71,8 +69,17 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const [manifest, setManifest] = useState<PublishManifest | null>(null)
   const [status, setStatus] = useState<PlayerStatus>('loading')
   const [error, setError] = useState<string | null>(null)
-  const [infoExpanded, setInfoExpanded] = useState(false)
   const [imgRect, setImgRect] = useState({ x: 0, y: 0, w: 0, h: 0 })
+
+  // Image fit mode drag state
+  const dragRef = useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    startOffsetX: 0,
+    startOffsetY: 0,
+  })
+  const imageOffsetRef = useRef({ x: 0, y: 0 })
 
   // Re-render trigger synced from PlayerCore engine events
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0)
@@ -84,8 +91,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const nodeIframeRef = useRef<HTMLIFrameElement>(null)
   const manifestRef = useRef<PublishManifest | null>(null)
 
-  const infoPanelHeight = infoExpanded ? INFO_PANEL_EXPANDED_PX : INFO_PANEL_COLLAPSED_PX
-
   // Read live state from engine
   const engine = engineRef.current
   const currentNodeId = engine?.getCurrentNodeId() ?? manifest?.rootNodeId ?? 'root'
@@ -93,7 +98,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const preloading = engine?.isPreloading() ?? false
   const currentHistory = engine?.getHistory() ?? []
   const currentNode = manifest?.nodeMap?.[currentNodeId] ?? null
-  const breadcrumb = engine?.buildBreadcrumb() ?? []
+  const imageFitMode: ImageFitMode = (currentNode as any)?.imageFitMode || 'fill'
 
   const confirmHostVisualCommitIfReady = useCallback((reason: string) => {
     const liveEngine = engineRef.current
@@ -145,25 +150,28 @@ export function PreviewModal({ packageId, onClose }: Props) {
     const container = containerRef.current
     if (!container) return
     const img = nodeImageRef.current
-    if (!img) return
-
-    if (img.naturalWidth === 0 || img.naturalHeight === 0) return
+    if (!img || img.naturalWidth === 0 || img.naturalHeight === 0) return
 
     const cRect = container.getBoundingClientRect()
     const iRect = img.getBoundingClientRect()
 
-    const renderX = iRect.left - cRect.left
-    const renderY = iRect.top - cRect.top
-    const renderW = iRect.width
-    const renderH = iRect.height
-
     setImgRect({
-      x: renderX,
-      y: renderY,
-      w: renderW,
-      h: renderH,
+      x: iRect.left - cRect.left,
+      y: iRect.top - cRect.top,
+      w: iRect.width,
+      h: iRect.height,
     })
   }, [])
+
+  const applyImageTransform = useCallback((offsetX: number, offsetY: number) => {
+    const img = nodeImageRef.current
+    if (!img) return
+
+    const nextX = imageFitMode === 'fitHeight' ? offsetX : 0
+    const nextY = imageFitMode === 'fitWidth' ? offsetY : 0
+    imageOffsetRef.current = { x: nextX, y: nextY }
+    img.style.transform = `translate(-50%, -50%) translate(${nextX}px, ${nextY}px)`
+  }, [imageFitMode])
 
   useEffect(() => {
     if (status !== 'ready') return
@@ -174,6 +182,77 @@ export function PreviewModal({ packageId, onClose }: Props) {
       window.removeEventListener('resize', updateImgRect)
     }
   }, [status, currentNodeId, updateImgRect])
+
+  // Image drag handler for fitHeight/fitWidth modes
+  const handleImgMouseDown = useCallback((e: React.MouseEvent) => {
+    if (imageFitMode === 'fill') return
+    const img = nodeImageRef.current
+    if (!img) return
+    e.preventDefault()
+
+    dragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      startOffsetX: imageOffsetRef.current.x,
+      startOffsetY: imageOffsetRef.current.y,
+    }
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!dragRef.current.active) return
+      const container = containerRef.current
+      const liveImg = nodeImageRef.current
+      if (!container || !liveImg) return
+
+      const cRect = container.getBoundingClientRect()
+      const iRect = liveImg.getBoundingClientRect()
+
+      let nextX = dragRef.current.startOffsetX
+      let nextY = dragRef.current.startOffsetY
+
+      if (imageFitMode === 'fitHeight') {
+        nextX += ev.clientX - dragRef.current.startX
+        if (iRect.width > cRect.width) {
+          const maxOffsetX = (iRect.width - cRect.width) / 2
+          nextX = Math.max(-maxOffsetX, Math.min(maxOffsetX, nextX))
+        } else {
+          nextX = 0
+        }
+        nextY = 0
+      } else if (imageFitMode === 'fitWidth') {
+        nextY += ev.clientY - dragRef.current.startY
+        if (iRect.height > cRect.height) {
+          const maxOffsetY = (iRect.height - cRect.height) / 2
+          nextY = Math.max(-maxOffsetY, Math.min(maxOffsetY, nextY))
+        } else {
+          nextY = 0
+        }
+        nextX = 0
+      }
+
+      applyImageTransform(nextX, nextY)
+      requestAnimationFrame(updateImgRect)
+    }
+
+    const handleMouseUp = () => {
+      dragRef.current.active = false
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }, [applyImageTransform, imageFitMode, updateImgRect])
+
+  useEffect(() => {
+    imageOffsetRef.current = { x: 0, y: 0 }
+    if (imageFitMode === 'fill') return
+
+    requestAnimationFrame(() => {
+      applyImageTransform(0, 0)
+      updateImgRect()
+    })
+  }, [applyImageTransform, imageFitMode, currentNodeId, updateImgRect])
 
   // Phase 1: Load manifest
   useEffect(() => {
@@ -223,7 +302,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
 
         setManifest(m)
         manifestRef.current = m
-        setInfoExpanded(false)
         setStatus('ready')
       } catch (e: any) {
         setError(e.message)
@@ -250,7 +328,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
     })
     engineRef.current = engine
     engine.on('stateChange', () => {
-      setInfoExpanded(false)
       forceUpdate()
       requestAnimationFrame(() => {
         confirmHostVisualCommitIfReady('engine:stateChange:next-frame')
@@ -282,6 +359,46 @@ export function PreviewModal({ packageId, onClose }: Props) {
     })
   }, [status, currentNode, currentNodeId, transitioning, confirmHostVisualCommitIfReady])
 
+  // Compute modal sizing: fit resolution into 90vw x 90vh, keeping aspect ratio
+  const [arW, arH] = manifest
+    ? manifest.resolution.split(':').map(Number)
+    : [16, 9]
+  const maxWVw = 90
+  const maxHVh = 90
+  const ar = arW / arH
+  // In vw/vh units: maxWVw vw / maxHVh vh = maxWVw / maxHVh (ratio depends on viewport aspect)
+  // We need to fit a rect of aspect arW:arH into maxWVw x maxHVh.
+  // Constraint: w <= maxWVw, h <= maxHVh, w/h = arW/arH
+  // If maxWVw / ar <= maxHVh → constraining dim is width → w = maxWVw, h = maxWVw / ar
+  // Else → constraining dim is height → h = maxHVh, w = maxHVh * ar
+  const modalW = `min(${maxWVw}vw, ${maxHVh}vh * ${ar})`
+  const modalH = `min(${maxHVh}vh, ${maxWVw}vw / ${ar})`
+
+  // Image style based on fit mode
+  const imgStyle: React.CSSProperties = imageFitMode === 'fill'
+    ? {
+        width: '100%',
+        height: '100%',
+        objectFit: 'fill',
+        display: currentNode?.contentType === 'html' ? 'none' : 'block',
+        userSelect: 'none',
+        opacity: transitioning ? 0 : 1,
+      }
+    : {
+        position: 'absolute',
+        left: '50%',
+        top: '50%',
+        transform: 'translate(-50%, -50%)',
+        maxWidth: 'none',
+        maxHeight: 'none',
+        ...(imageFitMode === 'fitHeight'
+          ? { height: '100%', width: 'auto', cursor: 'grab' }
+          : { width: '100%', height: 'auto', cursor: 'grab' }),
+        display: currentNode?.contentType === 'html' ? 'none' : 'block',
+        userSelect: 'none',
+        opacity: transitioning ? 0 : 1,
+      }
+
   return (
     <Flex position="fixed" inset="0" zIndex={200} align="center" justify="center">
       {/* Backdrop */}
@@ -290,70 +407,56 @@ export function PreviewModal({ packageId, onClose }: Props) {
       {/* Modal */}
       <Box
         position="relative"
-        w="90vw"
-        maxW="1200px"
-        bg="surface"
+        bg="black"
         rounded="lg"
         overflow="hidden"
         display="flex"
         flexDirection="column"
-        maxH="90vh"
-        h="90vh"
         zIndex={1}
+        style={manifest ? {
+          width: modalW,
+          height: modalH,
+        } : { width: '90vw', height: '85vh' }}
       >
-        {/* Header */}
-        <Flex align="center" gap="3" px="5" py="3" style={{ borderBottom: '1px solid #2a2d3a' }}>
-          <Heading size="sm" fontWeight="600" color="text-primary">运行时预览</Heading>
-          {currentHistory.length > 0 && (
-            <IconButton
-              size="sm"
-              variant="ghost"
-              color="text-secondary"
-              onClick={() => engine?.handleBack()}
-              aria-label="后退"
-            >
-              <ArrowLeft size={16} />
-            </IconButton>
-          )}
-          <Flex flex="1" gap="2" align="center" overflow="hidden">
-            {manifest && (
-              <Badge bg="surface-raised" color="text-secondary" fontSize="xs" px="2" py="0.5" rounded="sm" flexShrink={0}>
-                {manifest.packageId} v{manifest.version}
-              </Badge>
-            )}
-            {/* Breadcrumb */}
-            {breadcrumb.length > 0 && (
-              <Flex gap="1" align="center" overflow="hidden">
-                {breadcrumb.map((item, i) => (
-                  <Flex key={item.id} align="center" gap="1" flexShrink={0}>
-                    {i > 0 && <Text color="text-tertiary" fontSize="xs">/</Text>}
-                    <Text
-                      as="button"
-                      fontSize="xs"
-                      color={i === breadcrumb.length - 1 ? 'text-primary' : 'text-secondary'}
-                      fontWeight={i === breadcrumb.length - 1 ? '600' : '400'}
-                      cursor="pointer"
-                      _hover={{ textDecoration: 'underline' }}
-                      onClick={() => {
-                        if (i < breadcrumb.length - 1) {
-                          engine?.navigateTo(item.id)
-                        }
-                      }}
-                      whiteSpace="nowrap"
-                    >
-                      {item.title}
-                    </Text>
-                  </Flex>
-                ))}
-              </Flex>
-            )}
-          </Flex>
-          <IconButton size="sm" variant="ghost" color="text-secondary" onClick={onClose} aria-label="关闭">
-            <X size={16} />
-          </IconButton>
-        </Flex>
+        {/* Floating close button */}
+        <IconButton
+          position="absolute"
+          top="2"
+          right="2"
+          size="sm"
+          variant="ghost"
+          color="whiteAlpha.800"
+          bg="blackAlpha.600"
+          _hover={{ bg: 'blackAlpha.800' }}
+          zIndex={20}
+          rounded="full"
+          onClick={onClose}
+          aria-label="关闭"
+        >
+          <X size={16} />
+        </IconButton>
 
-        {/* Player */}
+        {/* Floating back button */}
+        {currentHistory.length > 0 && (
+          <IconButton
+            position="absolute"
+            top="2"
+            left="2"
+            size="sm"
+            variant="ghost"
+            color="whiteAlpha.800"
+            bg="blackAlpha.600"
+            _hover={{ bg: 'blackAlpha.800' }}
+            zIndex={20}
+            rounded="full"
+            onClick={() => engine?.handleBack()}
+            aria-label="后退"
+          >
+            <ArrowLeft size={16} />
+          </IconButton>
+        )}
+
+        {/* Player area */}
         <Box
           flex="1"
           minH="0"
@@ -363,8 +466,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
           alignItems="center"
           justifyContent="center"
           overflow="hidden"
-          px={{ base: 3, md: 5 }}
-          py={{ base: 3, md: 4 }}
         >
           {status === 'loading' && (
             <Flex direction="column" align="center" gap="3">
@@ -387,13 +488,11 @@ export function PreviewModal({ packageId, onClose }: Props) {
               <Box
                 ref={containerRef}
                 position="relative"
-                h={`calc(100% - ${INFO_PANEL_COLLAPSED_PX}px)`}
-                maxH={`calc(100% - ${INFO_PANEL_COLLAPSED_PX}px)`}
-                maxW="100%"
-                overflow="visible"
+                w="100%"
+                h="100%"
+                overflow={imageFitMode !== 'fill' ? 'hidden' : 'visible'}
                 style={{
-                  aspectRatio: `${manifest.resolution.width} / ${manifest.resolution.height}`,
-                  margin: '0 auto',
+                  aspectRatio: manifest.resolution.replace(':', ' / '),
                 }}
               >
                 {preloading && (
@@ -413,30 +512,54 @@ export function PreviewModal({ packageId, onClose }: Props) {
                 )}
 
                 {/* Node image */}
-                <img
-                  ref={nodeImageRef}
-                  src={currentNode.imageUrl}
-                  alt={currentNode.title}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                    display: currentNode.contentType === 'html' ? 'none' : 'block',
-                    userSelect: 'none',
-                    opacity: transitioning ? 0 : 1,
-                  }}
-                  onLoad={(e) => {
-                    const img = e.target as HTMLImageElement
-                    updateImgRect()
-                    requestAnimationFrame(() => {
-                      confirmHostVisualCommitIfReady('node-image:onLoad:next-frame')
-                    })
-                  }}
-                  onError={(e) => {
-                    const img = e.target as HTMLImageElement
-                    img.style.display = 'none'
-                  }}
-                />
+                {imageFitMode !== 'fill' ? (
+                  <Box
+                    position="absolute"
+                    inset="0"
+                    overflow="hidden"
+                  >
+                    <img
+                      key={`${currentNodeId}-${imageFitMode}`}
+                      ref={nodeImageRef}
+                      src={currentNode.imageUrl}
+                      alt={currentNode.title}
+                      style={imgStyle}
+                      onMouseDown={handleImgMouseDown}
+                      onLoad={() => {
+                        applyImageTransform(
+                          imageOffsetRef.current.x,
+                          imageOffsetRef.current.y,
+                        )
+                        updateImgRect()
+                        requestAnimationFrame(() => {
+                          confirmHostVisualCommitIfReady('node-image:onLoad:next-frame')
+                        })
+                      }}
+                      onError={(e) => {
+                        const img = e.target as HTMLImageElement
+                        img.style.display = 'none'
+                      }}
+                    />
+                  </Box>
+                ) : (
+                  <img
+                    key={`${currentNodeId}-${imageFitMode}`}
+                    ref={nodeImageRef}
+                    src={currentNode.imageUrl}
+                    alt={currentNode.title}
+                    style={imgStyle}
+                    onLoad={() => {
+                      updateImgRect()
+                      requestAnimationFrame(() => {
+                        confirmHostVisualCommitIfReady('node-image:onLoad:next-frame')
+                      })
+                    }}
+                    onError={(e) => {
+                      const img = e.target as HTMLImageElement
+                      img.style.display = 'none'
+                    }}
+                  />
+                )}
 
                 {/* Node iframe for HTML nodes */}
                 <iframe
@@ -539,92 +662,10 @@ export function PreviewModal({ packageId, onClose }: Props) {
                   muted
                   playsInline
                 />
-
-                <Box
-                  position="absolute"
-                  left="0"
-                  right="0"
-                  top="100%"
-                  h={`${infoPanelHeight}px`}
-                  overflow="hidden"
-                  zIndex={15}
-                  pointerEvents="auto"
-                  transform={infoExpanded ? `translateY(-${INFO_PANEL_EXPANDED_PX - INFO_PANEL_COLLAPSED_PX}px)` : 'translateY(0)'}
-                  transition="height 220ms ease, transform 220ms ease"
-                  onMouseLeave={() => setInfoExpanded(false)}
-                  style={{
-                    backgroundColor: 'rgba(232, 235, 239, 0.2)',
-                    backdropFilter: 'blur(14px)',
-                    WebkitBackdropFilter: 'blur(14px)',
-                    borderTop: '1px solid rgba(255,255,255,0.28)',
-                    boxShadow: '0 -10px 24px rgba(0,0,0,0.12)',
-                  }}
-                >
-                  <Flex
-                    align="center"
-                    justify="space-between"
-                    px="4"
-                    h={`${INFO_PANEL_COLLAPSED_PX}px`}
-                    flexShrink={0}
-                    cursor="ns-resize"
-                    onMouseEnter={() => setInfoExpanded(true)}
-                    style={{
-                      backgroundColor: 'rgba(240, 242, 245, 0.2)',
-                      borderBottom: infoExpanded ? '1px solid rgba(120, 130, 140, 0.12)' : 'none',
-                    }}
-                  >
-                    <Text
-                      color="rgba(255,255,255,0.96)"
-                      fontSize="sm"
-                      fontWeight="600"
-                      whiteSpace="nowrap"
-                      overflow="hidden"
-                      textOverflow="ellipsis"
-                      textShadow="0 1px 8px rgba(0,0,0,0.35)"
-                    >
-                      {currentNode.title}
-                    </Text>
-                    <Text fontSize="11px" color="rgba(255,255,255,0.78)" flexShrink={0} ml="3">
-                      悬浮展开
-                    </Text>
-                  </Flex>
-
-                  <Box
-                    px="4"
-                    pt="3"
-                    pb="2"
-                    overflow="hidden"
-                    opacity={infoExpanded ? 1 : 0}
-                    transition="opacity 180ms ease"
-                  >
-                    {currentNode.summary && (
-                      <Text color="rgba(255,255,255,0.92)" fontSize="sm" lineHeight="1.55" textShadow="0 1px 8px rgba(0,0,0,0.35)">
-                        {currentNode.summary}
-                      </Text>
-                    )}
-                    {currentNode.keyPoints?.length > 0 && (
-                      <Text color="rgba(255,255,255,0.82)" fontSize="xs" mt="2" lineHeight="1.7" textShadow="0 1px 8px rgba(0,0,0,0.35)">
-                        {currentNode.keyPoints.slice(0, 3).map((item: string) => `• ${item}`).join('  ')}
-                      </Text>
-                    )}
-                  </Box>
-                </Box>
               </Box>
             </Box>
           )}
         </Box>
-
-        {/* Footer */}
-        <Flex justify="space-between" align="center" px="5" py="2.5" style={{ borderTop: '1px solid #2a2d3a' }}>
-          <Text fontSize="xs" color="text-tertiary">
-            点击白点热点切换到目标节点 · 支持转场视频播放
-          </Text>
-          {manifest && (
-            <Text fontSize="xs" color="text-tertiary">
-              {manifest.nodes.length} 节点 · {manifest.edges.length} 边
-            </Text>
-          )}
-        </Flex>
       </Box>
     </Flex>
   )
