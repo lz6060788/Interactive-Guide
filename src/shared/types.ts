@@ -20,6 +20,18 @@ export type BuiltinTransitionType = 'pan' | 'flip' | 'zoom'
 export type ImageFitMode = 'fill' | 'fitHeight' | 'fitWidth'
 export type EasingType = 'ease-in-out' | 'ease-in' | 'ease-out' | 'linear'
 
+export interface NormalizedPoint {
+  x: number
+  y: number
+}
+
+export interface ZoomFocusQuad {
+  topLeft: NormalizedPoint
+  topRight: NormalizedPoint
+  bottomRight: NormalizedPoint
+  bottomLeft: NormalizedPoint
+}
+
 export interface PanTransitionConfig {
   type: 'pan'
   direction: 'left' | 'right' | 'up' | 'down'
@@ -41,6 +53,8 @@ export interface ZoomTransitionConfig {
   scale: number
   centerX: number
   centerY: number
+  focusMode?: 'center' | 'quad'
+  focusQuad?: ZoomFocusQuad
   duration: number
   easing: EasingType
 }

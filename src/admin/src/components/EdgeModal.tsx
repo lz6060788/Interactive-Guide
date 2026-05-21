@@ -187,6 +187,9 @@ export function EdgeModal({
     scale: (edge.builtinTransition as any)?.scale ?? 1.5,
     centerX: (edge.builtinTransition as any)?.centerX ?? hotspotX,
     centerY: (edge.builtinTransition as any)?.centerY ?? hotspotY,
+    focusMode: (edge.builtinTransition as any)?.focusMode
+      ?? ((edge.builtinTransition as any)?.focusQuad ? 'quad' : 'center'),
+    focusQuad: (edge.builtinTransition as any)?.focusQuad,
     duration: edge.builtinTransition?.duration ?? 600,
     easing: (edge.builtinTransition?.easing as ZoomConfig['easing']) || 'ease-in-out',
   })
@@ -475,7 +478,13 @@ export function EdgeModal({
                   duration: builtinConfig.duration,
                   easing: builtinConfig.easing,
                   ...(builtinConfig.type === 'flip' ? { flipStyle: (builtinConfig as FlipConfig).flipStyle } : {}),
-                  ...(builtinConfig.type === 'zoom' ? { scale: (builtinConfig as ZoomConfig).scale, centerX: (builtinConfig as ZoomConfig).centerX, centerY: (builtinConfig as ZoomConfig).centerY } : {}),
+                  ...(builtinConfig.type === 'zoom' ? {
+                    scale: (builtinConfig as ZoomConfig).scale,
+                    centerX: (builtinConfig as ZoomConfig).centerX,
+                    centerY: (builtinConfig as ZoomConfig).centerY,
+                    focusMode: (builtinConfig as ZoomConfig).focusMode,
+                    focusQuad: (builtinConfig as ZoomConfig).focusQuad,
+                  } : {}),
                 } : undefined,
               })
             }}

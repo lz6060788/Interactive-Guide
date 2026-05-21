@@ -44,6 +44,13 @@ export class PlayerCore {
 
   constructor(private refs: PlayerRefs) {}
 
+  updateRefs(nextRefs: Partial<PlayerRefs>): void {
+    this.refs = {
+      ...this.refs,
+      ...nextRefs,
+    }
+  }
+
   // ─── Event System ──────────────────────────────────────────
 
   on(event: EventName, handler: Function): void {
@@ -230,13 +237,10 @@ export class PlayerCore {
     this.history.push(this.currentNodeId)
 
     // Builtin transitions don't work with HTML nodes (iframe can't be cloned for CSS animation)
-    // Also fall back for fitHeight/fitWidth image modes (use drag positioning, incompatible with CSS animation)
     const fromIsHtml = this.isHtmlNode(this.currentNodeId)
     const toIsHtml = this.isHtmlNode(hotspot.targetNodeId)
-    const fromHasDragFit = this.hasDragFitMode(this.currentNodeId)
-    const toHasDragFit = this.hasDragFitMode(hotspot.targetNodeId)
 
-    if (edge?.transitionType === 'builtin' && edge.builtinTransition && !fromIsHtml && !toIsHtml && !fromHasDragFit && !toHasDragFit) {
+    if (edge?.transitionType === 'builtin' && edge.builtinTransition && !fromIsHtml && !toIsHtml) {
       this.transitioning = true
       this.playBuiltinTransition(
         hotspot.targetNodeId,
@@ -269,12 +273,6 @@ export class PlayerCore {
   isHtmlNode(nodeId: string): boolean {
     const node = this.manifest?.nodeMap[nodeId]
     return node?.contentType === 'html'
-  }
-
-  hasDragFitMode(nodeId: string): boolean {
-    const node = this.manifest?.nodeMap[nodeId]
-    const fitMode = (node as any)?.imageFitMode
-    return fitMode === 'fitHeight' || fitMode === 'fitWidth'
   }
 
   handleBack(): void {
@@ -346,6 +344,95 @@ export class PlayerCore {
 
   // ─── Private: Transition Helpers ───────────────────────────
 
+  private createTransitionVisualShell(borderRadius: string): HTMLDivElement {
+    const wrapper = document.createElement('div')
+    wrapper.style.position = 'absolute'
+    wrapper.style.inset = '0'
+    wrapper.style.width = '100%'
+    wrapper.style.height = '100%'
+    wrapper.style.overflow = 'hidden'
+    wrapper.style.borderRadius = borderRadius
+    return wrapper
+  }
+
+  private createTransitionVisualFromCurrentImage(borderRadius: string): HTMLElement {
+    const wrapper = this.createTransitionVisualShell(borderRadius)
+    const clone = this.refs.nodeImage.cloneNode(true) as HTMLImageElement
+    const containerRect = this.refs.container.getBoundingClientRect()
+    const imageRect = this.refs.nodeImage.getBoundingClientRect()
+    clone.draggable = false
+    if (imageRect.width > 0 && imageRect.height > 0) {
+      clone.style.position = 'absolute'
+      clone.style.left = `${imageRect.left - containerRect.left}px`
+      clone.style.top = `${imageRect.top - containerRect.top}px`
+      clone.style.width = `${imageRect.width}px`
+      clone.style.height = `${imageRect.height}px`
+      clone.style.maxWidth = 'none'
+      clone.style.maxHeight = 'none'
+      clone.style.transform = 'none'
+      clone.style.objectFit = 'fill'
+      clone.style.objectPosition = '50% 50%'
+    }
+    wrapper.appendChild(clone)
+    return wrapper
+  }
+
+  private applyTransitionNodeImageStyle(
+    img: HTMLImageElement,
+    node: PublishNode,
+  ): void {
+    const fitMode = node.imageFitMode ?? 'fill'
+
+    img.draggable = false
+    img.style.display = 'block'
+    img.style.userSelect = 'none'
+    img.style.opacity = '1'
+    img.style.maxWidth = 'none'
+    img.style.maxHeight = 'none'
+
+    if (fitMode === 'fitHeight') {
+      img.style.position = 'absolute'
+      img.style.left = '50%'
+      img.style.top = '50%'
+      img.style.width = 'auto'
+      img.style.height = '100%'
+      img.style.objectFit = ''
+      img.style.objectPosition = ''
+      img.style.transform = 'translate(-50%, -50%)'
+    } else if (fitMode === 'fitWidth') {
+      img.style.position = 'absolute'
+      img.style.left = '50%'
+      img.style.top = '50%'
+      img.style.width = '100%'
+      img.style.height = 'auto'
+      img.style.objectFit = ''
+      img.style.objectPosition = ''
+      img.style.transform = 'translate(-50%, -50%)'
+    } else {
+      img.style.position = ''
+      img.style.left = ''
+      img.style.top = ''
+      img.style.transform = ''
+      img.style.width = '100%'
+      img.style.height = '100%'
+      img.style.objectFit = 'fill'
+      img.style.objectPosition = '50% 50%'
+    }
+  }
+
+  private createTransitionVisualForNode(
+    node: PublishNode,
+    borderRadius: string,
+  ): { visual: HTMLElement, image: HTMLImageElement } {
+    const wrapper = this.createTransitionVisualShell(borderRadius)
+    const img = document.createElement('img')
+    img.src = node.imageUrl ?? ''
+    img.alt = node.title ?? node.id
+    this.applyTransitionNodeImageStyle(img, node)
+    wrapper.appendChild(img)
+    return { visual: wrapper, image: img }
+  }
+
   private playBuiltinTransition(
     targetNodeId: string,
     config: NonNullable<ReturnType<typeof this.getEdgeConfig>['builtinTransition']>,
@@ -361,28 +448,13 @@ export class PlayerCore {
 
     const container = this.refs.container
     const nodeImageStyle = window.getComputedStyle(this.refs.nodeImage)
-    const imageFit = nodeImageStyle.objectFit || 'contain'
-    const imagePosition = nodeImageStyle.objectPosition || '50% 50%'
     const imageBorderRadius = nodeImageStyle.borderRadius || '0px'
 
-    const applyImageLayoutStyle = (el: HTMLElement) => {
-      el.style.position = 'absolute'
-      el.style.inset = '0'
-      el.style.width = '100%'
-      el.style.height = '100%'
-      el.style.display = 'block'
-      el.style.objectFit = imageFit
-      el.style.objectPosition = imagePosition
-      el.style.borderRadius = imageBorderRadius
-      el.style.opacity = '1'
-    }
-
-    const fromEl = this.refs.nodeImage.cloneNode(true) as HTMLElement
-    applyImageLayoutStyle(fromEl)
-
-    const toImg = document.createElement('img')
-    toImg.src = targetNode.imageUrl!
-    applyImageLayoutStyle(toImg)
+    const fromEl = this.createTransitionVisualFromCurrentImage(imageBorderRadius)
+    const { visual: toEl, image: toImg } = this.createTransitionVisualForNode(
+      targetNode,
+      imageBorderRadius,
+    )
 
     const tc = document.createElement('div')
     tc.style.cssText =
@@ -398,7 +470,7 @@ export class PlayerCore {
       const context = {
         container: tc,
         fromNodeEl: fromEl,
-        toNodeEl: toImg,
+        toNodeEl: toEl,
         hotspot: { x: hotspot.normalizedX, y: hotspot.normalizedY },
         config,
       }

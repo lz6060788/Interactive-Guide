@@ -341,6 +341,22 @@ export function PreviewModal({ packageId, onClose }: Props) {
     }
   }, [status, confirmHostVisualCommitIfReady])
 
+  useEffect(() => {
+    if (status !== 'ready') return
+    const engine = engineRef.current
+    const container = containerRef.current
+    const nodeImage = nodeImageRef.current
+    const video = videoRef.current
+    if (!engine || !container || !nodeImage || !video) return
+
+    engine.updateRefs({
+      container,
+      nodeImage,
+      video,
+      nodeIframe: nodeIframeRef.current ?? undefined,
+    })
+  }, [status, currentNodeId, imageFitMode])
+
   // Listen for postMessage from HTML node iframes
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {

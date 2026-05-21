@@ -4,7 +4,7 @@ import { Play, Pause } from 'lucide-react'
 
 const BORDER = '#2a2d3a'
 
-interface FlipConfig {
+export interface FlipConfig {
   type: 'flip'
   direction: 'horizontal' | 'vertical'
   flipStyle: 'fade' | 'cut' | 'curl'

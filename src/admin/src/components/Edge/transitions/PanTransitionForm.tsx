@@ -4,7 +4,7 @@ import { Play, Pause } from 'lucide-react'
 
 const BORDER = '#2a2d3a'
 
-interface PanConfig {
+export interface PanConfig {
   type: 'pan'
   direction: 'left' | 'right' | 'up' | 'down'
   duration: number

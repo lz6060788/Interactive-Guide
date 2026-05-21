@@ -4,6 +4,18 @@ export type BuiltinTransitionType = 'pan' | 'flip' | 'zoom'
 // Easing functions
 export type EasingType = 'ease-in-out' | 'ease-in' | 'ease-out' | 'linear'
 
+export interface NormalizedPoint {
+  x: number
+  y: number
+}
+
+export interface ZoomFocusQuad {
+  topLeft: NormalizedPoint
+  topRight: NormalizedPoint
+  bottomRight: NormalizedPoint
+  bottomLeft: NormalizedPoint
+}
+
 // Pan transition config
 export interface PanTransitionConfig {
   type: 'pan'
@@ -28,6 +40,8 @@ export interface ZoomTransitionConfig {
   scale: number           // default 1.5
   centerX: number        // 0-1, default hotspot x
   centerY: number        // 0-1, default hotspot y
+  focusMode?: 'center' | 'quad'
+  focusQuad?: ZoomFocusQuad
   duration: number
   easing: EasingType
 }
@@ -75,6 +89,7 @@ export const DEFAULT_FLIP_CONFIG: Partial<FlipTransitionConfig> = {
 export const DEFAULT_ZOOM_CONFIG: Partial<ZoomTransitionConfig> = {
   direction: 'in',
   scale: 1.5,
+  focusMode: 'center',
   duration: 600,
   easing: 'ease-in-out',
 }

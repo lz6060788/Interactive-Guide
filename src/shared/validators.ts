@@ -17,6 +17,69 @@ export interface ValidationResult {
   warnings: string[]
 }
 
+function validateNormalizedPoint(
+  point: unknown,
+  label: string,
+  errors: string[],
+) {
+  if (!point || typeof point !== 'object') {
+    errors.push(`${label} must be an object with x/y`)
+    return
+  }
+
+  const { x, y } = point as { x?: unknown, y?: unknown }
+  if (typeof x !== 'number' || x < 0 || x > 1) {
+    errors.push(`${label}.x must be 0~1, got ${String(x)}`)
+  }
+  if (typeof y !== 'number' || y < 0 || y > 1) {
+    errors.push(`${label}.y must be 0~1, got ${String(y)}`)
+  }
+}
+
+function validateBuiltinTransitionConfig(
+  config: unknown,
+  edgeLabel: string,
+  errors: string[],
+) {
+  if (!config || typeof config !== 'object') return
+
+  const builtin = config as {
+    type?: unknown
+    scale?: unknown
+    centerX?: unknown
+    centerY?: unknown
+    focusMode?: unknown
+    focusQuad?: Record<string, unknown>
+  }
+
+  if (builtin.type !== 'zoom') return
+
+  if (typeof builtin.scale !== 'number' || builtin.scale <= 1) {
+    errors.push(`${edgeLabel} zoom scale must be > 1, got ${String(builtin.scale)}`)
+  }
+  if (typeof builtin.centerX !== 'number' || builtin.centerX < 0 || builtin.centerX > 1) {
+    errors.push(`${edgeLabel} zoom centerX must be 0~1, got ${String(builtin.centerX)}`)
+  }
+  if (typeof builtin.centerY !== 'number' || builtin.centerY < 0 || builtin.centerY > 1) {
+    errors.push(`${edgeLabel} zoom centerY must be 0~1, got ${String(builtin.centerY)}`)
+  }
+
+  if (builtin.focusMode != null && builtin.focusMode !== 'center' && builtin.focusMode !== 'quad') {
+    errors.push(`${edgeLabel} zoom focusMode must be 'center' or 'quad', got ${String(builtin.focusMode)}`)
+  }
+
+  if (builtin.focusMode === 'quad') {
+    if (!builtin.focusQuad || typeof builtin.focusQuad !== 'object') {
+      errors.push(`${edgeLabel} zoom focusQuad is required when focusMode is 'quad'`)
+      return
+    }
+    validateNormalizedPoint(builtin.focusQuad.topLeft, `${edgeLabel} zoom focusQuad.topLeft`, errors)
+    validateNormalizedPoint(builtin.focusQuad.topRight, `${edgeLabel} zoom focusQuad.topRight`, errors)
+    validateNormalizedPoint(builtin.focusQuad.bottomRight, `${edgeLabel} zoom focusQuad.bottomRight`, errors)
+    validateNormalizedPoint(builtin.focusQuad.bottomLeft, `${edgeLabel} zoom focusQuad.bottomLeft`, errors)
+  }
+}
+
 // ─── KnowledgePackage Validation ────────────────────────────
 
 export function validateKnowledgePackage(pkg: KnowledgePackage): ValidationResult {
@@ -189,6 +252,8 @@ function validateEdge(
   if (edge.fromNodeId === edge.toNodeId) {
     errors.push(`Edge "${edge.id}" has self-loop (fromNodeId === toNodeId)`)
   }
+
+  validateBuiltinTransitionConfig(edge.builtinTransition, `Edge "${edge.id}"`, errors)
 }
 
 // ─── PublishManifest Validation ─────────────────────────────
@@ -233,6 +298,10 @@ export function validatePublishManifest(manifest: PublishManifest): ValidationRe
     if (!edgeArrayIds.has(id)) {
       errors.push(`Edge "${id}" exists in edgeMap but not in edges array`)
     }
+  }
+
+  for (const edge of manifest.edges) {
+    validateBuiltinTransitionConfig(edge.builtinTransition, `Edge "${edge.id}"`, errors)
   }
 
   // Hotspot validation & HTML node validation
