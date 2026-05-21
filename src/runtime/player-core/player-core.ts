@@ -230,11 +230,13 @@ export class PlayerCore {
     this.history.push(this.currentNodeId)
 
     // Builtin transitions don't work with HTML nodes (iframe can't be cloned for CSS animation)
-    // Fall back to hard switch when fromNode or toNode is HTML
+    // Also fall back for fitHeight/fitWidth image modes (use drag positioning, incompatible with CSS animation)
     const fromIsHtml = this.isHtmlNode(this.currentNodeId)
     const toIsHtml = this.isHtmlNode(hotspot.targetNodeId)
+    const fromHasDragFit = this.hasDragFitMode(this.currentNodeId)
+    const toHasDragFit = this.hasDragFitMode(hotspot.targetNodeId)
 
-    if (edge?.transitionType === 'builtin' && edge.builtinTransition && !fromIsHtml && !toIsHtml) {
+    if (edge?.transitionType === 'builtin' && edge.builtinTransition && !fromIsHtml && !toIsHtml && !fromHasDragFit && !toHasDragFit) {
       this.transitioning = true
       this.playBuiltinTransition(
         hotspot.targetNodeId,
@@ -267,6 +269,12 @@ export class PlayerCore {
   isHtmlNode(nodeId: string): boolean {
     const node = this.manifest?.nodeMap[nodeId]
     return node?.contentType === 'html'
+  }
+
+  hasDragFitMode(nodeId: string): boolean {
+    const node = this.manifest?.nodeMap[nodeId]
+    const fitMode = (node as any)?.imageFitMode
+    return fitMode === 'fitHeight' || fitMode === 'fitWidth'
   }
 
   handleBack(): void {
