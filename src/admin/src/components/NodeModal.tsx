@@ -4,7 +4,7 @@ import {
   IconButton, VStack, HStack,
 } from '@chakra-ui/react'
 import { X, Crosshair, Save, Image as ImageIcon, Trash2, RefreshCw, Upload } from 'lucide-react'
-import { uploadNodeImage } from '../services/api'
+import { uploadNodeImage, uploadNodeHtml } from '../services/api'
 
 const BORDER = '#2a2d3a'
 
@@ -41,7 +41,7 @@ const IMAGE_FIT_OPTIONS = [
   { value: 'fitWidth', label: 'Fit Width — 等比按宽度（可纵拖）' },
 ]
 
-function Field({ label, value, onChange, disabled, multiline, rows, mono }: {
+function Field({ label, value, onChange, disabled, multiline, rows, mono, placeholder }: {
   label: string
   value: string
   onChange?: (v: string) => void
@@ -49,6 +49,7 @@ function Field({ label, value, onChange, disabled, multiline, rows, mono }: {
   multiline?: boolean
   rows?: number
   mono?: boolean
+  placeholder?: string
 }) {
   return (
     <Box mb="4">
@@ -61,6 +62,7 @@ function Field({ label, value, onChange, disabled, multiline, rows, mono }: {
           onChange={onChange ? (e) => onChange(e.target.value) : undefined}
           disabled={disabled}
           rows={rows ?? 3}
+          placeholder={placeholder}
           style={{
             width: '100%',
             background: '#0a0b0f',
@@ -81,6 +83,7 @@ function Field({ label, value, onChange, disabled, multiline, rows, mono }: {
           value={value}
           onChange={onChange ? (e) => onChange(e.target.value) : undefined}
           disabled={disabled}
+          placeholder={placeholder}
           style={{
             width: '100%',
             background: '#0a0b0f',
@@ -204,6 +207,11 @@ export function NodeModal({
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadImageMsg, setUploadImageMsg] = useState<string | null>(null)
   const [imageFitMode, setImageFitMode] = useState(node.imageFitMode || 'fill')
+  const [contentType, setContentType] = useState(node.contentType || 'image')
+  const [htmlSource, setHtmlSource] = useState(node.htmlSource || '')
+  const [hotspotEdgeIdsText, setHotspotEdgeIdsText] = useState((node.hotspotEdgeIds || []).join('\n'))
+  const [uploadingHtml, setUploadingHtml] = useState(false)
+  const [uploadHtmlMsg, setUploadHtmlMsg] = useState<string | null>(null)
 
   useEffect(() => { setImageUrl(node.imageUrl) }, [node.imageUrl])
 
@@ -255,9 +263,22 @@ export function NodeModal({
           <Field label="ID" value={node.id} disabled />
           <Field label="标题" value={title} onChange={setTitle} />
           <SelectField label="主题类型" value={topicType} onChange={setTopicType} options={TOPIC_TYPE_OPTIONS} />
+          <SelectField
+            label="内容类型"
+            value={contentType}
+            onChange={(v) => setContentType(v)}
+            options={[
+              { value: 'image', label: 'Image — AI 生成图片' },
+              { value: 'html', label: 'HTML — 自定义 HTML 页面' },
+            ]}
+          />
           <Field label="页面摘要" value={summary} onChange={setSummary} multiline rows={3} />
-          <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
-          <SelectField label="图片填充模式" value={imageFitMode} onChange={setImageFitMode} options={IMAGE_FIT_OPTIONS} />
+          {contentType === 'image' && (
+            <>
+              <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
+              <SelectField label="图片填充模式" value={imageFitMode} onChange={setImageFitMode} options={IMAGE_FIT_OPTIONS} />
+            </>
+          )}
 
           {/* 状态信息（只读） */}
           <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
@@ -274,13 +295,14 @@ export function NodeModal({
             </Box>
           </Flex>
 
-          {/* 图片预览 */}
-          {imageUrl && (
-            <Box mb="4">
-              <Text fontSize="xs" color="text-tertiary" mb="1.5">图片预览</Text>
+          {/* 图片预览 / 上传（所有节点类型均可上传） */}
+          <Box mb="4">
+            <Text fontSize="xs" color="text-tertiary" mb="1.5">图片</Text>
+            {imageUrl && (
               <Box
                 rounded="md"
                 overflow="hidden"
+                mb="2"
                 style={{ border: `1px solid ${BORDER}` }}
               >
                 <img
@@ -290,62 +312,109 @@ export function NodeModal({
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                 />
               </Box>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              id={`node-upload-${node.id}`}
+              style={{ display: 'none' }}
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                setUploadingImage(true)
+                setUploadImageMsg(null)
+                try {
+                  const result = await uploadNodeImage(pkg.id, node.id, file)
+                  setImageUrl(result.imageUrl)
+                  setUploadImageMsg('图片上传成功')
+                  setTimeout(() => setUploadImageMsg(null), 3000)
+                } catch (err: any) {
+                  setUploadImageMsg(err.message || '上传失败')
+                } finally {
+                  setUploadingImage(false)
+                  e.target.value = ''
+                }
+              }}
+            />
+            <Button
+              w="100%"
+              size="sm"
+              variant="ghost"
+              color="text-secondary"
+              _hover={{ bg: 'surface-raised' }}
+              loading={uploadingImage}
+              onClick={() => document.getElementById(`node-upload-${node.id}`)?.click()}
+            >
+              <Upload size={14} style={{ marginRight: 6 }} />
+              {imageUrl ? '上传图片替换' : '上传图片'}
+            </Button>
+            {uploadImageMsg && (
+              <Text fontSize="xs" color={uploadImageMsg.includes('成功') ? '#22c55e' : '#ef4444'} mt="1" px="1">
+                {uploadImageMsg}
+              </Text>
+            )}
+          </Box>
+
+          {/* HTML 配置 / 上传 */}
+          {contentType === 'html' && (
+            <Box mb="4">
+              <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
+                HTML 配置
+              </Text>
+              <Field
+                label="HTML 源文件路径"
+                value={htmlSource}
+                onChange={setHtmlSource}
+                placeholder="assets/nodes/my-page.html"
+              />
+              <Field
+                label="热点边 ID（每行一个）"
+                value={hotspotEdgeIdsText}
+                onChange={setHotspotEdgeIdsText}
+                multiline
+                rows={3}
+              />
+              <Text fontSize="xs" color="text-tertiary" mb="1.5">HTML 文件</Text>
               <input
                 type="file"
-                accept="image/*"
-                id={`node-upload-${node.id}`}
+                accept=".html"
+                id={`node-html-upload-${node.id}`}
                 style={{ display: 'none' }}
                 onChange={async (e) => {
                   const file = e.target.files?.[0]
                   if (!file) return
-                  setUploadingImage(true)
-                  setUploadImageMsg(null)
+                  setUploadingHtml(true)
+                  setUploadHtmlMsg(null)
                   try {
-                    const result = await uploadNodeImage(pkg.id, node.id, file)
-                    setImageUrl(result.imageUrl)
-                    setUploadImageMsg('图片上传成功')
-                    setTimeout(() => setUploadImageMsg(null), 3000)
+                    await uploadNodeHtml(pkg.id, node.id, file)
+                    setUploadHtmlMsg('HTML 上传成功')
+                    setTimeout(() => setUploadHtmlMsg(null), 3000)
                   } catch (err: any) {
-                    setUploadImageMsg(err.message || '上传失败')
+                    setUploadHtmlMsg(err.message || '上传失败')
                   } finally {
-                    setUploadingImage(false)
+                    setUploadingHtml(false)
                     e.target.value = ''
                   }
                 }}
               />
               <Button
                 w="100%"
-                mt="2"
                 size="sm"
                 variant="ghost"
                 color="text-secondary"
                 _hover={{ bg: 'surface-raised' }}
-                loading={uploadingImage}
-                onClick={() => document.getElementById(`node-upload-${node.id}`)?.click()}
+                loading={uploadingHtml}
+                onClick={() => document.getElementById(`node-html-upload-${node.id}`)?.click()}
               >
                 <Upload size={14} style={{ marginRight: 6 }} />
-                上传图片替换
+                上传 HTML 文件
               </Button>
-              {uploadImageMsg && (
-                <Text fontSize="xs" color={uploadImageMsg.includes('成功') ? '#22c55e' : '#ef4444'} mt="1" px="1">
-                  {uploadImageMsg}
+              {uploadHtmlMsg && (
+                <Text fontSize="xs" color={uploadHtmlMsg.includes('成功') ? '#22c55e' : '#ef4444'} mt="1" px="1">
+                  {uploadHtmlMsg}
                 </Text>
               )}
             </Box>
-          )}
-          {!imageUrl && (
-            <Flex
-              align="center"
-              gap="2"
-              mb="4"
-              p="3"
-              rounded="md"
-              bg="rgba(92,95,119,0.08)"
-              style={{ border: `1px dashed ${BORDER}` }}
-            >
-              <ImageIcon size={14} color="#5c5f77" />
-              <Text fontSize="xs" color="text-tertiary">暂无图片</Text>
-            </Flex>
           )}
 
           {/* 内容块 */}
@@ -460,10 +529,13 @@ export function NodeModal({
               keyPoints: linesToArray(keyPointsText),
               hotspotHints: linesToArray(hotspotHintsText),
               imageFitMode,
+              contentType,
+              htmlSource: contentType === 'html' ? htmlSource : undefined,
+              hotspotEdgeIds: contentType === 'html' ? linesToArray(hotspotEdgeIdsText) : undefined,
             })}
           />
 
-          {onRegenerateNode && (
+          {onRegenerateNode && contentType === 'image' && (
             <Button
               w="100%"
               mt="3"

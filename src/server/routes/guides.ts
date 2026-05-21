@@ -56,6 +56,15 @@ export function createGuidesRouter(guideService: GuideService): Router {
     }
   })
 
+  router.post('/guides/:id/copy', (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const guide = guideService.copyGuide(String(req.params.id))
+      res.status(201).json({ data: guide })
+    } catch (err) {
+      next(err)
+    }
+  })
+
   // ─── Node CRUD ─────────────────────────────────────────
 
   router.post('/guides/:guideId/nodes', (req: Request, res: Response, next: NextFunction) => {
@@ -132,6 +141,23 @@ export function createGuidesRouter(guideService: GuideService): Router {
     (req: Request, res: Response, next: NextFunction) => {
       try {
         const result = guideService.uploadNodeImage(
+          String(req.params.guideId),
+          String(req.params.nodeId),
+          req.body as Buffer,
+        )
+        res.json({ data: result })
+      } catch (err) {
+        next(err)
+      }
+    },
+  )
+
+  router.post(
+    '/guides/:guideId/nodes/:nodeId/upload-html',
+    express.raw({ type: '*/*', limit: '50mb' }),
+    (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const result = guideService.uploadNodeHtml(
           String(req.params.guideId),
           String(req.params.nodeId),
           req.body as Buffer,

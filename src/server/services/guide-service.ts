@@ -62,16 +62,20 @@ export class GuideService {
       .filter(g => g.packageId === id)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
 
-    if (latest) {
-      for (const node of guide.nodes) {
-        // Prefer workspace assets over generate history
-        const workspaceImagePath = `workspace/${guide.id}/nodes/${node.id}.png`
-        if (this.repo.fileExists(workspaceImagePath)) {
-          node.imageStatus = 'success'
-          node.imageUrl = `/api/media/workspace/${guide.id}/nodes/${node.id}.png`
-          continue
-        }
+    for (const node of guide.nodes) {
+      // Check workspace assets first (works regardless of build history)
+      const workspaceImagePath = `workspace/${guide.id}/nodes/${node.id}.png`
+      if (this.repo.fileExists(workspaceImagePath)) {
+        node.imageStatus = 'success'
+        node.imageUrl = `/api/media/workspace/${guide.id}/nodes/${node.id}.png`
+      }
+      const workspaceHtmlPath = `workspace/${guide.id}/nodes/${node.id}.html`
+      if (this.repo.fileExists(workspaceHtmlPath)) {
+        node.htmlUrl = `/api/media/workspace/${guide.id}/nodes/${node.id}.html`
+      }
 
+      // Fall back to generate history
+      if (latest && !node.imageUrl && !node.htmlUrl) {
         const record = this.repo.readJson<{
           status?: string
           imageStatus?: string
@@ -85,16 +89,19 @@ export class GuideService {
           }
         }
       }
+    }
 
-      for (const edge of guide.edges) {
-        // Prefer workspace assets over generate history
-        const workspaceVideoPath = `workspace/${guide.id}/edges/${edge.id}.mp4`
-        if (this.repo.fileExists(workspaceVideoPath)) {
-          edge.videoStatus = 'success'
-          edge.videoUrl = `/api/media/workspace/${guide.id}/edges/${edge.id}.mp4`
-          continue
-        }
+    for (const edge of guide.edges) {
+      // Check workspace assets first
+      const workspaceVideoPath = `workspace/${guide.id}/edges/${edge.id}.mp4`
+      if (this.repo.fileExists(workspaceVideoPath)) {
+        edge.videoStatus = 'success'
+        edge.videoUrl = `/api/media/workspace/${guide.id}/edges/${edge.id}.mp4`
+        continue
+      }
 
+      // Fall back to generate history
+      if (latest) {
         const record = this.repo.readJson<{
           status?: string
           videoStatus?: string
@@ -168,6 +175,57 @@ export class GuideService {
     // Verify guide exists
     this.getGuide(id)
     this.repo.deleteGuide(id)
+  }
+
+  copyGuide(id: string): KnowledgePackage {
+    const source = this.getGuide(id)
+    const newId = `guide_${Date.now()}`
+
+    const copied: KnowledgePackage = {
+      ...source,
+      id: newId,
+      title: `${source.title} (副本)`,
+      metadata: {
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+      },
+      nodes: source.nodes.map(node => {
+        const { imageStatus, imageUrl, hotspots, ...rest } = node
+        const copiedNode: KnowledgeNode = {
+          ...rest,
+          imageStatus: 'idle',
+          imageUrl: undefined,
+          hotspots: hotspots?.map(hs => ({
+            ...hs,
+            status: undefined,
+          })),
+        }
+        return copiedNode
+      }),
+      edges: source.edges.map(edge => {
+        const {
+          videoStatus, videoUrl, promptStatus, transitionPath,
+          transitionPrompt, transitionPlan, transitionStrategyMode,
+          transitionStrategyReason, status, ...rest
+        } = edge
+        const copiedEdge: KnowledgeEdge = {
+          ...rest,
+          videoStatus: 'idle',
+          videoUrl: undefined,
+          promptStatus: undefined,
+          transitionPath: undefined,
+          transitionPrompt: undefined,
+          transitionPlan: undefined,
+          transitionStrategyMode: undefined,
+          transitionStrategyReason: undefined,
+          status: 'draft',
+        }
+        return copiedEdge
+      }),
+    }
+
+    this.repo.saveGuide(copied)
+    return copied
   }
 
   // ─── Node CRUD ─────────────────────────────────────────
@@ -446,6 +504,32 @@ export class GuideService {
     })
 
     return { imageUrl: `/api/media/workspace/${guideId}/nodes/${nodeId}.png` }
+  }
+
+  uploadNodeHtml(guideId: string, nodeId: string, buffer: Buffer): { htmlUrl: string } {
+    this.repo.refresh()
+    const guide = this.repo.loadAllGuides().get(guideId)
+    if (!guide) throw AppError.notFound(`Guide "${guideId}" not found`)
+    if (!guide.nodes.some(n => n.id === nodeId)) {
+      throw AppError.notFound(`Node "${nodeId}" not found in guide "${guideId}"`)
+    }
+
+    const filePath = `workspace/${guideId}/nodes/${nodeId}.html`
+    this.repo.ensureDir(`workspace/${guideId}/nodes`)
+    this.repo.writeFile(filePath, buffer)
+
+    // Update workspace manifest if it exists
+    this.patchWorkspaceManifest(guideId, manifest => {
+      const node = manifest.nodes.find(n => n.id === nodeId)
+      if (node) {
+        node.htmlUrl = `/api/media/workspace/${guideId}/nodes/${nodeId}.html`
+      }
+      if (manifest.nodeMap?.[nodeId]) {
+        manifest.nodeMap[nodeId].htmlUrl = `/api/media/workspace/${guideId}/nodes/${nodeId}.html`
+      }
+    })
+
+    return { htmlUrl: `/api/media/workspace/${guideId}/nodes/${nodeId}.html` }
   }
 
   uploadEdgeVideo(guideId: string, edgeId: string, buffer: Buffer): { videoUrl: string } {

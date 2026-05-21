@@ -25,6 +25,8 @@ export const updateGuide = (id: string, data: any) =>
   request(`/guides/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 export const deleteGuide = (id: string) =>
   request(`/guides/${id}`, { method: 'DELETE' })
+export const copyGuide = (id: string) =>
+  request<any>(`/guides/${id}/copy`, { method: 'POST' })
 export const createGuide = (data: any) =>
   request('/guides/import', { method: 'POST', body: JSON.stringify(data) })
 
@@ -66,6 +68,20 @@ export const uploadNodeImage = async (guideId: string, nodeId: string, file: Fil
   const res = await fetch(`${BASE_URL}/guides/${guideId}/nodes/${nodeId}/upload-image`, {
     method: 'POST',
     headers: { 'Content-Type': file.type || 'image/png' },
+    body: await file.arrayBuffer(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  const json = await res.json()
+  return json.data !== undefined ? json.data : json
+}
+
+export const uploadNodeHtml = async (guideId: string, nodeId: string, file: File): Promise<{ htmlUrl: string }> => {
+  const res = await fetch(`${BASE_URL}/guides/${guideId}/nodes/${nodeId}/upload-html`, {
+    method: 'POST',
+    headers: { 'Content-Type': file.type || 'text/html' },
     body: await file.arrayBuffer(),
   })
   if (!res.ok) {

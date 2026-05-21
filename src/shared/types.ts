@@ -118,6 +118,8 @@ export interface KnowledgeNode {
   contentType?: 'image' | 'html'
   /** HTML file path relative to guide data directory (required when contentType === 'html') */
   htmlSource?: string
+  /** Resolved HTML file URL (set by build pipeline or upload) */
+  htmlUrl?: string
   /** Edge IDs declared by this HTML node for interaction hotspots (used for validation) */
   hotspotEdgeIds?: string[]
   /** Image fill mode: 'fill' (stretch, default), 'fitHeight' (equal ratio by height, draggable), 'fitWidth' (equal ratio by width, draggable) */

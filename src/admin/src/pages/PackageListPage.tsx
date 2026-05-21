@@ -4,7 +4,7 @@ import {
   Box, Flex, Text, Button, Heading, Badge, Card, Input,
   IconButton, Spinner, Grid,
 } from '@chakra-ui/react'
-import { Upload, Play, Download, Trash2, ChevronRight, Layers, Clock, Plus } from 'lucide-react'
+import { Upload, Play, Download, Copy, Trash2, ChevronRight, Layers, Clock, Plus } from 'lucide-react'
 import * as api from '../services/api'
 
 interface GuideListItem {
@@ -40,6 +40,7 @@ export function PackageListPage() {
   const [importing, setImporting] = useState(false)
   const [creating, setCreating] = useState(false)
   const [building, setBuilding] = useState<string | null>(null)
+  const [copying, setCopying] = useState<string | null>(null)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newVersion, setNewVersion] = useState('0.1.0')
@@ -112,6 +113,18 @@ export function PackageListPage() {
       URL.revokeObjectURL(url)
     } catch (e: any) {
       setError(e.message)
+    }
+  }
+
+  const handleCopy = async (id: string) => {
+    try {
+      setCopying(id)
+      await api.copyGuide(id)
+      await load()
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setCopying(null)
     }
   }
 
@@ -338,6 +351,18 @@ export function PackageListPage() {
                     >
                       <Download size={12} style={{ marginRight: 4 }} />
                       导出
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      style={{ border: '1px solid #2a2d3a' }}
+                      color="text-secondary"
+                      _hover={{ bg: 'surface-raised' }}
+                      onClick={() => handleCopy(guide.id)}
+                      loading={copying === guide.id}
+                    >
+                      <Copy size={12} style={{ marginRight: 4 }} />
+                      复制
                     </Button>
                     <IconButton
                       size="xs"
