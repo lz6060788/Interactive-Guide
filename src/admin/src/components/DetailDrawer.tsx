@@ -125,6 +125,7 @@ const STYLE_OPTIONS = [
 const RESOLUTION_OPTIONS = [
   { value: '16:9', label: '16:9 横屏' },
   { value: '9:16', label: '9:16 竖屏' },
+  { value: '375*808', label: '375*808 iPhone 竖屏' },
 ]
 
 function Field({ label, value, onChange, disabled, multiline, rows, mono }: {

@@ -254,7 +254,7 @@ export class BuildPipeline {
       }
     })
     const updatedGuide = { ...guide, nodes: updatedNodes, metadata: { ...guide.metadata, updatedAt: nowISO() } }
-    this.repo.writeJson(`guides/${guideId}/current/guide.json`, updatedGuide)
+    this.repo.saveGuide(updatedGuide)
 
     try {
       const manifestPath = `publish/${guideId}/${guide.version}/manifest.json`
@@ -1061,11 +1061,19 @@ export class BuildPipeline {
         return {
           id: n.id,
           title: n.title,
+          keyContent: n.keyContent,
           summary: summary || undefined,
           keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
           topicType: n.topicType,
           sourceText: n.sourceText?.trim() || undefined,
+          visualIntent: n.visualIntent,
+          hotspotHints: n.hotspotHints,
+          presentationIntent: n.presentationIntent,
+          imageStatus: n.imageStatus,
+          status: n.status,
+          extensions: n.extensions,
           contentType: 'html' as const,
+          htmlSource: n.htmlSource,
           htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
@@ -1080,11 +1088,18 @@ export class BuildPipeline {
       return {
         id: n.id,
         title: n.title,
+        keyContent: n.keyContent,
         summary: summary || undefined,
         keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
         topicType: n.topicType,
         sourceText: n.sourceText?.trim() || undefined,
+        visualIntent: n.visualIntent,
+        hotspotHints: n.hotspotHints,
+        presentationIntent: n.presentationIntent,
         imageUrl: `${mediaBase}/nodes/${n.id}.png`,
+        imageStatus: n.imageStatus,
+        status: n.status,
+        extensions: n.extensions,
         imageFitMode: n.imageFitMode,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
@@ -1107,8 +1122,19 @@ export class BuildPipeline {
         fromNodeId: e.fromNodeId,
         toNodeId: e.toNodeId,
         relationLabel: e.relationLabel,
+        transitionDescriptionMode: e.transitionDescriptionMode,
+        manualTransitionPrompt: e.manualTransitionPrompt,
+        promptStatus: e.promptStatus,
+        transitionStrategyMode: e.transitionStrategyMode,
+        transitionStrategyReason: e.transitionStrategyReason,
+        transitionPlan: e.transitionPlan,
+        transitionPrompt: e.transitionPrompt,
+        transitionPath: e.transitionPath,
         transitionType: e.transitionType,
         builtinTransition: e.builtinTransition,
+        videoStatus: e.videoStatus,
+        status: e.status,
+        extensions: e.extensions,
         videoUrl: hasVideo ? `${mediaBase}/edges/${e.id}.mp4` : undefined,
       }
     })
@@ -1124,9 +1150,12 @@ export class BuildPipeline {
       version: guide.version,
       title: guide.title,
       rootNodeId: 'root',
+      locale: guide.locale,
+      description: guide.description,
       resolution: guide.resolution,
       visualStyle: guide.visualStyle,
       transitionStyle: guide.transitionStyle,
+      style: guide.style,
       nodes,
       edges,
       nodeMap,

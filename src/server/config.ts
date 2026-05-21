@@ -110,7 +110,7 @@ const configSchema = z.object({
   OBJECT_STORAGE_PUBLIC_BASE_URL: z.string().default(''),
 
   // Default resolution
-  DEFAULT_RESOLUTION: z.enum(['16:9', '9:16']).default('16:9'),
+  DEFAULT_RESOLUTION: z.enum(['16:9', '9:16', '375*808']).default('16:9'),
 })
 
 export type AppConfig = z.infer<typeof configSchema>

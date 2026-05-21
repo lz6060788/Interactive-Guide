@@ -10,6 +10,7 @@ import type {
   KnowledgeEdge,
   PublishManifest,
 } from './types.js'
+import { isPackageResolution, PACKAGE_RESOLUTIONS } from './utils.js'
 
 export interface ValidationResult {
   valid: boolean
@@ -96,8 +97,8 @@ export function validateKnowledgePackage(pkg: KnowledgePackage): ValidationResul
   if (!pkg.version || typeof pkg.version !== 'string') {
     errors.push('KnowledgePackage.version is required and must be a non-empty string')
   }
-  if (!pkg.resolution || !['16:9', '9:16'].includes(pkg.resolution)) {
-    errors.push('KnowledgePackage.resolution must be "16:9" or "9:16"')
+  if (!isPackageResolution(pkg.resolution)) {
+    errors.push(`KnowledgePackage.resolution must be one of ${PACKAGE_RESOLUTIONS.join(', ')}`)
   }
 
   // Nodes

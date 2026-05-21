@@ -5,6 +5,7 @@ import {
 import { X, ArrowLeft } from 'lucide-react'
 import * as api from '../services/api'
 import type { PublishManifest, ImageFitMode } from '../../../shared/types'
+import { getResolutionAspectRatio, getResolutionAspectRatioCss } from '../../../shared/utils'
 import { PlayerCore } from '../../../runtime/player-core/player-core.js'
 
 interface Props {
@@ -376,12 +377,14 @@ export function PreviewModal({ packageId, onClose }: Props) {
   }, [status, currentNode, currentNodeId, transitioning, confirmHostVisualCommitIfReady])
 
   // Compute modal sizing: fit resolution into 90vw x 90vh, keeping aspect ratio
-  const [arW, arH] = manifest
-    ? manifest.resolution.split(':').map(Number)
-    : [16, 9]
   const maxWVw = 90
   const maxHVh = 90
-  const ar = arW / arH
+  const ar = manifest
+    ? getResolutionAspectRatio(manifest.resolution)
+    : 16 / 9
+  const stageAspectRatio = manifest
+    ? getResolutionAspectRatioCss(manifest.resolution)
+    : '16 / 9'
   // In vw/vh units: maxWVw vw / maxHVh vh = maxWVw / maxHVh (ratio depends on viewport aspect)
   // We need to fit a rect of aspect arW:arH into maxWVw x maxHVh.
   // Constraint: w <= maxWVw, h <= maxHVh, w/h = arW/arH
@@ -508,7 +511,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
                 h="100%"
                 overflow={imageFitMode !== 'fill' ? 'hidden' : 'visible'}
                 style={{
-                  aspectRatio: manifest.resolution.replace(':', ' / '),
+                  aspectRatio: stageAspectRatio,
                 }}
               >
                 {preloading && (

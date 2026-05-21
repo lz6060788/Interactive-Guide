@@ -5,15 +5,34 @@
 import { v4 as uuidv4 } from 'uuid'
 import type { KnowledgePackage, PackageListItem, PackageResolution } from './types.js'
 
-/** Base pixel dimensions for each aspect ratio. Used for absolute coordinate computation and AI prompts. */
+/** Base pixel dimensions for each supported canvas resolution. */
 const RESOLUTION_BASES: Record<PackageResolution, { width: number; height: number }> = {
   '16:9': { width: 1920, height: 1080 },
   '9:16': { width: 1080, height: 1920 },
+  '375*808': { width: 375, height: 808 },
 }
 
-/** Convert a resolution ratio string to base pixel dimensions. */
+export const PACKAGE_RESOLUTIONS = Object.freeze(
+  Object.keys(RESOLUTION_BASES) as PackageResolution[],
+)
+
+export function isPackageResolution(value: unknown): value is PackageResolution {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(RESOLUTION_BASES, value)
+}
+
+/** Convert a package resolution to base pixel dimensions. */
 export function getResolutionDimensions(resolution: PackageResolution): { width: number; height: number } {
   return RESOLUTION_BASES[resolution]
+}
+
+export function getResolutionAspectRatio(resolution: PackageResolution): number {
+  const { width, height } = getResolutionDimensions(resolution)
+  return width / height
+}
+
+export function getResolutionAspectRatioCss(resolution: PackageResolution): string {
+  const { width, height } = getResolutionDimensions(resolution)
+  return `${width} / ${height}`
 }
 
 /**

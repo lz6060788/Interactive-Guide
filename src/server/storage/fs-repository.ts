@@ -10,6 +10,7 @@ import path from 'node:path'
 import type { Repository } from './repository.js'
 import type {
   KnowledgePackage,
+  PublishManifest,
   PackageBuildRecord,
   NodeBuildRecord,
   EdgeBuildRecord,
@@ -18,7 +19,6 @@ import type {
 
 export class FsRepository implements Repository {
   private dataDir: string
-  private guidesDir: string
   private generatesDir: string
   private publishDir: string
   private workspaceDir: string
@@ -27,7 +27,6 @@ export class FsRepository implements Repository {
 
   constructor(baseDir?: string) {
     this.dataDir = baseDir ?? path.resolve('data')
-    this.guidesDir = path.join(this.dataDir, 'guides')
     this.generatesDir = path.join(this.dataDir, 'generates')
     this.publishDir = path.join(this.dataDir, 'publish')
     this.workspaceDir = path.join(this.dataDir, 'workspace')
@@ -38,7 +37,7 @@ export class FsRepository implements Repository {
   // ─── Initialization ──────────────────────────────────────
 
   private ensureDirs() {
-    for (const dir of [this.guidesDir, this.generatesDir, this.publishDir, this.workspaceDir]) {
+    for (const dir of [this.generatesDir, this.publishDir, this.workspaceDir]) {
       fs.mkdirSync(dir, { recursive: true })
     }
   }
@@ -55,21 +54,18 @@ export class FsRepository implements Repository {
   }
 
   private loadGuidesFromDisk() {
-    if (!fs.existsSync(this.guidesDir)) return
-    const entries = fs.readdirSync(this.guidesDir, { withFileTypes: true })
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue
-      const dir = path.join(this.guidesDir, entry.name, 'current')
-      // Try new name first, fall back to old name
-      const guidePath = path.join(dir, 'guide.json')
-      const legacyPath = path.join(dir, 'package.json')
-      const filePath = fs.existsSync(guidePath) ? guidePath : legacyPath
-      if (fs.existsSync(filePath)) {
+    if (fs.existsSync(this.workspaceDir)) {
+      const entries = fs.readdirSync(this.workspaceDir, { withFileTypes: true })
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        const manifestPath = path.join(this.workspaceDir, entry.name, 'manifest.json')
+        if (!fs.existsSync(manifestPath)) continue
         try {
-          const guide: KnowledgePackage = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+          const manifest: PublishManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
+          const guide = this.manifestToGuide(manifest)
           this.guides.set(guide.id, guide)
         } catch {
-          console.warn(`[FsRepo] Failed to load guide: ${filePath}`)
+          console.warn(`[FsRepo] Failed to load workspace manifest: ${manifestPath}`)
         }
       }
     }
@@ -81,16 +77,13 @@ export class FsRepository implements Repository {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
       const dir = path.join(this.generatesDir, entry.name)
-      // Try new name first, fall back to old name
       const generatePath = path.join(dir, 'generate.json')
-      const legacyPath = path.join(dir, 'build.json')
-      const filePath = fs.existsSync(generatePath) ? generatePath : legacyPath
-      if (fs.existsSync(filePath)) {
+      if (fs.existsSync(generatePath)) {
         try {
-          const record: PackageBuildRecord = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+          const record: PackageBuildRecord = JSON.parse(fs.readFileSync(generatePath, 'utf-8'))
           this.generates.set(record.buildId, record)
         } catch {
-          console.warn(`[FsRepo] Failed to load generate record: ${filePath}`)
+          console.warn(`[FsRepo] Failed to load generate record: ${generatePath}`)
         }
       }
     }
@@ -104,16 +97,23 @@ export class FsRepository implements Repository {
 
   saveGuide(guide: KnowledgePackage): void {
     this.guides.set(guide.id, guide)
-    const dir = path.join(this.guidesDir, guide.id, 'current')
+    const dir = path.join(this.workspaceDir, guide.id)
     fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, 'guide.json'), JSON.stringify(guide, null, 2))
+    fs.writeFileSync(
+      path.join(dir, 'manifest.json'),
+      JSON.stringify(this.guideToManifest(guide), null, 2),
+    )
   }
 
   deleteGuide(guideId: string): void {
     this.guides.delete(guideId)
-    const dir = path.join(this.guidesDir, guideId)
-    if (fs.existsSync(dir)) {
-      fs.rmSync(dir, { recursive: true, force: true })
+    const workspaceDir = path.join(this.workspaceDir, guideId)
+    if (fs.existsSync(workspaceDir)) {
+      fs.rmSync(workspaceDir, { recursive: true, force: true })
+    }
+    const legacyGuideDir = path.join(this.dataDir, 'guides', guideId)
+    if (fs.existsSync(legacyGuideDir)) {
+      fs.rmSync(legacyGuideDir, { recursive: true, force: true })
     }
   }
 
@@ -210,5 +210,152 @@ export class FsRepository implements Repository {
   private resolveDataPath(filePath: string): string {
     if (path.isAbsolute(filePath)) return filePath
     return path.join(this.dataDir, filePath)
+  }
+
+  private manifestToGuide(manifest: PublishManifest): KnowledgePackage {
+    return {
+      id: manifest.packageId,
+      title: manifest.title,
+      version: manifest.version,
+      locale: manifest.locale,
+      description: manifest.description,
+      resolution: manifest.resolution,
+      visualStyle: manifest.visualStyle,
+      transitionStyle: manifest.transitionStyle,
+      style: manifest.style,
+      nodes: manifest.nodes.map(node => ({
+        id: node.id,
+        title: node.title,
+        keyContent: node.keyContent,
+        sourceText: node.sourceText,
+        summary: node.summary,
+        keyPoints: node.keyPoints,
+        topicType: node.topicType,
+        visualIntent: node.visualIntent,
+        hotspotHints: node.hotspotHints,
+        presentationIntent: node.presentationIntent,
+        imageUrl: node.imageUrl,
+        imageStatus: node.imageStatus,
+        hotspots: (node.hotspots ?? []).map(hs => ({
+          edgeId: hs.edgeId,
+          targetNodeId: hs.targetNodeId,
+          label: hs.label,
+          normalizedX: hs.normalizedX,
+          normalizedY: hs.normalizedY,
+          radius: hs.radius,
+          x: hs.normalizedX,
+          y: hs.normalizedY,
+        })),
+        status: node.status,
+        extensions: node.extensions,
+        contentType: node.contentType,
+        htmlSource: node.htmlSource,
+        htmlUrl: node.htmlUrl,
+        hotspotEdgeIds: node.hotspotEdgeIds,
+        imageFitMode: node.imageFitMode,
+      })),
+      edges: manifest.edges.map(edge => ({
+        id: edge.id,
+        fromNodeId: edge.fromNodeId,
+        toNodeId: edge.toNodeId,
+        relationLabel: edge.relationLabel,
+        transitionDescriptionMode: edge.transitionDescriptionMode,
+        manualTransitionPrompt: edge.manualTransitionPrompt,
+        promptStatus: edge.promptStatus,
+        transitionStrategyMode: edge.transitionStrategyMode,
+        transitionStrategyReason: edge.transitionStrategyReason,
+        transitionPlan: edge.transitionPlan,
+        transitionPrompt: edge.transitionPrompt,
+        transitionPath: edge.transitionPath,
+        videoUrl: edge.videoUrl,
+        videoStatus: edge.videoStatus,
+        status: edge.status,
+        transitionType: edge.transitionType,
+        builtinTransition: edge.builtinTransition,
+        extensions: edge.extensions,
+      })),
+      metadata: {
+        createdAt: undefined,
+        updatedAt: manifest.metadata?.generatedAt,
+      },
+    }
+  }
+
+  private guideToManifest(guide: KnowledgePackage): PublishManifest {
+    const nodes = guide.nodes.map(node => ({
+      id: node.id,
+      title: node.title,
+      keyContent: node.keyContent,
+      summary: node.summary,
+      keyPoints: node.keyPoints,
+      topicType: node.topicType,
+      sourceText: node.sourceText,
+      visualIntent: node.visualIntent,
+      hotspotHints: node.hotspotHints,
+      presentationIntent: node.presentationIntent,
+      imageUrl: node.imageUrl,
+      imageStatus: node.imageStatus,
+      hotspots: (node.hotspots ?? []).map(hs => ({
+        edgeId: hs.edgeId,
+        targetNodeId: hs.targetNodeId,
+        label: hs.label,
+        normalizedX: hs.normalizedX,
+        normalizedY: hs.normalizedY,
+        radius: hs.radius,
+        markerType: 'dot' as const,
+      })),
+      status: node.status,
+      extensions: node.extensions,
+      contentType: node.contentType,
+      htmlSource: node.htmlSource,
+      htmlUrl: node.htmlUrl,
+      hotspotEdgeIds: node.hotspotEdgeIds,
+      imageFitMode: node.imageFitMode,
+    }))
+    const edges = guide.edges.map(edge => ({
+      id: edge.id,
+      fromNodeId: edge.fromNodeId,
+      toNodeId: edge.toNodeId,
+      relationLabel: edge.relationLabel,
+      transitionDescriptionMode: edge.transitionDescriptionMode,
+      manualTransitionPrompt: edge.manualTransitionPrompt,
+      promptStatus: edge.promptStatus,
+      transitionStrategyMode: edge.transitionStrategyMode,
+      transitionStrategyReason: edge.transitionStrategyReason,
+      transitionPlan: edge.transitionPlan,
+      transitionPrompt: edge.transitionPrompt,
+      transitionPath: edge.transitionPath,
+      transitionType: edge.transitionType,
+      builtinTransition: edge.builtinTransition,
+      videoUrl: edge.videoUrl,
+      videoStatus: edge.videoStatus,
+      status: edge.status,
+      extensions: edge.extensions,
+    }))
+    const nodeMap: PublishManifest['nodeMap'] = {}
+    for (const node of nodes) nodeMap[node.id] = node
+    const edgeMap: PublishManifest['edgeMap'] = {}
+    for (const edge of edges) edgeMap[edge.id] = edge
+
+    return {
+      packageId: guide.id,
+      version: guide.version,
+      title: guide.title,
+      rootNodeId: 'root',
+      locale: guide.locale,
+      description: guide.description,
+      resolution: guide.resolution,
+      visualStyle: guide.visualStyle,
+      transitionStyle: guide.transitionStyle,
+      style: guide.style,
+      nodes,
+      edges,
+      nodeMap,
+      edgeMap,
+      metadata: {
+        generatedAt: guide.metadata?.updatedAt ?? new Date().toISOString(),
+        manifestVersion: '1.0.0',
+      },
+    }
   }
 }

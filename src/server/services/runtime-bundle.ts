@@ -12,7 +12,7 @@ import type {
   PublishManifest,
   RuntimeBundlePayload,
 } from '../../shared/types.js'
-import { nowISO } from '../../shared/utils.js'
+import { getResolutionDimensions, nowISO, PACKAGE_RESOLUTIONS } from '../../shared/utils.js'
 import { AppError } from '../middleware/app-error.js'
 
 // ─── RuntimeBundleGenerator ────────────────────────────────────
@@ -327,12 +327,16 @@ export class RuntimeBundleGenerator {
 
   private buildRuntimeScript(): string {
     const playerCoreIife = this.buildPlayerCoreScript()
+    const resolutionBases = Object.fromEntries(
+      PACKAGE_RESOLUTIONS.map(resolution => [resolution, getResolutionDimensions(resolution)]),
+    )
 
     const glueCode = [
       'const refs = {}',
       'let engine = null',
       'let dragState = { active: false, startX: 0, startY: 0, startOffsetX: 0, startOffsetY: 0 }',
       'let imageOffset = { x: 0, y: 0 }',
+      `const RESOLUTION_BASES = ${JSON.stringify(resolutionBases)}`,
       '',
       'document.addEventListener("DOMContentLoaded", () => {',
       '  refs.backButton = document.getElementById("back-button")',
@@ -429,9 +433,9 @@ export class RuntimeBundleGenerator {
       '  const manifest = await response.json()',
       '',
       '  // Set stage size based on resolution — fit into 90vw x 90vh keeping aspect ratio',
-      '  const parts = manifest.resolution.split(":").map(Number)',
-      '  const ar = parts[0] / parts[1]',
-      '  refs.stage.style.aspectRatio = manifest.resolution.replace(":", " / ")',
+      '  const resolution = RESOLUTION_BASES[manifest.resolution] || RESOLUTION_BASES["16:9"]',
+      '  const ar = resolution.width / resolution.height',
+      '  refs.stage.style.aspectRatio = `${resolution.width} / ${resolution.height}`',
       '  refs.stage.style.width = `min(90vw, 90vh * ${ar})`',
       '  refs.stage.style.height = `min(90vh, 90vw / ${ar})`',
       '',

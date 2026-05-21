@@ -81,8 +81,8 @@ export type GenerateCurrentStage = BuildCurrentStage
 
 // ─── Resolution ─────────────────────────────────────────────
 
-/** Aspect ratio of the knowledge package canvas. Only 16:9 (landscape) or 9:16 (portrait). */
-export type PackageResolution = '16:9' | '9:16'
+/** Canvas resolution preset of the knowledge package. */
+export type PackageResolution = '16:9' | '9:16' | '375*808'
 
 // ─── Knowledge Layer ────────────────────────────────────────
 
@@ -256,14 +256,23 @@ export interface PublishHotspot {
 export interface PublishNode {
   id: string
   title: string
+  keyContent?: string
   summary?: string
   keyPoints?: string[]
   topicType?: NodeTopicType
   sourceText?: string
+  visualIntent?: string
+  hotspotHints?: string[]
+  presentationIntent?: string
   imageUrl?: string
+  imageStatus?: ResourceStatus
   hotspots: PublishHotspot[]
+  status?: NodeStatus
+  extensions?: Record<string, unknown>
   /** Node content type: 'image' (default) or 'html' */
   contentType?: 'image' | 'html'
+  /** HTML file path relative to workspace package directory */
+  htmlSource?: string
   /** HTML resource URL (API media path or bundle relative path) */
   htmlUrl?: string
   /** Edge IDs declared by this HTML node for interaction hotspots */
@@ -277,9 +286,20 @@ export interface PublishEdge {
   fromNodeId: string
   toNodeId: string
   relationLabel?: string
+  transitionDescriptionMode?: TransitionDescriptionMode
+  manualTransitionPrompt?: string
+  promptStatus?: SubTaskStatus
+  transitionStrategyMode?: TransitionStrategyMode
+  transitionStrategyReason?: string
+  transitionPlan?: TransitionVisualPlan
+  transitionPrompt?: string
+  transitionPath?: string
   transitionType?: 'video' | 'builtin' | 'none'
   builtinTransition?: BuiltinTransitionConfig
   videoUrl?: string
+  videoStatus?: ResourceStatus
+  status?: EdgeStatus
+  extensions?: Record<string, unknown>
 }
 
 export interface PublishManifest {
@@ -287,9 +307,12 @@ export interface PublishManifest {
   version: string
   title: string
   rootNodeId: 'root'
+  locale?: string
+  description?: string
   resolution: PackageResolution
   visualStyle?: string
   transitionStyle?: string
+  style?: string
   nodes: PublishNode[]
   edges: PublishEdge[]
   nodeMap: Record<string, PublishNode>

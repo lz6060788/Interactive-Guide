@@ -6,6 +6,7 @@ import {
 } from '@chakra-ui/react'
 import { Upload, Play, Download, Copy, Trash2, ChevronRight, Layers, Clock, Plus } from 'lucide-react'
 import * as api from '../services/api'
+import type { PackageResolution } from '../../../shared/types'
 
 interface GuideListItem {
   id: string
@@ -44,7 +45,7 @@ export function PackageListPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newVersion, setNewVersion] = useState('0.1.0')
-  const [newResolution, setNewResolution] = useState('16:9')
+  const [newResolution, setNewResolution] = useState<PackageResolution>('16:9')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = async () => {
@@ -143,7 +144,7 @@ export function PackageListPage() {
         id: `guide_${Date.now()}`,
         title: newTitle.trim(),
         version: newVersion.trim() || '0.1.0',
-        resolution: newResolution as '16:9' | '9:16',
+        resolution: newResolution,
         nodes: [{ id: 'root', title: '首页', keyContent: '待补充', status: 'draft' }],
         edges: [],
       }
@@ -429,6 +430,7 @@ export function PackageListPage() {
               >
                 <option value="16:9">16:9 横屏</option>
                 <option value="9:16">9:16 竖屏</option>
+                <option value="375*808">375*808 iPhone 竖屏</option>
               </select>
             </Box>
 
