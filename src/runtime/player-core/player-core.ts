@@ -3,9 +3,16 @@ import type {
   PublishHotspot,
   PublishNode,
 } from '../../shared/types.js'
+import type { BuiltinTransitionType } from '../../shared/types.js'
 import type { Transition } from '../transitions/index.js'
 import { createTransition } from '../transitions/index.js'
 import { RuntimeResourcePreloader } from './resource-preloader.js'
+
+// Builtin transitions that can safely handle HTML nodes (iframe content).
+// Transitions NOT in this set will skip HTML nodes and fall back to video / instant switch.
+const HTML_SAFE_BUILTIN_TRANSITIONS: ReadonlySet<BuiltinTransitionType> = new Set([
+  'zoom',
+])
 
 export interface PlayerRefs {
   container: HTMLElement
@@ -146,11 +153,13 @@ export class PlayerCore {
     // Push current node to history before navigating
     this.history.push(this.currentNodeId)
 
-    // Builtin transitions don't work with HTML nodes (iframe can't be cloned for CSS animation)
-    const fromIsHtml = this.isHtmlNode(this.currentNodeId)
-    const toIsHtml = this.isHtmlNode(hotspot.targetNodeId)
+    // Some builtin transitions can handle HTML nodes; others must skip them.
+    const hasHtmlNode = this.isHtmlNode(this.currentNodeId) || this.isHtmlNode(hotspot.targetNodeId)
+    const builtinAllowsHtml = hasHtmlNode && edge?.builtinTransition
+      ? HTML_SAFE_BUILTIN_TRANSITIONS.has(edge.builtinTransition.type)
+      : !hasHtmlNode
 
-    if (edge?.transitionType === 'builtin' && edge.builtinTransition && !fromIsHtml && !toIsHtml) {
+    if (edge?.transitionType === 'builtin' && edge.builtinTransition && builtinAllowsHtml) {
       this.transitioning = true
       this.playBuiltinTransition(
         hotspot.targetNodeId,
