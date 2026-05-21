@@ -69,13 +69,16 @@ export function WorkbenchPage() {
 
   useEffect(() => { load() }, [load])
 
+  const isNodeReady = (n: any) =>
+    n.contentType === 'html' ? !!n.htmlUrl : (n.imageStatus === 'success' || n.status === 'success')
+
   // Build React Flow nodes and edges (position placeholders, ELK will compute layout)
   const { flowNodes, flowEdges } = useMemo(() => {
     if (!pkg) return { flowNodes: [] as Node[], flowEdges: [] as Edge[] }
 
     const nodeArr: Node[] = pkg.nodes.map((n: any) => {
       const borderColor =
-        n.imageStatus === 'success' || n.status === 'success' ? '#22c55e' :
+        isNodeReady(n) ? '#22c55e' :
         n.imageStatus === 'failed' || n.status === 'failed' ? '#ef4444' :
         '#2a2d3a'
 
@@ -103,18 +106,18 @@ export function WorkbenchPage() {
                   px="1"
                   rounded="sm"
                   bg={
-                    n.imageStatus === 'success' || n.status === 'success' ? 'success-subtle' :
+                    isNodeReady(n) ? 'success-subtle' :
                     n.imageStatus === 'failed' || n.status === 'failed' ? 'error-subtle' :
                     'surface-overlay'
                   }
                   color={
-                    n.imageStatus === 'success' || n.status === 'success' ? 'success' :
+                    isNodeReady(n) ? 'success' :
                     n.imageStatus === 'failed' || n.status === 'failed' ? 'error' :
                     'text-tertiary'
                   }
                 >
-                  {n.imageStatus === 'success' || n.status === 'success' ? '图片就绪' :
-                   n.imageStatus === 'failed' || n.status === 'failed' ? '图片失败' : '待生成'}
+                  {isNodeReady(n) ? '就绪' :
+                   n.imageStatus === 'failed' || n.status === 'failed' ? '失败' : '待生成'}
                 </Badge>
                 {n.hotspots?.length > 0 && (
                   <Text fontSize="2xs" color="text-tertiary">
@@ -243,7 +246,10 @@ export function WorkbenchPage() {
 
   const allNodesReady = useMemo(() => {
     if (!pkg?.nodes?.length) return false
-    return pkg.nodes.every((node: any) => node.imageStatus === 'success' || node.status === 'success')
+    return pkg.nodes.every((node: any) => {
+      if (node.contentType === 'html') return !!node.htmlUrl
+      return node.imageStatus === 'success' || node.status === 'success'
+    })
   }, [pkg])
 
   const packageDisabledReason = useMemo(() => {
@@ -527,7 +533,7 @@ export function WorkbenchPage() {
                 rounded="full"
                 flexShrink={0}
                 bg={
-                  n.imageStatus === 'success' || n.status === 'success' ? 'success' :
+                  isNodeReady(n) ? 'success' :
                   n.imageStatus === 'failed' || n.status === 'failed' ? 'error' :
                   n.imageStatus === 'running' ? 'warning' : 'border'
                 }

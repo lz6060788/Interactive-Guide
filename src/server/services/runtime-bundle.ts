@@ -24,11 +24,14 @@ export class RuntimeBundleGenerator {
     const guide = this.repo.loadAllGuides().get(guideId)
     if (!guide) throw AppError.notFound(`Guide "${guideId}" not found`)
 
-    const manifest = this.repo.readJson<PublishManifest>(
+    let manifest = this.repo.readJson<PublishManifest>(
       `publish/${guide.id}/${guide.version}/manifest.json`,
     )
+
+    let workspaceFallback = false
     if (!manifest) {
-      throw AppError.validation('Guide has no published manifest. Run generate before packaging.')
+      manifest = this.buildManifestFromWorkspace(guide)
+      workspaceFallback = true
     }
 
     const bundleId = `${guide.id}-${Date.now()}`
@@ -43,12 +46,16 @@ export class RuntimeBundleGenerator {
 
     for (const node of manifest.nodes) {
       if (node.contentType === 'html') {
-        const src = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.html`
+        const src = workspaceFallback
+          ? `workspace/${guide.id}/nodes/${node.id}.html`
+          : `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.html`
         if (this.repo.fileExists(src)) {
           this.repo.copyFile(src, `${bundleNodesDir}/${node.id}.html`)
         }
       } else {
-        const src = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
+        const src = workspaceFallback
+          ? `workspace/${guide.id}/nodes/${node.id}.png`
+          : `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
         if (this.repo.fileExists(src)) {
           this.repo.copyFile(src, `${bundleNodesDir}/${node.id}.png`)
         }
@@ -56,13 +63,15 @@ export class RuntimeBundleGenerator {
     }
 
     for (const edge of manifest.edges) {
-      const src = `publish/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`
+      const src = workspaceFallback
+        ? `workspace/${guide.id}/edges/${edge.id}.mp4`
+        : `publish/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`
       if (this.repo.fileExists(src)) {
         this.repo.copyFile(src, `${bundleEdgesDir}/${edge.id}.mp4`)
       }
     }
 
-    const bundledManifest = this.buildRuntimeBundleManifest(guide, manifest)
+    const bundledManifest = this.buildRuntimeBundleManifest(guide, manifest, workspaceFallback)
     this.repo.writeJson(`${bundleDir}/manifest.json`, bundledManifest)
 
     const payload: RuntimeBundlePayload = {
@@ -95,10 +104,13 @@ export class RuntimeBundleGenerator {
   private buildRuntimeBundleManifest(
     guide: KnowledgePackage,
     manifest: PublishManifest,
+    workspaceFallback: boolean = false,
   ): PublishManifest {
     const nodes = manifest.nodes.map(node => {
       if (node.contentType === 'html') {
-        const localHtmlPath = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.html`
+        const localHtmlPath = workspaceFallback
+          ? `workspace/${guide.id}/nodes/${node.id}.html`
+          : `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.html`
         if (!this.repo.fileExists(localHtmlPath)) {
           throw AppError.validation(`Missing HTML asset for standalone bundle: ${node.id}.html`)
         }
@@ -110,7 +122,9 @@ export class RuntimeBundleGenerator {
         }
       }
 
-      const localImagePath = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
+      const localImagePath = workspaceFallback
+        ? `workspace/${guide.id}/nodes/${node.id}.png`
+        : `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
       if (!this.repo.fileExists(localImagePath)) {
         throw AppError.validation(`Missing node asset for standalone bundle: ${node.id}.png`)
       }
@@ -121,7 +135,9 @@ export class RuntimeBundleGenerator {
     })
 
     const edges = manifest.edges.map(edge => {
-      const localVideoPath = `publish/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`
+      const localVideoPath = workspaceFallback
+        ? `workspace/${guide.id}/edges/${edge.id}.mp4`
+        : `publish/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`
       const hasLocalVideo = this.repo.fileExists(localVideoPath)
       if (edge.videoUrl && !hasLocalVideo) {
         throw AppError.validation(`Missing edge asset for standalone bundle: ${edge.id}.mp4`)
@@ -147,6 +163,82 @@ export class RuntimeBundleGenerator {
       metadata: {
         ...manifest.metadata,
         generatedAt: nowISO(),
+      },
+    }
+  }
+
+
+  private buildManifestFromWorkspace(guide: KnowledgePackage): PublishManifest {
+    const mediaBase = `/api/media/workspace/${guide.id}`
+
+    const nodes = guide.nodes.map(n => {
+      if (n.contentType === 'html') {
+        return {
+          id: n.id,
+          title: n.title,
+          contentType: 'html' as const,
+          htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
+          hotspotEdgeIds: n.hotspotEdgeIds,
+          imageFitMode: n.imageFitMode,
+          hotspots: (n.hotspots ?? []).map(hs => ({
+            edgeId: hs.edgeId,
+            targetNodeId: hs.targetNodeId,
+            label: hs.label,
+            normalizedX: hs.normalizedX,
+            normalizedY: hs.normalizedY,
+            radius: hs.radius,
+            markerType: 'dot' as const,
+          })),
+        }
+      }
+      return {
+        id: n.id,
+        title: n.title,
+        imageUrl: `${mediaBase}/nodes/${n.id}.png`,
+        imageFitMode: n.imageFitMode,
+        hotspots: (n.hotspots ?? []).map(hs => ({
+          edgeId: hs.edgeId,
+          targetNodeId: hs.targetNodeId,
+          label: hs.label,
+          normalizedX: hs.normalizedX,
+          normalizedY: hs.normalizedY,
+          radius: hs.radius,
+          markerType: 'dot' as const,
+        })),
+      }
+    })
+
+    const edges = guide.edges.map(e => {
+      const videoPath = `workspace/${guide.id}/edges/${e.id}.mp4`
+      const hasVideo = this.repo.fileExists(videoPath)
+      return {
+        id: e.id,
+        fromNodeId: e.fromNodeId,
+        toNodeId: e.toNodeId,
+        relationLabel: e.relationLabel,
+        videoUrl: hasVideo ? `${mediaBase}/edges/${e.id}.mp4` : undefined,
+      }
+    })
+
+    const nodeMap: PublishManifest['nodeMap'] = {}
+    for (const node of nodes) nodeMap[node.id] = node
+
+    const edgeMap: PublishManifest['edgeMap'] = {}
+    for (const edge of edges) edgeMap[edge.id] = edge
+
+    return {
+      packageId: guide.id,
+      version: guide.version,
+      title: guide.title,
+      rootNodeId: 'root',
+      resolution: guide.resolution,
+      nodes,
+      edges,
+      nodeMap,
+      edgeMap,
+      metadata: {
+        generatedAt: nowISO(),
+        manifestVersion: '1.0.0',
       },
     }
   }

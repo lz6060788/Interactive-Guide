@@ -76,80 +76,6 @@ export class PlayerCore {
     }
   }
 
-  private debugLog(label: string, extra: Record<string, unknown> = {}): void {
-    const now =
-      typeof performance !== 'undefined' && typeof performance.now === 'function'
-        ? performance.now().toFixed(2)
-        : 'n/a'
-
-    console.log(`[PlayerCore][${now}ms] ${label}`, {
-      currentNodeId: this.currentNodeId,
-      transitioning: this.transitioning,
-      hasTransitionContainer: !!this.transitionContainer,
-      activeTransition: this.activeTransition?.type ?? null,
-      videoOpacity: this.refs.video.style.opacity || '(empty)',
-      ...extra,
-    })
-  }
-
-  private debugJson(label: string, payload: Record<string, unknown>): void {
-    const now =
-      typeof performance !== 'undefined' && typeof performance.now === 'function'
-        ? performance.now().toFixed(2)
-        : 'n/a'
-
-    console.log(
-      `[PlayerCore][${now}ms] ${label}:json ${JSON.stringify(payload)}`,
-    )
-  }
-
-  private captureElementVisualSnapshot(
-    el: Element | null,
-  ): Record<string, unknown> | null {
-    if (!(el instanceof HTMLElement)) return null
-
-    const rect = el.getBoundingClientRect()
-    const style = window.getComputedStyle(el)
-
-    return {
-      tagName: el.tagName,
-      className: el.className,
-      childElementCount: el.childElementCount,
-      rect: {
-        x: Number(rect.x.toFixed(2)),
-        y: Number(rect.y.toFixed(2)),
-        width: Number(rect.width.toFixed(2)),
-        height: Number(rect.height.toFixed(2)),
-      },
-      style: {
-        display: style.display,
-        opacity: style.opacity,
-        width: style.width,
-        height: style.height,
-        objectFit: style.objectFit,
-        objectPosition: style.objectPosition,
-        willChange: style.willChange,
-        transform: style.transform,
-        transformOrigin: style.transformOrigin,
-        overflow: style.overflow,
-      },
-    }
-  }
-
-  private captureBuiltinLayerSnapshots(container: HTMLElement): Record<string, unknown> {
-    const root = container.firstElementChild
-    const fromLayer = container.querySelector('[class*="from"]')
-    const toLayer = container.querySelector('[class*="to"]')
-
-    return {
-      overlay: this.captureElementVisualSnapshot(container),
-      overlayRoot: this.captureElementVisualSnapshot(root),
-      fromLayer: this.captureElementVisualSnapshot(fromLayer),
-      toLayer: this.captureElementVisualSnapshot(toLayer),
-      nodeImage: this.captureElementVisualSnapshot(this.refs.nodeImage),
-    }
-  }
-
   // ─── State Accessors ───────────────────────────────────────
 
   getCurrentNodeId(): string {
@@ -187,28 +113,12 @@ export class PlayerCore {
     const pending = this.pendingVisualCommit
     this.pendingVisualCommit = null
 
-    this.debugLog('host-commit:received', {
-      pendingKind: pending.kind,
-      targetNodeId: pending.targetNodeId,
-    })
-
-    if (pending.kind === 'builtin') {
-      this.debugLog('host-commit:builtin-cleanup-deferred', {
-        targetNodeId: pending.targetNodeId,
-      })
-    }
-
     requestAnimationFrame(() => {
       this.transitioning = false
       this.refs.nodeImage.style.opacity = '1'
       pending.cleanup()
       this.emit('stateChange')
       this.emit('transitionEnd')
-
-      this.debugLog('host-commit:cleanup-finished', {
-        pendingKind: pending.kind,
-        targetNodeId: pending.targetNodeId,
-      })
     })
   }
 
@@ -283,11 +193,6 @@ export class PlayerCore {
   }
 
   switchNode(nodeId: string, options: SwitchNodeOptions = {}): void {
-    this.debugLog('switchNode:start', {
-      nextNodeId: nodeId,
-      preserveVisualLayer: !!options.preserveVisualLayer,
-    })
-
     if (!options.preserveVisualLayer) {
       this.clearPendingVisualCommit('switchNode-replaced')
       this.abortRunningTransition()
@@ -303,9 +208,7 @@ export class PlayerCore {
       this.refs.video.style.opacity = '0'
     }
 
-    this.debugLog('switchNode:before-stateChange', { nextNodeId: nodeId })
     this.emit('stateChange')
-    this.debugLog('switchNode:after-stateChange', { nextNodeId: nodeId })
   }
 
   /** Breadcrumb click — push current node to history then switch. */
@@ -477,35 +380,23 @@ export class PlayerCore {
 
       const transitionPromise = this.activeTransition!.play(context)
 
-      this.debugLog('builtin:after-play-setup', {
-        targetNodeId,
-        transitionType: config.type,
-        overlayChildCount: tc.childElementCount,
-        layers: this.captureBuiltinLayerSnapshots(tc),
-      })
-      this.debugJson('builtin:after-play-setup', {
-        targetNodeId,
-        transitionType: config.type,
-        overlayChildCount: tc.childElementCount,
-        layers: this.captureBuiltinLayerSnapshots(tc),
-      })
+      const targetRect = toImg.getBoundingClientRect()
+      const containerRc = this.refs.container.getBoundingClientRect()
+      const aspectW = containerRc.width / Math.max(containerRc.height, 1)
+      const aspectH = containerRc.height / Math.max(containerRc.width, 1)
+      const ratioLabel = Math.abs(aspectW - 16 / 9) < Math.abs(aspectW - 9 / 16) ? '16:9' : '9:16'
+      console.log(
+        `[Transition] ${this.currentNodeId} -> ${targetNodeId} (${config.type}) | ` +
+        `target start rect: ${Math.round(targetRect.x)},${Math.round(targetRect.y)} ` +
+        `${Math.round(targetRect.width)}x${Math.round(targetRect.height)} | ` +
+        `container: ${Math.round(containerRc.width)}x${Math.round(containerRc.height)} (${ratioLabel})`,
+      )
 
       this.refs.nodeImage.style.opacity = '0'
       this.emit('stateChange')
       this.emit('transitionStart')
 
-      this.debugLog('builtin:start', {
-        targetNodeId,
-        transitionType: config.type,
-        targetImageUrl: targetNode.imageUrl,
-      })
-
       transitionPromise.then(() => {
-        this.debugLog('builtin:promise-resolved', {
-          targetNodeId,
-          transitionType: config.type,
-        })
-
         const frozenFrame = tc.firstElementChild as HTMLElement | null
         if (frozenFrame) {
           frozenFrame.setAttribute('data-builtin-frozen-frame', 'true')
@@ -522,46 +413,22 @@ export class PlayerCore {
             if (this.transitionContainer === tc) {
               this.transitionContainer = null
             }
-            this.debugLog('builtin:container-removed-after-host-commit', {
-              targetNodeId,
-              transitionType: config.type,
-            })
           },
         }
-
-        this.debugLog('builtin:frozen-frame-pending-host-commit', {
-          targetNodeId,
-          transitionType: config.type,
-        })
 
         this.switchNode(targetNodeId, { preserveVisualLayer: true })
       })
     }
 
     if (toImg.complete) {
-      this.debugLog('builtin:target-image-ready-immediately', {
-        targetNodeId,
-        transitionType: config.type,
-        targetImageUrl: targetNode.imageUrl,
-      })
       startTransition()
     } else {
       toImg.onload = () => {
-        this.debugLog('builtin:target-image-onload', {
-          targetNodeId,
-          transitionType: config.type,
-          targetImageUrl: targetNode.imageUrl,
-        })
         startTransition()
       }
     }
 
     toImg.onerror = () => {
-      this.debugLog('builtin:target-image-error', {
-        targetNodeId,
-        transitionType: config.type,
-        targetImageUrl: targetNode.imageUrl,
-      })
       if (tc.parentNode) tc.parentNode.removeChild(tc)
       this.transitionContainer = null
       this.activeTransition = null
@@ -585,44 +452,33 @@ export class PlayerCore {
       video.style.opacity = '1'
       this.emit('stateChange')
       this.emit('transitionStart')
-      this.debugLog('video:ready-to-play', { targetNodeId, videoUrl })
 
       video.play().catch(() => {
-        this.debugLog('video:play-rejected', { targetNodeId, videoUrl })
         this.cleanupVideo()
         this.switchNode(targetNodeId)
         this.emit('transitionEnd')
-        this.debugLog('video:transition-end-emitted-after-play-rejected', { targetNodeId, videoUrl })
       })
     }
 
     const handleEnded = () => {
-      this.debugLog('video:onended', { targetNodeId, videoUrl })
-
       this.pendingVisualCommit = {
         kind: 'video',
         targetNodeId,
         cleanup: () => {
           this.cleanupVideo()
-          this.debugLog('video:cleanup-after-host-commit', { targetNodeId, videoUrl })
         },
       }
 
-      this.debugLog('video:frozen-frame-pending-host-commit', { targetNodeId, videoUrl })
       this.switchNode(targetNodeId, { preserveVisualLayer: true })
     }
 
     const handleError = () => {
-      this.debugLog('video:onerror', { targetNodeId, videoUrl })
       this.cleanupVideo()
-      this.debugLog('video:after-cleanup-onerror', { targetNodeId, videoUrl })
       this.switchNode(targetNodeId)
       this.emit('transitionEnd')
-      this.debugLog('video:transition-end-emitted-after-error', { targetNodeId, videoUrl })
     }
 
     this.cleanupVideo()
-    this.debugLog('video:prepare-start', { targetNodeId, videoUrl })
     video.onloadeddata = startPlayback
     video.oncanplay = startPlayback
     video.onended = handleEnded
@@ -654,7 +510,6 @@ export class PlayerCore {
   }
 
   private cleanupVideo(): void {
-    this.debugLog('cleanupVideo:start')
     if (this.videoCleanup) {
       this.videoCleanup()
       this.videoCleanup = null
@@ -664,7 +519,6 @@ export class PlayerCore {
     video.removeAttribute('src')
     video.load()
     video.style.opacity = '0'
-    this.debugLog('cleanupVideo:end')
   }
 
   private clearPendingVisualCommit(reason: string): void {
@@ -672,12 +526,6 @@ export class PlayerCore {
 
     const pending = this.pendingVisualCommit
     this.pendingVisualCommit = null
-
-    this.debugLog('pending-visual-commit:forced-cleanup', {
-      reason,
-      pendingKind: pending.kind,
-      targetNodeId: pending.targetNodeId,
-    })
 
     pending.cleanup()
   }
