@@ -33,7 +33,7 @@ interface PendingVisualCommit {
   cleanup: () => void
 }
 
-export class PlayerCore {
+class PlayerCore {
   private manifest: PublishManifest | null = null
   private currentNodeId = 'root'
   private history: string[] = []
@@ -544,3 +544,5 @@ export class PlayerCore {
     return null as any
   }
 }
+
+export default PlayerCore

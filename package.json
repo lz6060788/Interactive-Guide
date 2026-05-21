@@ -9,7 +9,8 @@
     "build:server": "tsc -p tsconfig.server.json",
     "build:admin": "cd src/admin && vite build",
     "build:pipeline": "tsx src/server/build-pipeline.ts",
-    "build:player-core": "cd src/runtime/player-core && npx vite build",
+    "build:player-host": "cd src/runtime/player-core && npx vite build",
+    "build:player-core": "npm run build:player-host",
     "typecheck": "tsc --noEmit",
     "validate:package": "tsx src/shared/validate-package.ts"
   },

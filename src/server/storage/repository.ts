@@ -43,6 +43,7 @@ export interface FileRepository {
   readFile(filePath: string): Buffer | null
   fileExists(filePath: string): boolean
   copyFile(src: string, dest: string): void
+  copyDir(src: string, dest: string): void
   ensureDir(dir: string): void
   deleteDir(dir: string): void
 }

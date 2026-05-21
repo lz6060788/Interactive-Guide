@@ -194,6 +194,22 @@ export class FsRepository implements Repository {
     fs.copyFileSync(absSrc, absDest)
   }
 
+  copyDir(src: string, dest: string): void {
+    const absSrc = this.resolveDataPath(src)
+    if (!fs.existsSync(absSrc)) return
+    const absDest = this.resolveDataPath(dest)
+    fs.mkdirSync(absDest, { recursive: true })
+    for (const entry of fs.readdirSync(absSrc, { withFileTypes: true })) {
+      const srcPath = path.join(absSrc, entry.name)
+      const destPath = path.join(absDest, entry.name)
+      if (entry.isDirectory()) {
+        this.copyDir(srcPath, destPath)
+      } else {
+        fs.copyFileSync(srcPath, destPath)
+      }
+    }
+  }
+
   ensureDir(dir: string): void {
     fs.mkdirSync(this.resolveDataPath(dir), { recursive: true })
   }

@@ -30,7 +30,10 @@ export class RuntimeBundleGenerator {
 
     let workspaceFallback = false
     if (!manifest) {
-      manifest = this.buildManifestFromWorkspace(guide)
+      manifest = this.repo.readJson<PublishManifest>(`workspace/${guide.id}/manifest.json`)
+      if (!manifest) {
+        manifest = this.buildManifestFromWorkspace(guide)
+      }
       workspaceFallback = true
     }
 
@@ -44,30 +47,27 @@ export class RuntimeBundleGenerator {
     this.repo.ensureDir(bundleNodesDir)
     this.repo.ensureDir(bundleEdgesDir)
 
-    for (const node of manifest.nodes) {
-      if (node.contentType === 'html') {
-        const src = workspaceFallback
-          ? `workspace/${guide.id}/nodes/${node.id}.html`
-          : `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.html`
-        if (this.repo.fileExists(src)) {
-          this.repo.copyFile(src, `${bundleNodesDir}/${node.id}.html`)
+    if (workspaceFallback) {
+      // Copy entire workspace directories to preserve HTML-referenced sub-resources
+      this.repo.copyDir(`workspace/${guide.id}/nodes`, bundleNodesDir)
+      this.repo.copyDir(`workspace/${guide.id}/edges`, bundleEdgesDir)
+    } else {
+      for (const node of manifest.nodes) {
+        const htmlAsset = this.resolveNodeHtmlAssetPath(guide, node, workspaceFallback)
+        if (htmlAsset) {
+          this.repo.copyFile(htmlAsset, `${bundleNodesDir}/${path.basename(htmlAsset)}`)
         }
-      } else {
-        const src = workspaceFallback
-          ? `workspace/${guide.id}/nodes/${node.id}.png`
-          : `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
-        if (this.repo.fileExists(src)) {
-          this.repo.copyFile(src, `${bundleNodesDir}/${node.id}.png`)
+
+        const imageAsset = this.resolveNodeImageAssetPath(guide, node, workspaceFallback)
+        if (imageAsset) {
+          this.repo.copyFile(imageAsset, `${bundleNodesDir}/${path.basename(imageAsset)}`)
         }
       }
-    }
-
-    for (const edge of manifest.edges) {
-      const src = workspaceFallback
-        ? `workspace/${guide.id}/edges/${edge.id}.mp4`
-        : `publish/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`
-      if (this.repo.fileExists(src)) {
-        this.repo.copyFile(src, `${bundleEdgesDir}/${edge.id}.mp4`)
+      for (const edge of manifest.edges) {
+        const videoAsset = this.resolveEdgeVideoAssetPath(guide, edge, workspaceFallback)
+        if (videoAsset) {
+          this.repo.copyFile(videoAsset, `${bundleEdgesDir}/${path.basename(videoAsset)}`)
+        }
       }
     }
 
@@ -107,44 +107,41 @@ export class RuntimeBundleGenerator {
     workspaceFallback: boolean = false,
   ): PublishManifest {
     const nodes = manifest.nodes.map(node => {
+      const localHtmlPath = this.resolveNodeHtmlAssetPath(guide, node, workspaceFallback)
+      const localImagePath = this.resolveNodeImageAssetPath(guide, node, workspaceFallback)
+
       if (node.contentType === 'html') {
-        const localHtmlPath = workspaceFallback
-          ? `workspace/${guide.id}/nodes/${node.id}.html`
-          : `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.html`
-        if (!this.repo.fileExists(localHtmlPath)) {
+        if (!localHtmlPath || !this.repo.fileExists(localHtmlPath)) {
           throw AppError.validation(`Missing HTML asset for standalone bundle: ${node.id}.html`)
         }
         return {
           ...node,
           contentType: 'html' as const,
-          htmlUrl: `./assets/nodes/${node.id}.html`,
-          imageUrl: undefined,
+          htmlUrl: `./assets/nodes/${path.basename(localHtmlPath)}`,
+          imageUrl: localImagePath ? `./assets/nodes/${path.basename(localImagePath)}` : undefined,
         }
       }
 
-      const localImagePath = workspaceFallback
-        ? `workspace/${guide.id}/nodes/${node.id}.png`
-        : `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
-      if (!this.repo.fileExists(localImagePath)) {
+      if (!localImagePath || !this.repo.fileExists(localImagePath)) {
         throw AppError.validation(`Missing node asset for standalone bundle: ${node.id}.png`)
       }
       return {
         ...node,
-        imageUrl: `./assets/nodes/${node.id}.png`,
+        imageUrl: `./assets/nodes/${path.basename(localImagePath)}`,
       }
     })
 
     const edges = manifest.edges.map(edge => {
-      const localVideoPath = workspaceFallback
-        ? `workspace/${guide.id}/edges/${edge.id}.mp4`
-        : `publish/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`
-      const hasLocalVideo = this.repo.fileExists(localVideoPath)
+      const localVideoPath = this.resolveEdgeVideoAssetPath(guide, edge, workspaceFallback)
+      const hasLocalVideo = !!localVideoPath && this.repo.fileExists(localVideoPath)
       if (edge.videoUrl && !hasLocalVideo) {
         throw AppError.validation(`Missing edge asset for standalone bundle: ${edge.id}.mp4`)
       }
       return {
         ...edge,
-        videoUrl: hasLocalVideo ? `./assets/edges/${edge.id}.mp4` : undefined,
+        videoUrl: hasLocalVideo && localVideoPath
+          ? `./assets/edges/${path.basename(localVideoPath)}`
+          : undefined,
       }
     })
 
@@ -172,12 +169,14 @@ export class RuntimeBundleGenerator {
     const mediaBase = `/api/media/workspace/${guide.id}`
 
     const nodes = guide.nodes.map(n => {
+      const hasImage = this.repo.fileExists(`workspace/${guide.id}/nodes/${n.id}.png`)
       if (n.contentType === 'html') {
         return {
           id: n.id,
           title: n.title,
           contentType: 'html' as const,
           htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
+          imageUrl: hasImage ? `${mediaBase}/nodes/${n.id}.png` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
           hotspots: (n.hotspots ?? []).map(hs => ({
@@ -209,14 +208,10 @@ export class RuntimeBundleGenerator {
     })
 
     const edges = guide.edges.map(e => {
-      const videoPath = `workspace/${guide.id}/edges/${e.id}.mp4`
-      const hasVideo = this.repo.fileExists(videoPath)
+      const localVideoPath = this.resolveEdgeVideoAssetPath(guide, e, true)
       return {
-        id: e.id,
-        fromNodeId: e.fromNodeId,
-        toNodeId: e.toNodeId,
-        relationLabel: e.relationLabel,
-        videoUrl: hasVideo ? `${mediaBase}/edges/${e.id}.mp4` : undefined,
+        ...e,
+        videoUrl: localVideoPath ? `./assets/edges/${path.basename(localVideoPath)}` : undefined,
       }
     })
 
@@ -241,6 +236,105 @@ export class RuntimeBundleGenerator {
         manifestVersion: '1.0.0',
       },
     }
+  }
+
+  private resolveNodeHtmlAssetPath(
+    guide: KnowledgePackage,
+    node: PublishManifest['nodes'][number],
+    workspaceFallback: boolean,
+  ): string | null {
+    if (node.contentType !== 'html') return null
+    const fileNames = this.buildCandidateFileNames(
+      node.htmlUrl,
+      [`${node.id}.html`],
+    )
+    return this.findNodeAssetPath(guide, fileNames, workspaceFallback)
+  }
+
+  private resolveNodeImageAssetPath(
+    guide: KnowledgePackage,
+    node: PublishManifest['nodes'][number],
+    workspaceFallback: boolean,
+  ): string | null {
+    const fileNames = this.buildCandidateFileNames(
+      node.imageUrl,
+      [`${node.id}.png`],
+    )
+    return this.findNodeAssetPath(guide, fileNames, workspaceFallback)
+  }
+
+  private resolveEdgeVideoAssetPath(
+    guide: KnowledgePackage,
+    edge: PublishManifest['edges'][number],
+    workspaceFallback: boolean,
+  ): string | null {
+    const legacyFileName = `${edge.fromNodeId}-to-${edge.toNodeId}.mp4`
+    const fileNames = this.buildCandidateFileNames(
+      edge.videoUrl,
+      [`${edge.id}.mp4`, legacyFileName],
+    )
+    return this.findEdgeAssetPath(guide, fileNames, workspaceFallback)
+  }
+
+  private findNodeAssetPath(
+    guide: KnowledgePackage,
+    fileNames: string[],
+    workspaceFallback: boolean,
+  ): string | null {
+    const candidates = workspaceFallback
+      ? fileNames.map(fileName => `workspace/${guide.id}/nodes/${fileName}`)
+      : [
+          ...fileNames.map(fileName => `publish/${guide.id}/${guide.version}/assets/nodes/${fileName}`),
+          ...fileNames.map(fileName => `workspace/${guide.id}/nodes/${fileName}`),
+        ]
+
+    return this.findExistingAssetPath(candidates)
+  }
+
+  private findEdgeAssetPath(
+    guide: KnowledgePackage,
+    fileNames: string[],
+    workspaceFallback: boolean,
+  ): string | null {
+    const candidates = workspaceFallback
+      ? fileNames.map(fileName => `workspace/${guide.id}/edges/${fileName}`)
+      : [
+          ...fileNames.map(fileName => `publish/${guide.id}/${guide.version}/assets/edges/${fileName}`),
+          ...fileNames.map(fileName => `workspace/${guide.id}/edges/${fileName}`),
+        ]
+
+    return this.findExistingAssetPath(candidates)
+  }
+
+  private findExistingAssetPath(candidates: string[]): string | null {
+    for (const candidate of candidates) {
+      if (this.repo.fileExists(candidate)) {
+        return candidate
+      }
+    }
+    return null
+  }
+
+  private buildCandidateFileNames(url: string | undefined, fallbacks: string[]): string[] {
+    const fileNames = new Set<string>()
+    const fromUrl = this.extractAssetFileName(url)
+    if (fromUrl) {
+      fileNames.add(fromUrl)
+    }
+    for (const fallback of fallbacks) {
+      if (fallback) {
+        fileNames.add(fallback)
+      }
+    }
+    return [...fileNames]
+  }
+
+  private extractAssetFileName(url: string | undefined): string | null {
+    if (!url) return null
+    const sanitized = url.split('?')[0]?.split('#')[0] ?? ''
+    if (!sanitized) return null
+    const fileName = sanitized.split('/').filter(Boolean).pop() ?? ''
+    return fileName || null
   }
 
   private buildRuntimeIndexHtml(title: string): string {
@@ -311,31 +405,29 @@ export class RuntimeBundleGenerator {
     ].join('\n')
   }
 
-  /** Read the pre-built PlayerCore IIFE bundle. */
-  private buildPlayerCoreScript(): string {
+  /** Read the pre-built shared runtime host IIFE bundle. */
+  private buildPlayerHostScript(): string {
     const distPath = path.resolve(
       process.cwd(),
-      'src/runtime/player-core/dist/player-core.js',
+      'src/runtime/player-core/dist/player-host.js',
     )
     if (!fs.existsSync(distPath)) {
       throw AppError.validation(
-        'Missing player-core runtime bundle. Run `npm run build:player-core` before packaging.',
+        'Missing player-host runtime bundle. Run `npm run build:player-host` before packaging.',
       )
     }
     return fs.readFileSync(distPath, 'utf-8')
   }
 
   private buildRuntimeScript(): string {
-    const playerCoreIife = this.buildPlayerCoreScript()
+    const playerHostIife = this.buildPlayerHostScript()
     const resolutionBases = Object.fromEntries(
       PACKAGE_RESOLUTIONS.map(resolution => [resolution, getResolutionDimensions(resolution)]),
     )
 
-    const glueCode = [
+    const bootstrapCode = [
       'const refs = {}',
-      'let engine = null',
-      'let dragState = { active: false, startX: 0, startY: 0, startOffsetX: 0, startOffsetY: 0 }',
-      'let imageOffset = { x: 0, y: 0 }',
+      'let host = null',
       `const RESOLUTION_BASES = ${JSON.stringify(resolutionBases)}`,
       '',
       'document.addEventListener("DOMContentLoaded", () => {',
@@ -347,285 +439,51 @@ export class RuntimeBundleGenerator {
       '  refs.hotspots = document.getElementById("hotspots")',
       '  refs.video = document.getElementById("transition-video")',
       '',
-      '  refs.backButton.addEventListener("click", () => engine?.handleBack())',
-      '  refs.nodeImage.addEventListener("load", () => {',
-      '    updateHotspotViewport()',
-      '    requestAnimationFrame(() => {',
-      '      confirmHostVisualCommitIfReady("node-image:load:next-frame")',
-      '    })',
-      '  })',
-      '  refs.nodeIframe.addEventListener("load", () => {',
-      '    requestAnimationFrame(() => {',
-      '      confirmHostVisualCommitIfReady("node-iframe:load:next-frame")',
-      '    })',
-      '  })',
-      '  window.addEventListener("message", (event) => {',
-      '    if (event.data?.type === "hotspot-click" && event.data?.edgeId) {',
-      '      engine?.handleHotspotById(event.data.edgeId)',
-      '    }',
-      '  })',
-      '  window.addEventListener("resize", updateHotspotViewport)',
-      '',
-      '  // Drag handlers for fitHeight/fitWidth modes',
-      '  refs.nodeImage.addEventListener("mousedown", (e) => {',
-      '    const currentNode = engine?.getCurrentNode()',
-      '    if (!currentNode) return',
-      '    const fitMode = currentNode.imageFitMode || "fill"',
-      '    if (fitMode === "fill") return',
-      '    e.preventDefault()',
-      '    dragState = { active: true, startX: e.clientX, startY: e.clientY, startOffsetX: imageOffset.x, startOffsetY: imageOffset.y }',
-      '    document.addEventListener("mousemove", handleDragMove)',
-      '    document.addEventListener("mouseup", handleDragEnd)',
-      '  })',
+      '  refs.backButton.addEventListener("click", () => host?.handleBack())',
       '',
       '  init().catch(error => { console.error(error); })',
       '})',
-      '',
-      'function applyImageTransform(offsetX, offsetY) {',
-      '  const currentNode = engine?.getCurrentNode()',
-      '  const fitMode = currentNode?.imageFitMode || "fill"',
-      '  const nextX = fitMode === "fitHeight" ? offsetX : 0',
-      '  const nextY = fitMode === "fitWidth" ? offsetY : 0',
-      '  imageOffset = { x: nextX, y: nextY }',
-      '  refs.nodeImage.style.transform = `translate(-50%, -50%) translate(${nextX}px, ${nextY}px)`',
-      '}',
-      '',
-      'function handleDragMove(e) {',
-      '  if (!dragState.active) return',
-      '  const cRect = refs.mediaRoot.getBoundingClientRect()',
-      '  const iRect = refs.nodeImage.getBoundingClientRect()',
-      '  const currentNode = engine?.getCurrentNode()',
-      '  const fitMode = currentNode?.imageFitMode || "fill"',
-      '  let nextX = dragState.startOffsetX',
-      '  let nextY = dragState.startOffsetY',
-      '  if (fitMode === "fitHeight") {',
-      '    nextX += e.clientX - dragState.startX',
-      '    if (iRect.width > cRect.width) {',
-      '      const maxOffsetX = (iRect.width - cRect.width) / 2',
-      '      nextX = Math.max(-maxOffsetX, Math.min(maxOffsetX, nextX))',
-      '    } else {',
-      '      nextX = 0',
-      '    }',
-      '    nextY = 0',
-      '  } else if (fitMode === "fitWidth") {',
-      '    nextY += e.clientY - dragState.startY',
-      '    if (iRect.height > cRect.height) {',
-      '      const maxOffsetY = (iRect.height - cRect.height) / 2',
-      '      nextY = Math.max(-maxOffsetY, Math.min(maxOffsetY, nextY))',
-      '    } else {',
-      '      nextY = 0',
-      '    }',
-      '    nextX = 0',
-      '  }',
-      '  applyImageTransform(nextX, nextY)',
-      '  requestAnimationFrame(updateHotspotViewport)',
-      '}',
-      '',
-      'function handleDragEnd() {',
-      '  dragState.active = false',
-      '  document.removeEventListener("mousemove", handleDragMove)',
-      '  document.removeEventListener("mouseup", handleDragEnd)',
-      '}',
       '',
       'async function init() {',
       '  const response = await fetch("./manifest.json", { cache: "no-store" })',
       '  if (!response.ok) throw new Error("无法加载 manifest.json")',
       '  const manifest = await response.json()',
       '',
-      '  // Set stage size based on resolution — fit into 90vw x 90vh keeping aspect ratio',
+      '  // Fit the stage into the full viewport while preserving aspect ratio.',
       '  const resolution = RESOLUTION_BASES[manifest.resolution] || RESOLUTION_BASES["16:9"]',
       '  const ar = resolution.width / resolution.height',
       '  refs.stage.style.aspectRatio = `${resolution.width} / ${resolution.height}`',
-      '  refs.stage.style.width = `min(90vw, 90vh * ${ar})`',
-      '  refs.stage.style.height = `min(90vh, 90vw / ${ar})`',
+      '  refs.stage.style.width = `min(100vw, 100vh * ${ar})`',
+      '  refs.stage.style.height = `min(100vh, 100vw / ${ar})`',
       '',
-      '  engine = new PlayerCore({',
+      '  const PlayerHostCtor = window.InteractiveGuidePlayerHost',
+      '  if (!PlayerHostCtor) throw new Error("InteractiveGuidePlayerHost is not available")',
+      '',
+      '  host = new PlayerHostCtor({',
+      '    stage: refs.stage,',
       '    container: refs.mediaRoot,',
       '    nodeImage: refs.nodeImage,',
-      '    video: refs.video,',
       '    nodeIframe: refs.nodeIframe,',
+      '    video: refs.video,',
+      '    hotspots: refs.hotspots,',
+      '  }, {',
+      '    onStateChange: render,',
+      '    onError: error => console.error(error),',
       '  })',
       '',
-      '  engine.on("stateChange", render)',
-      '  engine.loadManifest(manifest)',
+      '  host.loadManifest(manifest)',
       '',
       '  document.title = `${manifest.title} - Runtime Bundle`',
-      '  render()',
+      '  render(host.getState())',
       '}',
       '',
-      'function toAbsoluteUrl(url) {',
-      '  return new URL(url, window.location.href).href',
-      '}',
-      '',
-      'function captureElementVisualSnapshot(el) {',
-      '  if (!el) return null',
-      '  const rect = el.getBoundingClientRect()',
-      '  const style = window.getComputedStyle(el)',
-      '  return {',
-      '    rect: {',
-      '      x: Number(rect.x.toFixed(2)),',
-      '      y: Number(rect.y.toFixed(2)),',
-      '      width: Number(rect.width.toFixed(2)),',
-      '      height: Number(rect.height.toFixed(2)),',
-      '    },',
-      '    style: {',
-      '      width: style.width,',
-      '      height: style.height,',
-      '      display: style.display,',
-      '      objectFit: style.objectFit,',
-      '      objectPosition: style.objectPosition,',
-      '      transform: style.transform,',
-      '      transformOrigin: style.transformOrigin,',
-      '      opacity: style.opacity,',
-      '      borderRadius: style.borderRadius,',
-      '    },',
-      '  }',
-      '}',
-      '',
-      'function confirmHostVisualCommitIfReady(reason) {',
-      '  if (!engine) return',
-      '  const currentNode = engine.getCurrentNode()',
-      '  if (!currentNode) return',
-      '  const pendingKind = engine.getPendingVisualCommitKind()',
-      '  if (engine.isTransitioning() && !pendingKind) return',
-      '  if (pendingKind === "builtin" && reason !== "node-image:load:next-frame") return',
-      '',
-      '  if (currentNode.contentType === "html") {',
-      '    if (!refs.nodeIframe) return',
-      '    const expectedSrc = toAbsoluteUrl(currentNode.htmlUrl)',
-      '    const actualSrc = refs.nodeIframe.src',
-      '    if (actualSrc !== expectedSrc) return',
-      '  } else {',
-      '    if (!refs.nodeImage) return',
-      '    const expectedSrc = toAbsoluteUrl(currentNode.imageUrl)',
-      '    const actualSrc = refs.nodeImage.currentSrc || refs.nodeImage.src',
-      '    if (!refs.nodeImage.complete || actualSrc !== expectedSrc) return',
-      '    if (pendingKind === "builtin") {',
-      '      const frozenFrame = refs.mediaRoot.querySelector(\'[data-builtin-frozen-frame="true"]\')',
-      '      console.log("[RuntimeBundle][builtin-handoff]", {',
-      '        reason,',
-      '        currentNodeId: engine.getCurrentNodeId(),',
-      '        expectedSrc,',
-      '        actualSrc,',
-      '        frozenFrame: captureElementVisualSnapshot(frozenFrame),',
-      '        nodeImage: captureElementVisualSnapshot(refs.nodeImage),',
-      '      })',
-      '    }',
-      '  }',
-      '  engine.confirmHostVisualCommitted()',
-      '}',
-      '',
-      'function render() {',
-      '  const manifest = engine.getManifest()',
-      '  const currentNode = engine.getCurrentNode()',
-      '  if (!manifest || !currentNode) return',
-      '',
-      '  const transitioning = engine.isTransitioning()',
-      '  const preloading = engine.isPreloading()',
-      '  const isHtml = currentNode.contentType === "html"',
-      '  const fitMode = currentNode.imageFitMode || "fill"',
-      '',
-      '  refs.stage.hidden = preloading',
-      '  if (preloading) return',
-      '',
-      '  // Back button visibility',
-      '  refs.backButton.style.display = engine.getHistory().length > 0 ? "flex" : "none"',
-      '',
-      '  if (isHtml) {',
-      '    refs.nodeImage.style.display = "none"',
-      '    refs.nodeIframe.style.display = "block"',
-      '    refs.nodeIframe.src = currentNode.htmlUrl',
-      '    refs.hotspots.classList.add("hidden")',
-      '  } else {',
-      '    refs.nodeImage.style.display = "block"',
-      '    refs.nodeIframe.style.display = "none"',
-      '    refs.nodeIframe.src = "about:blank"',
-      '    refs.nodeImage.src = currentNode.imageUrl',
-      '    refs.nodeImage.alt = currentNode.title || currentNode.id',
-      '',
-      '    // Apply image fit mode classes',
-      '    refs.nodeImage.classList.remove("node-image-fill", "node-image-fit-height", "node-image-fit-width")',
-      '    refs.mediaRoot.classList.remove("media-root-fit")',
-      '    refs.nodeImage.style.position = ""',
-      '    refs.nodeImage.style.left = ""',
-      '    refs.nodeImage.style.top = ""',
-      '    refs.nodeImage.style.transform = ""',
-      '    imageOffset = { x: 0, y: 0 }',
-      '',
-      '    if (fitMode === "fitHeight") {',
-      '      refs.nodeImage.classList.add("node-image-fit-height")',
-      '      refs.mediaRoot.classList.add("media-root-fit")',
-      '      requestAnimationFrame(() => {',
-      '        applyImageTransform(0, 0)',
-      '        const cRect = refs.mediaRoot.getBoundingClientRect()',
-      '        const iRect = refs.nodeImage.getBoundingClientRect()',
-      '        if (iRect.width > cRect.width) {',
-      '          applyImageTransform(0, 0)',
-      '        }',
-      '      })',
-      '    } else if (fitMode === "fitWidth") {',
-      '      refs.nodeImage.classList.add("node-image-fit-width")',
-      '      refs.mediaRoot.classList.add("media-root-fit")',
-      '      requestAnimationFrame(() => {',
-      '        applyImageTransform(0, 0)',
-      '        const cRect = refs.mediaRoot.getBoundingClientRect()',
-      '        const iRect = refs.nodeImage.getBoundingClientRect()',
-      '        if (iRect.height > cRect.height) {',
-      '          applyImageTransform(0, 0)',
-      '        }',
-      '      })',
-      '    } else {',
-      '      refs.nodeImage.classList.add("node-image-fill")',
-      '    }',
-      '',
-      '    refs.hotspots.style.left = "0px"',
-      '    refs.hotspots.style.top = "0px"',
-      '    refs.hotspots.style.width = "100%"',
-      '    refs.hotspots.style.height = "100%"',
-      '    renderHotspots()',
-      '    requestAnimationFrame(() => {',
-      '      updateHotspotViewport()',
-      '    })',
-      '    refs.hotspots.classList.toggle("hidden", transitioning)',
-      '  }',
-      '',
-      '  requestAnimationFrame(() => {',
-      '    confirmHostVisualCommitIfReady("render:next-frame")',
-      '  })',
-      '  if (!isHtml) {',
-      '    refs.nodeImage.style.opacity = transitioning ? "0" : "1"',
-      '  }',
-      '}',
-      '',
-      'function renderHotspots() {',
-      '  const currentNode = engine.getCurrentNode()',
-      '  refs.hotspots.innerHTML = ""',
-      '  ;(currentNode.hotspots || []).forEach(hotspot => {',
-      '    const button = document.createElement("button")',
-      '    button.type = "button"',
-      '    button.className = "hotspot"',
-      '    button.style.left = `${hotspot.normalizedX * 100}%`',
-      '    button.style.top = `${hotspot.normalizedY * 100}%`',
-      '    button.title = hotspot.label || hotspot.targetNodeId',
-      '    button.addEventListener("click", () => engine.handleHotspotClick(hotspot))',
-      '    refs.hotspots.appendChild(button)',
-      '  })',
-      '  requestAnimationFrame(updateHotspotViewport)',
-      '}',
-      '',
-      'function updateHotspotViewport() {',
-      '  if (!refs.mediaRoot || !refs.nodeImage || refs.stage.hidden) return',
-      '  const mediaRect = refs.mediaRoot.getBoundingClientRect()',
-      '  const imageRect = refs.nodeImage.getBoundingClientRect()',
-      '  if (!mediaRect.width || !mediaRect.height || !imageRect.width || !imageRect.height) return',
-      '  refs.hotspots.style.left = `${imageRect.left - mediaRect.left}px`',
-      '  refs.hotspots.style.top = `${imageRect.top - mediaRect.top}px`',
-      '  refs.hotspots.style.width = `${imageRect.width}px`',
-      '  refs.hotspots.style.height = `${imageRect.height}px`',
+      'function render(state) {',
+      '  if (!state) return',
+      '  refs.backButton.style.display = state.history.length > 0 ? "flex" : "none"',
       '}',
     ].join('\n')
 
-    return playerCoreIife + '\n' + glueCode
+    return playerHostIife + '\n' + bootstrapCode
   }
 
   private escapeHtml(value: string): string {
