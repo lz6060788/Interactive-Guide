@@ -1,8 +1,10 @@
 import type { PublishManifest, PublishHotspot, PublishNode } from '../../shared/types.js'
+import { getResolutionDimensions } from '../../shared/utils.js'
 import PlayerCore from './player-core.js'
 
 export interface PlayerHostRefs {
-  stage?: HTMLElement
+  viewport: HTMLElement
+  stage: HTMLElement
   container: HTMLElement
   nodeImage: HTMLImageElement
   nodeIframe: HTMLIFrameElement
@@ -22,6 +24,10 @@ export interface PlayerHostState {
 interface PlayerHostOptions {
   onStateChange?: (state: PlayerHostState) => void
   onError?: (error: Error) => void
+  layout?: {
+    mode?: 'contain-center' | 'immersive-mobile'
+    getViewport?: () => { width: number; height: number }
+  }
 }
 
 type DragState = {
@@ -66,6 +72,7 @@ export class PlayerHost {
 
   loadManifest(manifest: PublishManifest): void {
     this.engine.loadManifest(manifest)
+    this.updateLayout()
     this.render()
   }
 
@@ -81,6 +88,7 @@ export class PlayerHost {
       video: this.refs.video,
     })
     this.applyBaseStyles()
+    this.updateLayout()
     this.render()
   }
 
@@ -103,7 +111,36 @@ export class PlayerHost {
     this.engine.handleHotspotById(edgeId)
   }
 
+  navigateByEdge(edgeId: string): boolean {
+    const manifest = this.engine.getManifest()
+    if (!manifest || this.engine.isTransitioning()) return false
+    if (!manifest.edgeMap[edgeId]) return false
+    this.engine.handleHotspotById(edgeId)
+    return true
+  }
+
+  navigateToNode(nodeId: string): boolean {
+    const manifest = this.engine.getManifest()
+    if (!manifest || this.engine.isTransitioning()) return false
+    if (!manifest.nodeMap[nodeId]) return false
+
+    const currentNodeId = this.engine.getCurrentNodeId()
+    if (currentNodeId === nodeId) return true
+
+    const directEdge = manifest.edges.find(edge =>
+      edge.fromNodeId === currentNodeId && edge.toNodeId === nodeId)
+
+    if (directEdge) {
+      this.engine.handleHotspotById(directEdge.id)
+      return true
+    }
+
+    this.engine.navigateTo(nodeId)
+    return true
+  }
+
   updateLayout(): void {
+    this.applyStageLayout()
     this.updateHotspotViewport()
   }
 
@@ -165,7 +202,7 @@ export class PlayerHost {
   }
 
   private handleWindowResize = (): void => {
-    this.updateHotspotViewport()
+    this.updateLayout()
   }
 
   private handleNodeImagePointerDown = (event: PointerEvent): void => {
@@ -252,7 +289,19 @@ export class PlayerHost {
   }
 
   private applyBaseStyles(): void {
-    const { container, nodeImage, nodeIframe, video, hotspots } = this.refs
+    const { viewport, stage, container, nodeImage, nodeIframe, video, hotspots } = this.refs
+
+    Object.assign(viewport.style, {
+      position: 'relative',
+      overflow: 'hidden',
+      background: '#000',
+    })
+
+    Object.assign(stage.style, {
+      position: 'absolute',
+      overflow: 'hidden',
+      background: '#000',
+    })
 
     container.style.position = 'relative'
     container.style.width = '100%'
@@ -301,6 +350,57 @@ export class PlayerHost {
       pointerEvents: 'none',
       transition: 'opacity 180ms ease',
     })
+  }
+
+  private applyStageLayout(): void {
+    const manifest = this.engine.getManifest()
+    if (!manifest) return
+
+    const viewportSize = this.resolveViewportSize()
+    if (viewportSize.width <= 0 || viewportSize.height <= 0) return
+
+    const { width: designWidth, height: designHeight } = getResolutionDimensions(manifest.resolution)
+    const designAspect = designWidth / Math.max(designHeight, 1)
+    const viewportAspect = viewportSize.width / Math.max(viewportSize.height, 1)
+    const layoutMode = this.options.layout?.mode ?? 'immersive-mobile'
+
+    let stageWidth = viewportSize.width
+    let stageHeight = viewportSize.width / Math.max(designAspect, 0.0001)
+    let stageLeft = 0
+    let stageTop = 0
+
+    if (layoutMode === 'contain-center') {
+      if (viewportAspect > designAspect) {
+        stageHeight = viewportSize.height
+        stageWidth = stageHeight * designAspect
+      }
+      stageLeft = (viewportSize.width - stageWidth) / 2
+      stageTop = (viewportSize.height - stageHeight) / 2
+    } else if (viewportAspect > designAspect) {
+      stageTop = viewportSize.height - stageHeight
+    } else {
+      stageTop = (viewportSize.height - stageHeight) / 2
+    }
+
+    Object.assign(this.refs.stage.style, {
+      left: `${stageLeft}px`,
+      top: `${stageTop}px`,
+      width: `${stageWidth}px`,
+      height: `${stageHeight}px`,
+      aspectRatio: `${designWidth} / ${designHeight}`,
+    })
+  }
+
+  private resolveViewportSize(): { width: number; height: number } {
+    const customViewport = this.options.layout?.getViewport?.()
+    if (customViewport) {
+      return customViewport
+    }
+    const rect = this.refs.viewport.getBoundingClientRect()
+    return {
+      width: rect.width,
+      height: rect.height,
+    }
   }
 
   private render(): void {
@@ -484,7 +584,7 @@ export class PlayerHost {
 
   private updateHotspotViewport(): void {
     const { container, nodeImage, nodeIframe, hotspots, stage } = this.refs
-    if (stage?.hidden) return
+    if (stage.hidden) return
 
     const mediaRect = container.getBoundingClientRect()
     const contentEl = nodeIframe.style.display !== 'none' ? nodeIframe : nodeImage

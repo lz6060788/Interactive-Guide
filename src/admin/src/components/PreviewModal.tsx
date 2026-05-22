@@ -5,7 +5,7 @@ import {
 import { X, ArrowLeft } from 'lucide-react'
 import * as api from '../services/api'
 import type { PublishManifest } from '../../../shared/types'
-import { getResolutionAspectRatio, getResolutionAspectRatioCss } from '../../../shared/utils'
+import { getResolutionAspectRatio } from '../../../shared/utils'
 import { PlayerHost, type PlayerHostState } from '../../../runtime/player-core/player-host.js'
 
 interface Props {
@@ -42,6 +42,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const [runtimeState, setRuntimeState] = useState<PlayerHostState | null>(null)
 
   const hostRef = useRef<PlayerHost | null>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -109,15 +110,17 @@ export function PreviewModal({ packageId, onClose }: Props) {
   useEffect(() => {
     if (status !== 'ready') return
     const m = manifest
+    const viewport = viewportRef.current
     const stage = stageRef.current
     const container = containerRef.current
     const nodeImage = nodeImageRef.current
     const nodeIframe = nodeIframeRef.current
     const video = videoRef.current
     const hotspots = hotspotsRef.current
-    if (!m || !stage || !container || !nodeImage || !nodeIframe || !video || !hotspots) return
+    if (!m || !viewport || !stage || !container || !nodeImage || !nodeIframe || !video || !hotspots) return
 
     const host = new PlayerHost({
+      viewport,
       stage,
       container,
       nodeImage,
@@ -141,15 +144,17 @@ export function PreviewModal({ packageId, onClose }: Props) {
   useEffect(() => {
     if (status !== 'ready' || !manifest) return
     const host = hostRef.current
+    const viewport = viewportRef.current
     const stage = stageRef.current
     const container = containerRef.current
     const nodeImage = nodeImageRef.current
     const nodeIframe = nodeIframeRef.current
     const video = videoRef.current
     const hotspots = hotspotsRef.current
-    if (!host || !stage || !container || !nodeImage || !nodeIframe || !video || !hotspots) return
+    if (!host || !viewport || !stage || !container || !nodeImage || !nodeIframe || !video || !hotspots) return
 
     host.updateRefs({
+      viewport,
       stage,
       container,
       nodeImage,
@@ -165,14 +170,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const ar = manifest
     ? getResolutionAspectRatio(manifest.resolution)
     : 16 / 9
-  const stageAspectRatio = manifest
-    ? getResolutionAspectRatioCss(manifest.resolution)
-    : '16 / 9'
-  // In vw/vh units: maxWVw vw / maxHVh vh = maxWVw / maxHVh (ratio depends on viewport aspect)
-  // We need to fit a rect of aspect arW:arH into maxWVw x maxHVh.
-  // Constraint: w <= maxWVw, h <= maxHVh, w/h = arW/arH
-  // If maxWVw / ar <= maxHVh → constraining dim is width → w = maxWVw, h = maxWVw / ar
-  // Else → constraining dim is height → h = maxHVh, w = maxHVh * ar
   const modalW = `min(${maxWVw}vw, ${maxHVh}vh * ${ar})`
   const modalH = `min(${maxHVh}vh, ${maxWVw}vw / ${ar})`
   const preloading = runtimeState?.preloading ?? false
@@ -258,23 +255,19 @@ export function PreviewModal({ packageId, onClose }: Props) {
           )}
           {status === 'ready' && manifest && (
             <Box
+              ref={viewportRef}
               w="100%"
               h="100%"
-              display="flex"
-              alignItems="center"
-              justifyContent="center"
               minH="0"
+              position="relative"
+              overflow="hidden"
+              bg="black"
             >
               <Box
                 ref={stageRef}
-                position="relative"
-                w="100%"
-                h="100%"
+                position="absolute"
                 overflow="hidden"
                 bg="black"
-                style={{
-                  aspectRatio: stageAspectRatio,
-                }}
               >
                 <Box
                   ref={containerRef}
