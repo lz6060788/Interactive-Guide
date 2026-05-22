@@ -242,6 +242,36 @@ export class GuideService {
     guide.nodes[idx] = { ...guide.nodes[idx], ...safeUpdates, id: guide.nodes[idx].id }
     guide.metadata = { ...guide.metadata, updatedAt: nowISO() }
     this.repo.saveGuide(guide)
+
+    this.patchWorkspaceManifest(guideId, manifest => {
+      const manifestNode = manifest.nodes.find(n => n.id === nodeId)
+      if (manifestNode) {
+        Object.assign(manifestNode, safeUpdates)
+      }
+      if (manifest.nodeMap?.[nodeId]) {
+        Object.assign(manifest.nodeMap[nodeId], safeUpdates)
+      }
+    })
+
+    try {
+      const manifestPath = `publish/${guideId}/${guide.version}/manifest.json`
+      const manifest = this.repo.readJson<any>(manifestPath)
+      if (manifest && manifest.nodes) {
+        manifest.nodes = manifest.nodes.map((n: any) => (
+          n.id === nodeId ? { ...n, ...safeUpdates } : n
+        ))
+        if (manifest.nodeMap?.[nodeId]) {
+          manifest.nodeMap[nodeId] = {
+            ...manifest.nodeMap[nodeId],
+            ...safeUpdates,
+          }
+        }
+        this.repo.writeJson(manifestPath, manifest)
+      }
+    } catch (e) {
+      console.warn(`Failed to sync node updates to publish manifest for guide ${guideId}:`, e)
+    }
+
     return guide.nodes[idx]
   }
 
@@ -255,6 +285,7 @@ export class GuideService {
       normalizedX: number
       normalizedY: number
       radius?: number
+      style?: string
     }>,
   ): KnowledgeNode {
     const guide = this.getGuide(guideId)
@@ -298,6 +329,7 @@ export class GuideService {
       normalizedY: hs.normalizedY,
       radius: hs.radius,
       markerType: 'dot' as const,
+      style: hs.style,
     })) || []
 
     // Sync to workspace manifest (preview source of truth)

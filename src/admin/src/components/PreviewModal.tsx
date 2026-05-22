@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Box, Flex, Text, Spinner, IconButton,
 } from '@chakra-ui/react'
-import { X, ArrowLeft } from 'lucide-react'
+import { X } from 'lucide-react'
 import * as api from '../services/api'
 import type { PublishManifest } from '../../../shared/types'
 import { getResolutionAspectRatio } from '../../../shared/utils'
@@ -173,8 +173,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const modalW = `min(${maxWVw}vw, ${maxHVh}vh * ${ar})`
   const modalH = `min(${maxHVh}vh, ${maxWVw}vw / ${ar})`
   const preloading = runtimeState?.preloading ?? false
-  const currentHistory = runtimeState?.history ?? []
-  const currentNode = runtimeState?.currentNode ?? null
 
   return (
     <Flex position="fixed" inset="0" zIndex={200} align="center" justify="center">
@@ -212,26 +210,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
         >
           <X size={16} />
         </IconButton>
-
-        {/* Floating back button */}
-        {currentHistory.length > 0 && (
-          <IconButton
-            position="absolute"
-            top="2"
-            left="2"
-            size="sm"
-            variant="ghost"
-            color="whiteAlpha.800"
-            bg="blackAlpha.600"
-            _hover={{ bg: 'blackAlpha.800' }}
-            zIndex={20}
-            rounded="full"
-            onClick={() => hostRef.current?.handleBack()}
-            aria-label="后退"
-          >
-            <ArrowLeft size={16} />
-          </IconButton>
-        )}
 
         {/* Player area */}
         <Box

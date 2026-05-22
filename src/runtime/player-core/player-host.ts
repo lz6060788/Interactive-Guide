@@ -40,7 +40,14 @@ type DragState = {
 }
 
 const HOTSPOT_SIZE = 28
-
+const BACK_ICON_SVG = `
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <path d="M512 78.769231c240.246154 0 433.230769 192.984615 433.230769 433.230769s-192.984615 433.230769-433.230769 433.230769S78.769231 752.246154 78.769231 512 271.753846 78.769231 512 78.769231m0-78.769231C228.430769 0 0 228.430769 0 512s228.430769 512 512 512 512-228.430769 512-512S795.569231 0 512 0z" fill="#2c2c2c"></path>
+  <path d="M315.076923 468.676923h433.230769v78.769231H315.076923z" fill="#2c2c2c"></path>
+  <path d="M236.859077 501.051077l275.692308-275.692308 55.72923 55.650462-275.692307 275.692307z" fill="#2c2c2c"></path>
+  <path d="M294.203077 444.297846l275.731692 275.692308-55.689846 55.729231-275.692308-275.692308z" fill="#2c2c2c"></path>
+</svg>
+`
 export class PlayerHost {
   private engine: PlayerCore
   private dragState: DragState = {
@@ -53,6 +60,13 @@ export class PlayerHost {
   }
   private imageOffset = { x: 0, y: 0 }
   private destroyers: Array<() => void> = []
+  private chromeRoot = document.createElement('div')
+  private topGradientEl = document.createElement('div')
+  private backControlEl = document.createElement('div')
+  private backButtonEl = document.createElement('button')
+  private backLabelEl = document.createElement('div')
+  private bottomGradientEl = document.createElement('div')
+  private dragHintEl = document.createElement('div')
 
   constructor(
     private refs: PlayerHostRefs,
@@ -66,6 +80,7 @@ export class PlayerHost {
     })
 
     this.bindEvents()
+    this.buildChrome()
     this.applyBaseStyles()
     this.emitState()
   }
@@ -88,6 +103,7 @@ export class PlayerHost {
       video: this.refs.video,
     })
     this.applyBaseStyles()
+    this.mountChrome()
     this.updateLayout()
     this.render()
   }
@@ -147,6 +163,7 @@ export class PlayerHost {
   destroy(): void {
     this.destroyers.forEach(dispose => dispose())
     this.destroyers = []
+    this.chromeRoot.remove()
     this.engine.destroy()
   }
 
@@ -288,6 +305,23 @@ export class PlayerHost {
     this.options.onStateChange?.(this.getState())
   }
 
+  private buildChrome(): void {
+    this.chromeRoot.dataset.playerHostChrome = 'true'
+    this.chromeRoot.setAttribute('aria-hidden', 'false')
+
+    this.backButtonEl.type = 'button'
+    this.backButtonEl.setAttribute('aria-label', '返回上一页')
+    this.backButtonEl.innerHTML = BACK_ICON_SVG
+    this.backButtonEl.addEventListener('click', () => this.handleBack())
+
+    this.backControlEl.appendChild(this.backButtonEl)
+    this.backControlEl.appendChild(this.backLabelEl)
+    this.chromeRoot.appendChild(this.topGradientEl)
+    this.chromeRoot.appendChild(this.backControlEl)
+    this.chromeRoot.appendChild(this.bottomGradientEl)
+    this.chromeRoot.appendChild(this.dragHintEl)
+  }
+
   private applyBaseStyles(): void {
     const { viewport, stage, container, nodeImage, nodeIframe, video, hotspots } = this.refs
 
@@ -302,6 +336,108 @@ export class PlayerHost {
       overflow: 'hidden',
       background: '#000',
     })
+
+    this.mountChrome()
+
+    Object.assign(this.chromeRoot.style, {
+      position: 'absolute',
+      inset: '0',
+      zIndex: '50',
+      pointerEvents: 'none',
+      fontFamily: '"Noto Sans SC", "Noto Sans S Chinese", "PingFang SC", "Microsoft YaHei", sans-serif',
+    })
+
+    Object.assign(this.topGradientEl.style, {
+      position: 'absolute',
+      left: '0',
+      top: '0',
+      width: '100%',
+      height: '280px',
+      background: 'linear-gradient(180deg, #FFFFFF 12.98%, rgba(255, 255, 255, 0.546961) 58.17%, rgba(255, 255, 255, 0) 100%)',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 180ms ease',
+    })
+
+    Object.assign(this.backControlEl.style, {
+      position: 'absolute',
+      left: '20px',
+      top: '20px',
+      display: 'none',
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      gap: '10px',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+    })
+
+    Object.assign(this.backButtonEl.style, {
+      width: '20px',
+      height: '20px',
+      minWidth: '20px',
+      borderRadius: '0',
+      border: 'none',
+      background: 'transparent',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '0',
+      cursor: 'pointer',
+      pointerEvents: 'auto',
+    })
+    const backIcon = this.backButtonEl.querySelector('svg')
+    if (backIcon) {
+      ;(backIcon as SVGElement).style.width = '14px'
+      ;(backIcon as SVGElement).style.height = '14px'
+      ;(backIcon as SVGElement).style.display = 'block'
+    }
+
+    Object.assign(this.backLabelEl.style, {
+      minHeight: '24px',
+      maxWidth: '240px',
+      fontStyle: 'normal',
+      fontWeight: '700',
+      fontSize: '16px',
+      lineHeight: '24px',
+      color: 'rgba(0, 0, 0, 0.84)',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      pointerEvents: 'none',
+    })
+
+    Object.assign(this.bottomGradientEl.style, {
+      position: 'absolute',
+      left: '0',
+      bottom: '0',
+      width: '100%',
+      height: '100px',
+      background: 'linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.5) 100%)',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 180ms ease',
+    })
+
+    Object.assign(this.dragHintEl.style, {
+      position: 'absolute',
+      left: '50%',
+      bottom: '28px',
+      transform: 'translateX(-50%)',
+      display: 'none',
+      fontFamily: '"MiSans", "PingFang SC", "Microsoft YaHei", sans-serif',
+      fontStyle: 'normal',
+      fontWeight: '400',
+      fontSize: '11px',
+      lineHeight: '15px',
+      textAlign: 'center',
+      color: '#FFFFFF',
+      whiteSpace: 'nowrap',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+    })
+    this.dragHintEl.textContent = '滑动查看完整场景'
 
     container.style.position = 'relative'
     container.style.width = '100%'
@@ -350,6 +486,13 @@ export class PlayerHost {
       pointerEvents: 'none',
       transition: 'opacity 180ms ease',
     })
+  }
+
+  private mountChrome(): void {
+    if (this.chromeRoot.parentElement !== this.refs.stage) {
+      this.chromeRoot.remove()
+      this.refs.stage.appendChild(this.chromeRoot)
+    }
   }
 
   private applyStageLayout(): void {
@@ -407,6 +550,7 @@ export class PlayerHost {
     const state = this.getState()
     const { currentNode, preloading, transitioning } = state
     if (!currentNode) {
+      this.renderChrome(state)
       this.emitState()
       return
     }
@@ -416,6 +560,7 @@ export class PlayerHost {
     }
 
     if (preloading) {
+      this.renderChrome(state)
       this.emitState()
       return
     }
@@ -430,7 +575,25 @@ export class PlayerHost {
       this.confirmHostVisualCommitIfReady('render:next-frame')
     })
 
+    this.renderChrome(state)
     this.emitState()
+  }
+
+  private renderChrome(state: PlayerHostState): void {
+    const currentNode = state.currentNode
+    const hasBack = state.history.length > 0
+    const showHorizontalDragHint = currentNode?.imageFitMode === 'fitHeight'
+    const chromeVisible = !!currentNode && !state.transitioning && !state.preloading
+
+    this.backControlEl.style.display = hasBack ? 'flex' : 'none'
+    this.backControlEl.style.opacity = hasBack && chromeVisible ? '1' : '0'
+    this.backControlEl.style.pointerEvents = hasBack && chromeVisible ? 'auto' : 'none'
+    this.topGradientEl.style.opacity = hasBack && chromeVisible ? '1' : '0'
+    this.backLabelEl.textContent = currentNode?.title ?? currentNode?.id ?? ''
+
+    this.bottomGradientEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
+    this.dragHintEl.style.display = showHorizontalDragHint ? 'block' : 'none'
+    this.dragHintEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
   }
 
   private renderHtmlNode(currentNode: PublishNode, transitioning: boolean): void {
@@ -542,38 +705,58 @@ export class PlayerHost {
     const currentNode = this.engine.getCurrentNode()
     this.refs.hotspots.innerHTML = ''
     for (const hotspot of currentNode?.hotspots ?? []) {
-      this.refs.hotspots.appendChild(this.createHotspotButton(hotspot))
+      this.refs.hotspots.appendChild(this.createHotspotButton(hotspot, currentNode))
     }
     requestAnimationFrame(() => {
       this.updateHotspotViewport()
     })
   }
 
-  private createHotspotButton(hotspot: PublishHotspot): HTMLButtonElement {
+  private createHotspotButton(hotspot: PublishHotspot, _node?: PublishNode | null): HTMLButtonElement {
     const button = document.createElement('button')
+    const label = document.createElement('span')
+
     button.type = 'button'
     button.title = hotspot.label || hotspot.targetNodeId
     button.style.position = 'absolute'
     button.style.left = `${hotspot.normalizedX * 100}%`
     button.style.top = `${hotspot.normalizedY * 100}%`
-    button.style.width = `${HOTSPOT_SIZE}px`
-    button.style.height = `${HOTSPOT_SIZE}px`
     button.style.transform = 'translate(-50%, -50%)'
-    button.style.borderRadius = '999px'
-    button.style.border = '1px solid rgba(255,255,255,0.86)'
-    button.style.background = 'radial-gradient(circle at 35% 35%, rgba(255,255,255,0.98) 0%, rgba(223,239,255,0.96) 36%, rgba(107,177,255,0.84) 70%, rgba(33,105,255,0.46) 100%)'
-    button.style.boxShadow = '0 0 12px rgba(131,194,255,0.7), 0 0 28px rgba(87,162,255,0.4), inset 0 0 10px rgba(255,255,255,0.88)'
+    button.style.display = 'flex'
+    button.style.flexDirection = 'row'
+    button.style.alignItems = 'center'
+    button.style.justifyContent = 'center'
+    button.style.minWidth = '80px'
+    button.style.height = '28px'
+    button.style.padding = '5px 10px'
+    button.style.borderRadius = '6px'
+    button.style.border = '1px solid #000000'
+    button.style.background = 'rgba(255, 255, 255, 0.9)'
+    button.style.color = 'rgba(0, 0, 0, 0.84)'
+    button.style.opacity = '1'
+    button.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.16)'
     button.style.cursor = 'pointer'
     button.style.pointerEvents = 'auto'
-    button.style.padding = '0'
+    button.style.whiteSpace = 'nowrap'
     button.style.zIndex = '1'
+    button.style.maxWidth = '180px'
 
-    const innerGlow = document.createElement('span')
-    innerGlow.style.position = 'absolute'
-    innerGlow.style.inset = '5px'
-    innerGlow.style.borderRadius = 'inherit'
-    innerGlow.style.background = 'radial-gradient(circle, rgba(255,255,255,0.98) 0%, rgba(214,238,255,0.94) 42%, rgba(148,206,255,0.2) 100%)'
-    button.appendChild(innerGlow)
+    label.textContent = hotspot.label || hotspot.targetNodeId
+    label.style.display = 'block'
+    label.style.overflow = 'hidden'
+    label.style.textOverflow = 'ellipsis'
+    label.style.fontFamily = '"Noto Sans SC", "Noto Sans S Chinese", "PingFang SC", "Microsoft YaHei", sans-serif'
+    label.style.fontStyle = 'normal'
+    label.style.fontWeight = '400'
+    label.style.fontSize = '12px'
+    label.style.lineHeight = '18px'
+    label.style.textAlign = 'center'
+    label.style.color = 'inherit'
+    button.appendChild(label)
+
+    if (hotspot.style?.trim()) {
+      button.style.cssText += `;${hotspot.style}`
+    }
 
     button.addEventListener('click', () => {
       this.engine.handleHotspotClick(hotspot)

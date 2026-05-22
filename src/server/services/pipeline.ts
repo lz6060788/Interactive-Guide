@@ -985,6 +985,7 @@ export class BuildPipeline {
             edgeId: string; targetNodeId: string; label: string
             normalizedX: number; normalizedY: number; radius?: number
             markerType: 'dot'
+            style?: string
           }>,
         }
       }
@@ -1006,6 +1007,7 @@ export class BuildPipeline {
           normalizedY: hs.normalizedY,
           radius: hs.radius,
           markerType: 'dot' as const,
+          style: hs.style,
         })),
       }
     })
@@ -1081,6 +1083,7 @@ export class BuildPipeline {
             edgeId: string; targetNodeId: string; label: string
             normalizedX: number; normalizedY: number; radius?: number
             markerType: 'dot'
+            style?: string
           }>,
         }
       }
@@ -1109,6 +1112,7 @@ export class BuildPipeline {
           normalizedY: hs.normalizedY,
           radius: hs.radius,
           markerType: 'dot' as const,
+          style: hs.style,
         })),
       }
     })

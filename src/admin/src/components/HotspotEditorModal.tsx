@@ -11,6 +11,7 @@ interface DraftHotspot {
   normalizedX: number
   normalizedY: number
   radius?: number
+  style?: string
 }
 
 interface Props {
@@ -64,6 +65,7 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
       normalizedX: hs.normalizedX,
       normalizedY: hs.normalizedY,
       radius: hs.radius,
+      style: hs.style ?? '',
     })),
   )
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
@@ -101,6 +103,10 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
   )
 
   const handleMouseUp = useCallback(() => { setDragging(false) }, [])
+
+  const updateDraft = useCallback((index: number, patch: Partial<DraftHotspot>) => {
+    setDrafts(prev => prev.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)))
+  }, [])
 
   useEffect(() => {
     if (dragging) {
@@ -204,27 +210,31 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
                       position="absolute"
                       left={`${hs.normalizedX * 100}%`}
                       top={`${hs.normalizedY * 100}%`}
-                      w="28px"
+                      minW="80px"
                       h="28px"
-                      rounded="full"
+                      px="10px"
+                      rounded="6px"
                       display="flex"
                       alignItems="center"
                       justifyContent="center"
-                      fontSize="xs"
-                      fontWeight="700"
-                      color="black"
+                      fontSize="12px"
+                      fontWeight="400"
+                      color="rgba(0,0,0,0.84)"
                       userSelect="none"
-                      transition="box-shadow 0.15s"
+                      transition="box-shadow 0.15s, border-color 0.15s"
                       cursor={dragging && activeIndex === i ? 'grabbing' : 'grab'}
                       pointerEvents="auto"
                       zIndex={activeIndex === i ? 10 : 5}
-                      bg={activeIndex === i ? 'brand' : 'white'}
-                      boxShadow={activeIndex === i ? '0 0 16px rgba(99,102,241,0.6)' : '0 0 8px rgba(255,255,255,0.4)'}
+                      bg="rgba(255,255,255,0.92)"
+                      border={activeIndex === i ? '1px solid #6366f1' : '1px solid #000000'}
+                      boxShadow={activeIndex === i ? '0 8px 18px rgba(99,102,241,0.28)' : '0 8px 18px rgba(0,0,0,0.18)'}
                       transform="translate(-50%, -50%)"
                       onMouseDown={(e: any) => handleMouseDown(i, e)}
                       title={`${hs.label} → ${hs.targetNodeId}`}
                     >
-                      {i + 1}
+                      <Text fontSize="12px" color="rgba(0,0,0,0.84)" noOfLines={1}>
+                        {hs.label}
+                      </Text>
                     </Box>
                   ))}
                 </Box>
@@ -272,6 +282,50 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
                 </Text>
               </Box>
             ))}
+            {activeIndex !== null && drafts[activeIndex] && (
+              <Box mt="4" pt="4" style={{ borderTop: '1px solid #2a2d3a' }}>
+                <Text fontSize="2xs" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3">
+                  当前热点配置
+                </Text>
+                <Text fontSize="xs" color="text-tertiary" mb="1.5">显示文案</Text>
+                <input
+                  type="text"
+                  value={drafts[activeIndex].label}
+                  onChange={(e) => updateDraft(activeIndex, { label: e.target.value })}
+                  style={{
+                    width: '100%',
+                    background: '#0a0b0f',
+                    border: '1px solid #2a2d3a',
+                    borderRadius: '6px',
+                    color: '#e4e4e7',
+                    fontSize: '13px',
+                    padding: '8px 12px',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                <Text fontSize="xs" color="text-tertiary" mt="3" mb="1.5">自定义样式字符串</Text>
+                <textarea
+                  value={drafts[activeIndex].style ?? ''}
+                  onChange={(e) => updateDraft(activeIndex, { style: e.target.value })}
+                  rows={6}
+                  placeholder="例如: background:#111;color:#fff;border:none;min-width:120px;"
+                  style={{
+                    width: '100%',
+                    background: '#0a0b0f',
+                    border: '1px solid #2a2d3a',
+                    borderRadius: '6px',
+                    color: '#e4e4e7',
+                    fontSize: '13px',
+                    padding: '8px 12px',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    resize: 'vertical',
+                    fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
+                  }}
+                />
+              </Box>
+            )}
             {drafts.length === 0 && (
               <Text color="text-tertiary" fontSize="sm" textAlign="center" py="5">
                 当前节点没有热点

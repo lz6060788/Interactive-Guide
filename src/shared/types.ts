@@ -96,6 +96,8 @@ export interface NodeHotspot {
   normalizedY: number
   radius?: number
   status?: ResourceStatus
+  /** Optional inline CSS declarations applied to this hotspot button. */
+  style?: string
 }
 
 export interface KnowledgeNode {
@@ -251,6 +253,8 @@ export interface PublishHotspot {
   normalizedY: number
   radius?: number
   markerType: 'dot'
+  /** Optional inline CSS declarations applied to this hotspot button. */
+  style?: string
 }
 
 export interface PublishNode {

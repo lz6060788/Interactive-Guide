@@ -187,6 +187,7 @@ export class RuntimeBundleGenerator {
             normalizedY: hs.normalizedY,
             radius: hs.radius,
             markerType: 'dot' as const,
+            style: hs.style,
           })),
         }
       }
@@ -203,6 +204,7 @@ export class RuntimeBundleGenerator {
           normalizedY: hs.normalizedY,
           radius: hs.radius,
           markerType: 'dot' as const,
+          style: hs.style,
         })),
       }
     })
@@ -349,7 +351,6 @@ export class RuntimeBundleGenerator {
       '</head>',
       '<body>',
       '  <div id="app" class="runtime-shell">',
-      '    <button id="back-button" class="nav-back" type="button" style="display:none;">&#8592;</button>',
       '    <main class="runtime-main">',
       '      <div id="viewport" class="player-viewport">',
       '        <div id="stage" class="stage" hidden>',
@@ -381,8 +382,6 @@ export class RuntimeBundleGenerator {
       'html, body { margin: 0; min-height: 100%; background: #000; color: var(--text); font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif; }',
       'button { font: inherit; }',
       '.runtime-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 0; background: #000; }',
-      '.nav-back { position: fixed; top: 16px; left: 16px; z-index: 10; border: none; background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.8); border-radius: 999px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; transition: background 160ms ease; }',
-      '.nav-back:hover { background: rgba(0,0,0,0.8); color: #fff; }',
       '.runtime-main { position: relative; flex: 1; min-height: 100vh; width: 100%; }',
       '.player-viewport { position: relative; width: 100%; height: 100vh; overflow: hidden; background: #000; }',
       '.stage { position: absolute; overflow: hidden; background: #000; }',
@@ -489,7 +488,6 @@ export class RuntimeBundleGenerator {
       '}',
       '',
       'document.addEventListener("DOMContentLoaded", () => {',
-      '  refs.backButton = document.getElementById("back-button")',
       '  refs.viewport = document.getElementById("viewport")',
       '  refs.stage = document.getElementById("stage")',
       '  refs.mediaRoot = document.getElementById("media-root")',
@@ -497,9 +495,6 @@ export class RuntimeBundleGenerator {
       '  refs.nodeIframe = document.getElementById("node-iframe")',
       '  refs.hotspots = document.getElementById("hotspots")',
       '  refs.video = document.getElementById("transition-video")',
-      '',
-      '  refs.backButton.addEventListener("click", () => host?.handleBack())',
-      '',
       '  init().catch(error => { console.error(error); })',
       '})',
       '',
@@ -533,7 +528,6 @@ export class RuntimeBundleGenerator {
       '',
       'function render(state) {',
       '  if (!state) return',
-      '  refs.backButton.style.display = state.history.length > 0 ? "flex" : "none"',
       '}',
     ].join('\n')
 
