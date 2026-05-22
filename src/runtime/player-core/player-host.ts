@@ -362,8 +362,12 @@ export class PlayerHost {
 
     Object.assign(this.chromeRoot.style, {
       position: 'absolute',
-      inset: '0',
+      left: '0',
+      top: '0',
+      width: '100%',
+      height: '100%',
       zIndex: '50',
+      overflow: 'hidden',
       pointerEvents: 'none',
       fontFamily: '"Noto Sans SC", "Noto Sans S Chinese", "PingFang SC", "Microsoft YaHei", sans-serif',
     })
@@ -512,9 +516,9 @@ export class PlayerHost {
   }
 
   private mountChrome(): void {
-    if (this.chromeRoot.parentElement !== this.refs.stage) {
+    if (this.chromeRoot.parentElement !== this.refs.viewport) {
       this.chromeRoot.remove()
-      this.refs.stage.appendChild(this.chromeRoot)
+      this.refs.viewport.appendChild(this.chromeRoot)
     }
   }
 
@@ -555,6 +559,7 @@ export class PlayerHost {
       height: `${stageHeight}px`,
       aspectRatio: `${designWidth} / ${designHeight}`,
     })
+    this.updateChromeFrame(viewportSize.width, viewportSize.height, stageLeft, stageTop, stageWidth, stageHeight)
   }
 
   private resolveViewportSize(): { width: number; height: number } {
@@ -567,6 +572,30 @@ export class PlayerHost {
       width: rect.width,
       height: rect.height,
     }
+  }
+
+  private updateChromeFrame(
+    viewportWidth: number,
+    viewportHeight: number,
+    stageLeft: number,
+    stageTop: number,
+    stageWidth: number,
+    stageHeight: number,
+  ): void {
+    const visibleLeft = Math.max(stageLeft, 0)
+    const visibleTop = Math.max(stageTop, 0)
+    const visibleRight = Math.min(stageLeft + stageWidth, viewportWidth)
+    const visibleBottom = Math.min(stageTop + stageHeight, viewportHeight)
+    const visibleWidth = Math.max(visibleRight - visibleLeft, 0)
+    const visibleHeight = Math.max(visibleBottom - visibleTop, 0)
+
+    Object.assign(this.chromeRoot.style, {
+      left: `${visibleLeft}px`,
+      top: `${visibleTop}px`,
+      width: `${visibleWidth}px`,
+      height: `${visibleHeight}px`,
+      overflow: 'hidden',
+    })
   }
 
   private render(): void {
