@@ -45,6 +45,7 @@ export function WorkbenchPage() {
   const [showPreview, setShowPreview] = useState(false)
   const [showHotspotEditor, setShowHotspotEditor] = useState(false)
   const [hotspotNodeId, setHotspotNodeId] = useState<string | null>(null)
+  const [hotspotEditorNode, setHotspotEditorNode] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
   const [building, setBuilding] = useState(false)
   const [packaging, setPackaging] = useState(false)
@@ -57,7 +58,7 @@ export function WorkbenchPage() {
     if (!guideId) return
     try {
       setLoading(true)
-      const data = await api.fetchGuide(guideId)
+      const data = await api.fetchGuide(`${guideId}?t=${Date.now()}`)
       setPkg(data)
       setError(null)
     } catch (e: any) {
@@ -224,6 +225,7 @@ export function WorkbenchPage() {
       
       await load()
       setShowHotspotEditor(false)
+      setHotspotEditorNode(null)
       setHotspotNodeId(null)
     } catch (e: any) {
       setError(e.message)
@@ -277,10 +279,21 @@ export function WorkbenchPage() {
     }
   }, [guideId, load])
 
-  const openHotspotEditor = useCallback((nodeId: string) => {
-    setHotspotNodeId(nodeId)
-    setShowHotspotEditor(true)
-  }, [])
+  const openHotspotEditor = useCallback(async (nodeId: string) => {
+    if (!guideId) return
+    try {
+      const manifest = await api.fetchManifest(`${guideId}?t=${Date.now()}`)
+      const manifestNode = manifest?.nodeMap?.[nodeId] ?? manifest?.nodes?.find((n: any) => n.id === nodeId)
+      if (!manifestNode) {
+        throw new Error(`未在 workspace manifest 中找到节点 ${nodeId}`)
+      }
+      setHotspotEditorNode(manifestNode)
+      setHotspotNodeId(nodeId)
+      setShowHotspotEditor(true)
+    } catch (e: any) {
+      setError(e.message)
+    }
+  }, [guideId])
 
   const handleAddNode = useCallback(async () => {
     if (!guideId || !addParentId || !addNodeTitle.trim()) return
@@ -622,11 +635,15 @@ export function WorkbenchPage() {
       )}
 
       {/* Hotspot Editor Modal */}
-      {showHotspotEditor && hotspotNodeId && pkg && (
+      {showHotspotEditor && hotspotNodeId && hotspotEditorNode && (
         <HotspotEditorModal
-          node={pkg.nodes.find((n: any) => n.id === hotspotNodeId)!}
+          node={hotspotEditorNode}
           packageId={guideId!}
-          onClose={() => { setShowHotspotEditor(false); setHotspotNodeId(null) }}
+          onClose={() => {
+            setShowHotspotEditor(false)
+            setHotspotEditorNode(null)
+            setHotspotNodeId(null)
+          }}
           onSave={handleSaveHotspots}
           saving={saving}
         />

@@ -69,11 +69,9 @@ export class PlayerHost {
   private imageOffset = { x: 0, y: 0 }
   private destroyers: Array<() => void> = []
   private chromeRoot = document.createElement('div')
-  private topGradientEl = document.createElement('div')
   private backControlEl = document.createElement('div')
   private backButtonEl = document.createElement('button')
   private backLabelEl = document.createElement('div')
-  private bottomGradientEl = document.createElement('div')
   private dragHintEl = document.createElement('div')
   private activeContentType: 'image' | 'html' = 'image'
   private htmlIframeLayer = document.createElement('div')
@@ -330,9 +328,7 @@ export class PlayerHost {
 
     this.backControlEl.appendChild(this.backButtonEl)
     this.backControlEl.appendChild(this.backLabelEl)
-    this.chromeRoot.appendChild(this.topGradientEl)
     this.chromeRoot.appendChild(this.backControlEl)
-    this.chromeRoot.appendChild(this.bottomGradientEl)
     this.chromeRoot.appendChild(this.dragHintEl)
   }
 
@@ -372,18 +368,6 @@ export class PlayerHost {
       fontFamily: '"Noto Sans SC", "Noto Sans S Chinese", "PingFang SC", "Microsoft YaHei", sans-serif',
     })
 
-    Object.assign(this.topGradientEl.style, {
-      position: 'absolute',
-      left: '0',
-      top: '0',
-      width: '100%',
-      height: '280px',
-      background: 'linear-gradient(180deg, #FFFFFF 12.98%, rgba(255, 255, 255, 0.546961) 58.17%, rgba(255, 255, 255, 0) 100%)',
-      pointerEvents: 'none',
-      opacity: '0',
-      transition: 'opacity 180ms ease',
-    })
-
     Object.assign(this.backControlEl.style, {
       position: 'absolute',
       left: '20px',
@@ -398,9 +382,9 @@ export class PlayerHost {
     })
 
     Object.assign(this.backButtonEl.style, {
-      width: '20px',
-      height: '20px',
-      minWidth: '20px',
+      width: '24px',
+      height: '24px',
+      minWidth: '24px',
       borderRadius: '0',
       border: 'none',
       background: 'transparent',
@@ -413,8 +397,8 @@ export class PlayerHost {
     })
     const backIcon = this.backButtonEl.querySelector('svg')
     if (backIcon) {
-      ;(backIcon as SVGElement).style.width = '14px'
-      ;(backIcon as SVGElement).style.height = '14px'
+      ;(backIcon as SVGElement).style.width = '18px'
+      ;(backIcon as SVGElement).style.height = '18px'
       ;(backIcon as SVGElement).style.display = 'block'
     }
 
@@ -429,19 +413,13 @@ export class PlayerHost {
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
+      textShadow: [
+        '0 1px 0 rgba(255, 255, 255, 0.72)',
+        '0 -1px 0 rgba(255, 255, 255, 0.72)',
+        '1px 0 0 rgba(255, 255, 255, 0.72)',
+        '-1px 0 0 rgba(255, 255, 255, 0.72)',
+      ].join(', '),
       pointerEvents: 'none',
-    })
-
-    Object.assign(this.bottomGradientEl.style, {
-      position: 'absolute',
-      left: '0',
-      bottom: '0',
-      width: '100%',
-      height: '100px',
-      background: 'linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.5) 100%)',
-      pointerEvents: 'none',
-      opacity: '0',
-      transition: 'opacity 180ms ease',
     })
 
     Object.assign(this.dragHintEl.style, {
@@ -462,7 +440,7 @@ export class PlayerHost {
       opacity: '0',
       transition: 'opacity 220ms ease',
     })
-    this.dragHintEl.textContent = '滑动查看完整场景'
+    this.dragHintEl.textContent = '左右滑动查看完整场景'
 
     container.style.position = 'relative'
     container.style.width = '100%'
@@ -641,10 +619,8 @@ export class PlayerHost {
     this.backControlEl.style.display = hasBack ? 'flex' : 'none'
     this.backControlEl.style.opacity = hasBack && chromeVisible ? '1' : '0'
     this.backControlEl.style.pointerEvents = hasBack && chromeVisible ? 'auto' : 'none'
-    this.topGradientEl.style.opacity = hasBack && chromeVisible ? '1' : '0'
     this.backLabelEl.textContent = currentNode?.title ?? currentNode?.id ?? ''
 
-    this.bottomGradientEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
     this.dragHintEl.style.display = showHorizontalDragHint ? 'block' : 'none'
     this.dragHintEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
   }
@@ -771,7 +747,7 @@ export class PlayerHost {
     const label = document.createElement('span')
 
     button.type = 'button'
-    button.title = hotspot.label || hotspot.targetNodeId
+    button.title = hotspot.label
     button.style.position = 'absolute'
     button.style.left = `${hotspot.normalizedX * 100}%`
     button.style.top = `${hotspot.normalizedY * 100}%`
@@ -795,7 +771,7 @@ export class PlayerHost {
     button.style.zIndex = '1'
     button.style.maxWidth = '180px'
 
-    label.textContent = hotspot.label || hotspot.targetNodeId
+    label.textContent = hotspot.label
     label.style.display = 'block'
     label.style.overflow = 'hidden'
     label.style.textOverflow = 'ellipsis'

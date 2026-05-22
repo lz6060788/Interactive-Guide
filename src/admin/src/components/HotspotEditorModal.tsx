@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo, type CSSProperties } from 'react'
 import {
   Box, Flex, Text, Heading, Button, Badge, IconButton, VStack,
 } from '@chakra-ui/react'
@@ -20,6 +20,41 @@ interface Props {
   onClose: () => void
   onSave: (hotspots: DraftHotspot[]) => void
   saving: boolean
+}
+
+const LOCKED_PREVIEW_STYLE_KEYS = new Set([
+  'position',
+  'left',
+  'top',
+  'right',
+  'bottom',
+  'transform',
+  'pointer-events',
+  'z-index',
+])
+
+function cssPropertyToReactKey(property: string): string {
+  if (property.startsWith('--')) return property
+  return property.replace(/-([a-z])/g, (_, char: string) => char.toUpperCase())
+}
+
+function parsePreviewStyle(styleText?: string): CSSProperties {
+  if (!styleText?.trim() || typeof document === 'undefined') return {}
+
+  const probe = document.createElement('div')
+  probe.setAttribute('style', styleText)
+
+  const parsed: CSSProperties = {}
+  for (let i = 0; i < probe.style.length; i += 1) {
+    const propertyName = probe.style[i]
+    if (!propertyName || LOCKED_PREVIEW_STYLE_KEYS.has(propertyName)) continue
+
+    const value = probe.style.getPropertyValue(propertyName).trim()
+    if (!value) continue
+
+    ;(parsed as Record<string, string>)[cssPropertyToReactKey(propertyName)] = value
+  }
+  return parsed
 }
 
 export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
@@ -70,6 +105,10 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
   )
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
+  const previewStyles = useMemo(
+    () => drafts.map(hs => parsePreviewStyle(hs.style)),
+    [drafts],
+  )
 
   const getPosition = useCallback((e: React.MouseEvent) => {
     const container = containerRef.current
@@ -206,7 +245,7 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
                 >
                   {drafts.map((hs, i) => (
                     <Box
-                      key={hs.edgeId}
+                      key={`${hs.edgeId}-${i}`}
                       position="absolute"
                       left={`${hs.normalizedX * 100}%`}
                       top={`${hs.normalizedY * 100}%`}
@@ -229,6 +268,7 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
                       border={activeIndex === i ? '1px solid #6366f1' : '1px solid #000000'}
                       boxShadow={activeIndex === i ? '0 8px 18px rgba(99,102,241,0.28)' : '0 8px 18px rgba(0,0,0,0.18)'}
                       transform="translate(-50%, -50%)"
+                      style={previewStyles[i]}
                       onMouseDown={(e: any) => handleMouseDown(i, e)}
                       title={`${hs.label} → ${hs.targetNodeId}`}
                     >
@@ -249,7 +289,7 @@ export function HotspotEditorModal({ node, onClose, onSave, saving }: Props) {
             </Text>
             {drafts.map((hs, i) => (
               <Box
-                key={hs.edgeId}
+                key={`${hs.edgeId}-${i}`}
                 p="3"
                 rounded="md"
                 mb="2"

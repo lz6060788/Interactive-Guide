@@ -18,7 +18,13 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 // Guides
 export const fetchGuides = () => request<any[]>('/guides')
-export const fetchGuide = (id: string) => request<any>(`/guides/${id}`)
+export const fetchGuide = (id: string) => {
+  if (id.includes('?')) {
+    const [guideId, query] = id.split('?')
+    return request<any>(`/guides/${guideId}?${query}`)
+  }
+  return request<any>(`/guides/${id}`)
+}
 export const importGuide = (data: any) =>
   request('/guides/import', { method: 'POST', body: JSON.stringify(data) })
 export const updateGuide = (id: string, data: any) =>

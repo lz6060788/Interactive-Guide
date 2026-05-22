@@ -907,6 +907,10 @@ export class BuildPipeline {
         if (this.repo.fileExists(htmlSrc)) {
           this.repo.copyFile(htmlSrc, `${publishDir}/assets/nodes/${node.id}.html`)
         }
+        const previewImageSrc = `workspace/${guide.id}/nodes/${node.id}.png`
+        if (this.repo.fileExists(previewImageSrc)) {
+          this.repo.copyFile(previewImageSrc, `${publishDir}/assets/nodes/${node.id}.png`)
+        }
       } else {
         const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
         if (this.repo.fileExists(src)) {
@@ -968,6 +972,7 @@ export class BuildPipeline {
     const nodes = guide.nodes.map(n => {
       const summary = this.promptBuilder.getNodeSummary(n)
       const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
+      const hasHtmlPreviewImage = this.repo.fileExists(`workspace/${guide.id}/nodes/${n.id}.png`)
 
       if (n.contentType === 'html') {
         return {
@@ -979,6 +984,7 @@ export class BuildPipeline {
           sourceText: n.sourceText?.trim() || undefined,
           contentType: 'html' as const,
           htmlUrl: `${mediaBase}/assets/nodes/${n.id}.html`,
+          imageUrl: hasHtmlPreviewImage ? `${mediaBase}/assets/nodes/${n.id}.png` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
           hotspots: [] as Array<{
@@ -1058,6 +1064,7 @@ export class BuildPipeline {
     const nodes = guide.nodes.map(n => {
       const summary = this.promptBuilder.getNodeSummary(n)
       const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
+      const hasHtmlPreviewImage = this.repo.fileExists(`workspace/${guide.id}/nodes/${n.id}.png`)
 
       if (n.contentType === 'html') {
         return {
@@ -1077,6 +1084,7 @@ export class BuildPipeline {
           contentType: 'html' as const,
           htmlSource: n.htmlSource,
           htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
+          imageUrl: hasHtmlPreviewImage ? `${mediaBase}/nodes/${n.id}.png` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
           hotspots: [] as Array<{
