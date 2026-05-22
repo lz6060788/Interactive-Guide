@@ -31,8 +31,7 @@ export class PanRenderer implements TransitionRenderer {
     this.containerEl = document.createElement('div')
     this.containerEl.className = 'transition-pan-container'
 
-    // Clone fromNodeEl as fromEl
-    this.fromEl = context.fromNodeEl.cloneNode(true) as HTMLElement
+    this.fromEl = context.fromNodeEl
     this.fromEl.className = 'transition-pan-from'
     this.fromEl.style.position = 'absolute'
     this.fromEl.style.inset = '0'
@@ -42,8 +41,7 @@ export class PanRenderer implements TransitionRenderer {
     this.fromEl.style.overflow = 'hidden'
     this.fromEl.style.opacity = '1'
 
-    // Clone toNodeEl as toEl
-    this.toEl = context.toNodeEl.cloneNode(true) as HTMLElement
+    this.toEl = context.toNodeEl
     this.toEl.className = 'transition-pan-to'
     this.toEl.style.position = 'absolute'
     this.toEl.style.inset = '0'
@@ -83,10 +81,7 @@ export class PanRenderer implements TransitionRenderer {
     this.fromEl = null
     this.toEl = null
     this.config = null
-    if (this.styleEl && this.styleEl.parentNode) {
-      this.styleEl.parentNode.removeChild(this.styleEl)
-      this.styleEl = null
-    }
+    this.styleEl = null
   }
 
   private calculateOffset(context: TransitionContext, direction: string): { x: number, y: number } {

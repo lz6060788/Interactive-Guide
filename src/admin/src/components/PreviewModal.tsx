@@ -173,6 +173,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const modalW = `min(${maxWVw}vw, ${maxHVh}vh * ${ar})`
   const modalH = `min(${maxHVh}vh, ${maxWVw}vw / ${ar})`
   const preloading = runtimeState?.preloading ?? false
+  const showRuntimeLoading = status === 'ready' && !!manifest && (!runtimeState || preloading)
 
   return (
     <Flex position="fixed" inset="0" zIndex={200} align="center" justify="center">
@@ -241,6 +242,21 @@ export function PreviewModal({ packageId, onClose }: Props) {
               overflow="hidden"
               bg="black"
             >
+              {showRuntimeLoading && (
+                <Flex
+                  position="absolute"
+                  inset="0"
+                  zIndex={30}
+                  direction="column"
+                  align="center"
+                  justify="center"
+                  gap="3"
+                  bg="rgba(2, 3, 5, 0.82)"
+                >
+                  <Spinner color="brand" />
+                  <Text color="text-secondary" fontSize="sm">预加载运行时资源...</Text>
+                </Flex>
+              )}
               <Box
                 ref={stageRef}
                 position="absolute"
@@ -253,22 +269,6 @@ export function PreviewModal({ packageId, onClose }: Props) {
                   inset="0"
                   overflow="hidden"
                 >
-                {preloading && (
-                  <Flex
-                    position="absolute"
-                    inset="0"
-                    zIndex={30}
-                    direction="column"
-                    align="center"
-                    justify="center"
-                    gap="3"
-                    bg="rgba(2, 3, 5, 0.82)"
-                  >
-                    <Spinner color="brand" />
-                    <Text color="text-secondary" fontSize="sm">预加载运行时资源...</Text>
-                  </Flex>
-                )}
-
                 <img
                   ref={nodeImageRef}
                   alt=""

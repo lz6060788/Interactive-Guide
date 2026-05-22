@@ -215,7 +215,7 @@ export class ZoomRenderer implements TransitionRenderer {
     this.containerEl = document.createElement('div')
     this.containerEl.className = 'transition-zoom-container'
 
-    this.fromEl = context.fromNodeEl.cloneNode(true) as HTMLElement
+    this.fromEl = context.fromNodeEl
     this.fromEl.className = 'transition-zoom-from'
     this.fromEl.style.position = 'absolute'
     this.fromEl.style.inset = '0'
@@ -225,7 +225,7 @@ export class ZoomRenderer implements TransitionRenderer {
     this.fromEl.style.overflow = 'hidden'
     this.fromEl.style.transition = 'none'
 
-    this.toEl = context.toNodeEl.cloneNode(true) as HTMLElement
+    this.toEl = context.toNodeEl
     this.toEl.className = 'transition-zoom-to'
     this.toEl.style.position = 'absolute'
     this.toEl.style.inset = '0'
@@ -297,9 +297,6 @@ export class ZoomRenderer implements TransitionRenderer {
     this.focusFrame = IDENTITY_FRAME
     this.fromBaseTransform = ''
     this.toBaseTransform = ''
-    if (this.styleEl && this.styleEl.parentNode) {
-      this.styleEl.parentNode.removeChild(this.styleEl)
-      this.styleEl = null
-    }
+    this.styleEl = null
   }
 }

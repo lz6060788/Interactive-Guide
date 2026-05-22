@@ -389,18 +389,6 @@ class PlayerCore {
 
       const transitionPromise = this.activeTransition!.play(context)
 
-      const targetRect = toImg.getBoundingClientRect()
-      const containerRc = this.refs.container.getBoundingClientRect()
-      const aspectW = containerRc.width / Math.max(containerRc.height, 1)
-      const aspectH = containerRc.height / Math.max(containerRc.width, 1)
-      const ratioLabel = Math.abs(aspectW - 16 / 9) < Math.abs(aspectW - 9 / 16) ? '16:9' : '9:16'
-      console.log(
-        `[Transition] ${this.currentNodeId} -> ${targetNodeId} (${config.type}) | ` +
-        `target start rect: ${Math.round(targetRect.x)},${Math.round(targetRect.y)} ` +
-        `${Math.round(targetRect.width)}x${Math.round(targetRect.height)} | ` +
-        `container: ${Math.round(containerRc.width)}x${Math.round(containerRc.height)} (${ratioLabel})`,
-      )
-
       this.refs.nodeImage.style.opacity = '0'
       this.emit('stateChange')
       this.emit('transitionStart')

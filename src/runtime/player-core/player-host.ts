@@ -39,6 +39,14 @@ type DragState = {
   startOffsetY: number
 }
 
+type HtmlIframeEntry = {
+  iframe: HTMLIFrameElement
+  ready: boolean
+  readyPromise: Promise<void>
+  preloadSettled: boolean
+  cleanup: () => void
+}
+
 const HOTSPOT_SIZE = 28
 const BACK_ICON_SVG = `
 <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -67,6 +75,12 @@ export class PlayerHost {
   private backLabelEl = document.createElement('div')
   private bottomGradientEl = document.createElement('div')
   private dragHintEl = document.createElement('div')
+  private activeContentType: 'image' | 'html' = 'image'
+  private htmlIframeLayer = document.createElement('div')
+  private htmlIframeEntries = new Map<string, HtmlIframeEntry>()
+  private htmlIframePreloading = false
+  private htmlIframePreloadStarted = false
+  private activeHtmlIframeUrl = ''
 
   constructor(
     private refs: PlayerHostRefs,
@@ -87,6 +101,8 @@ export class PlayerHost {
 
   loadManifest(manifest: PublishManifest): void {
     this.engine.loadManifest(manifest)
+    this.htmlIframePreloadStarted = false
+    this.htmlIframePreloading = false
     this.updateLayout()
     this.render()
   }
@@ -114,7 +130,7 @@ export class PlayerHost {
       currentNode: this.engine.getCurrentNode(),
       currentNodeId: this.engine.getCurrentNodeId(),
       transitioning: this.engine.isTransitioning(),
-      preloading: this.engine.isPreloading(),
+      preloading: this.isLoading(),
       history: this.engine.getHistory(),
     }
   }
@@ -163,6 +179,12 @@ export class PlayerHost {
   destroy(): void {
     this.destroyers.forEach(dispose => dispose())
     this.destroyers = []
+    this.htmlIframeEntries.forEach(entry => {
+      entry.cleanup()
+      entry.iframe.remove()
+    })
+    this.htmlIframeEntries.clear()
+    this.htmlIframeLayer.remove()
     this.chromeRoot.remove()
     this.engine.destroy()
   }
@@ -174,13 +196,11 @@ export class PlayerHost {
     this.destroyers.push(() => this.engine.off('error', this.handleEngineError))
 
     this.refs.nodeImage.addEventListener('load', this.handleNodeImageLoad)
-    this.refs.nodeIframe.addEventListener('load', this.handleNodeIframeLoad)
     this.refs.nodeImage.addEventListener('pointerdown', this.handleNodeImagePointerDown)
     window.addEventListener('message', this.handleWindowMessage)
     window.addEventListener('resize', this.handleWindowResize)
 
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('load', this.handleNodeImageLoad))
-    this.destroyers.push(() => this.refs.nodeIframe.removeEventListener('load', this.handleNodeIframeLoad))
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('pointerdown', this.handleNodeImagePointerDown))
     this.destroyers.push(() => window.removeEventListener('message', this.handleWindowMessage))
     this.destroyers.push(() => window.removeEventListener('resize', this.handleWindowResize))
@@ -188,6 +208,7 @@ export class PlayerHost {
   }
 
   private handleEngineStateChange = (): void => {
+    this.maybeStartHtmlIframePreload()
     this.render()
     requestAnimationFrame(() => {
       this.confirmHostVisualCommitIfReady('engine:stateChange:next-frame')
@@ -202,13 +223,6 @@ export class PlayerHost {
     this.updateHotspotViewport()
     requestAnimationFrame(() => {
       this.confirmHostVisualCommitIfReady('node-image:onLoad:next-frame')
-    })
-  }
-
-  private handleNodeIframeLoad = (): void => {
-    this.updateHotspotViewport()
-    requestAnimationFrame(() => {
-      this.confirmHostVisualCommitIfReady('node-iframe:onLoad:next-frame')
     })
   }
 
@@ -337,6 +351,13 @@ export class PlayerHost {
       background: '#000',
     })
 
+    Object.assign(this.htmlIframeLayer.style, {
+      position: 'absolute',
+      inset: '0',
+      zIndex: '1',
+      pointerEvents: 'none',
+    })
+
     this.mountChrome()
 
     Object.assign(this.chromeRoot.style, {
@@ -451,18 +472,12 @@ export class PlayerHost {
       height: '100%',
       background: '#000',
       userSelect: 'none',
-      display: 'block',
+      visibility: 'visible',
+      opacity: '1',
+      pointerEvents: 'auto',
     })
 
-    Object.assign(nodeIframe.style, {
-      position: 'absolute',
-      inset: '0',
-      width: '100%',
-      height: '100%',
-      border: 'none',
-      background: '#000',
-      display: 'none',
-    })
+    this.applyManagedIframeBaseStyle(nodeIframe)
 
     Object.assign(video.style, {
       position: 'absolute',
@@ -486,6 +501,14 @@ export class PlayerHost {
       pointerEvents: 'none',
       transition: 'opacity 180ms ease',
     })
+
+    if (this.htmlIframeLayer.parentElement !== container) {
+      this.htmlIframeLayer.remove()
+      container.appendChild(this.htmlIframeLayer)
+    }
+    if (nodeIframe.parentElement !== this.htmlIframeLayer) {
+      this.htmlIframeLayer.appendChild(nodeIframe)
+    }
   }
 
   private mountChrome(): void {
@@ -549,6 +572,7 @@ export class PlayerHost {
   private render(): void {
     const state = this.getState()
     const { currentNode, preloading, transitioning } = state
+    const corePreloading = this.engine.isPreloading()
     if (!currentNode) {
       this.renderChrome(state)
       this.emitState()
@@ -556,10 +580,10 @@ export class PlayerHost {
     }
 
     if (this.refs.stage) {
-      this.refs.stage.hidden = preloading
+      this.refs.stage.hidden = corePreloading
     }
 
-    if (preloading) {
+    if (corePreloading) {
       this.renderChrome(state)
       this.emitState()
       return
@@ -597,18 +621,18 @@ export class PlayerHost {
   }
 
   private renderHtmlNode(currentNode: PublishNode, transitioning: boolean): void {
-    if (currentNode.imageUrl) {
-      this.refs.nodeImage.src = currentNode.imageUrl
-      this.refs.nodeImage.alt = currentNode.title ?? currentNode.id
-    } else {
-      this.refs.nodeImage.removeAttribute('src')
-      this.refs.nodeImage.alt = ''
-    }
+    this.activeContentType = 'html'
+    const htmlUrl = currentNode.htmlUrl ?? ''
+    const entry = this.ensureHtmlIframe(htmlUrl)
+    this.activateHtmlIframe(htmlUrl)
 
-    this.refs.nodeImage.style.display = 'none'
-    this.refs.nodeIframe.style.display = 'block'
-    this.refs.nodeIframe.style.opacity = transitioning ? '0' : '1'
-    this.refs.nodeIframe.src = currentNode.htmlUrl ?? 'about:blank'
+    this.refs.nodeImage.style.visibility = 'hidden'
+    this.refs.nodeImage.style.opacity = '0'
+    this.refs.nodeImage.style.pointerEvents = 'none'
+    this.refs.nodeIframe.style.visibility = entry.ready && !transitioning ? 'visible' : 'hidden'
+    this.refs.nodeIframe.style.opacity = entry.ready && !transitioning ? '1' : '0'
+    this.refs.nodeIframe.style.pointerEvents = entry.ready && !transitioning ? 'auto' : 'none'
+    this.htmlIframeLayer.style.pointerEvents = entry.ready && !transitioning ? 'auto' : 'none'
 
     this.renderHotspots()
     this.refs.hotspots.style.left = '0px'
@@ -623,11 +647,12 @@ export class PlayerHost {
 
   private renderImageNode(currentNode: PublishNode, transitioning: boolean): void {
     const fitMode = currentNode.imageFitMode ?? 'fill'
+    this.activeContentType = 'image'
+    this.activeHtmlIframeUrl = ''
 
-    this.refs.nodeImage.style.display = 'block'
-    this.refs.nodeIframe.style.display = 'none'
-    this.refs.nodeIframe.style.opacity = '0'
-    this.refs.nodeIframe.src = 'about:blank'
+    this.refs.nodeImage.style.visibility = 'visible'
+    this.refs.nodeImage.style.pointerEvents = transitioning ? 'none' : 'auto'
+    this.hideAllManagedIframes()
     this.refs.nodeImage.src = currentNode.imageUrl ?? ''
     this.refs.nodeImage.alt = currentNode.title ?? currentNode.id
     this.refs.nodeImage.style.opacity = transitioning ? '0' : '1'
@@ -770,7 +795,7 @@ export class PlayerHost {
     if (stage.hidden) return
 
     const mediaRect = container.getBoundingClientRect()
-    const contentEl = nodeIframe.style.display !== 'none' ? nodeIframe : nodeImage
+    const contentEl = this.activeContentType === 'html' ? nodeIframe : nodeImage
     const contentRect = contentEl.getBoundingClientRect()
 
     if (!mediaRect.width || !mediaRect.height || !contentRect.width || !contentRect.height) {
@@ -794,12 +819,13 @@ export class PlayerHost {
       && reason !== 'node-image:onLoad:next-frame'
       && reason !== 'node-iframe:onLoad:next-frame'
     ) {
-      return
+      if (currentNode.contentType !== 'html' || !this.isActiveHtmlIframeReady()) {
+        return
+      }
     }
 
     if (currentNode.contentType === 'html') {
-      const expectedSrc = this.toAbsoluteUrl(currentNode.htmlUrl ?? '')
-      if (this.refs.nodeIframe.src !== expectedSrc) return
+      if (!this.isActiveHtmlIframeReady()) return
     } else {
       const expectedSrc = this.toAbsoluteUrl(currentNode.imageUrl ?? '')
       const actualSrc = this.refs.nodeImage.currentSrc || this.refs.nodeImage.src
@@ -811,6 +837,138 @@ export class PlayerHost {
 
   private toAbsoluteUrl(url: string): string {
     return new URL(url, window.location.href).href
+  }
+
+  private applyManagedIframeBaseStyle(iframe: HTMLIFrameElement): void {
+    Object.assign(iframe.style, {
+      position: 'absolute',
+      inset: '0',
+      width: '100%',
+      height: '100%',
+      border: 'none',
+      background: '#000',
+      display: 'block',
+      visibility: 'hidden',
+      opacity: '0',
+      pointerEvents: 'none',
+    })
+  }
+
+  private hideAllManagedIframes(): void {
+    this.htmlIframeEntries.forEach(entry => {
+      entry.iframe.style.visibility = 'hidden'
+      entry.iframe.style.opacity = '0'
+      entry.iframe.style.pointerEvents = 'none'
+    })
+    this.htmlIframeLayer.style.pointerEvents = 'none'
+  }
+
+  private activateHtmlIframe(htmlUrl: string): void {
+    const absoluteUrl = this.toAbsoluteUrl(htmlUrl)
+    const entry = this.htmlIframeEntries.get(absoluteUrl)
+    if (!entry) return
+    this.activeHtmlIframeUrl = absoluteUrl
+    this.refs.nodeIframe = entry.iframe
+    this.hideAllManagedIframes()
+  }
+
+  private isActiveHtmlIframeReady(): boolean {
+    const entry = this.htmlIframeEntries.get(this.activeHtmlIframeUrl)
+    return !!entry?.ready
+  }
+
+  private isLoading(): boolean {
+    const currentNode = this.engine.getCurrentNode()
+    const waitingForActiveHtml = currentNode?.contentType === 'html' && !this.isActiveHtmlIframeReady()
+    return this.engine.isPreloading() || this.htmlIframePreloading || waitingForActiveHtml
+  }
+
+  private async preloadHtmlIframes(manifest: PublishManifest): Promise<void> {
+    const htmlUrls = Array.from(new Set(
+      manifest.nodes
+        .filter(node => node.contentType === 'html' && node.htmlUrl)
+        .map(node => this.toAbsoluteUrl(node.htmlUrl as string)),
+    ))
+    if (htmlUrls.length === 0) return
+
+    this.htmlIframePreloading = true
+    this.render()
+
+    try {
+      await Promise.allSettled(htmlUrls.map(url => this.ensureHtmlIframe(url).readyPromise))
+    } finally {
+      this.htmlIframePreloading = false
+      this.render()
+    }
+  }
+
+  private maybeStartHtmlIframePreload(): void {
+    const manifest = this.engine.getManifest()
+    if (!manifest) return
+    if (this.engine.isPreloading()) return
+    if (this.htmlIframePreloading || this.htmlIframePreloadStarted) return
+
+    this.htmlIframePreloadStarted = true
+    void this.preloadHtmlIframes(manifest)
+  }
+
+  private ensureHtmlIframe(url: string): HtmlIframeEntry {
+    const absoluteUrl = this.toAbsoluteUrl(url)
+    const existing = this.htmlIframeEntries.get(absoluteUrl)
+    if (existing) return existing
+
+    const iframe = this.htmlIframeEntries.size === 0
+      ? this.refs.nodeIframe
+      : document.createElement('iframe')
+    if (this.htmlIframeEntries.size !== 0) {
+      iframe.sandbox.value = this.refs.nodeIframe.sandbox.value
+      this.htmlIframeLayer.appendChild(iframe)
+    }
+    this.applyManagedIframeBaseStyle(iframe)
+
+    let preloadResolved = false
+    let timeoutId = 0
+    let entry!: HtmlIframeEntry
+    const readyPromise = new Promise<void>((resolve) => {
+      const settlePreloadWait = () => {
+        if (preloadResolved) return
+        preloadResolved = true
+        entry.preloadSettled = true
+        window.clearTimeout(timeoutId)
+        resolve()
+      }
+
+      const handleLoad = () => {
+        entry.ready = true
+        iframe.removeEventListener('load', handleLoad)
+        settlePreloadWait()
+        if (this.refs.nodeIframe === iframe) {
+          this.render()
+          this.updateHotspotViewport()
+          requestAnimationFrame(() => {
+            this.confirmHostVisualCommitIfReady('node-iframe:onLoad:next-frame')
+          })
+        }
+      }
+
+      iframe.addEventListener('load', handleLoad)
+      timeoutId = window.setTimeout(() => {
+        settlePreloadWait()
+      }, 12000)
+      iframe.src = absoluteUrl
+    })
+
+    entry = {
+      iframe,
+      ready: false,
+      readyPromise,
+      preloadSettled: false,
+      cleanup: () => {
+        window.clearTimeout(timeoutId)
+      },
+    }
+    this.htmlIframeEntries.set(absoluteUrl, entry)
+    return entry
   }
 }
 

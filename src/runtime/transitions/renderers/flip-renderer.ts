@@ -38,8 +38,7 @@ export class FlipRenderer implements TransitionRenderer {
     this.sceneEl = document.createElement('div')
     this.sceneEl.className = 'transition-flip-scene'
 
-    // From element (front face)
-    this.fromEl = context.fromNodeEl.cloneNode(true) as HTMLElement
+    this.fromEl = context.fromNodeEl
     this.fromEl.className = 'transition-flip-from'
     this.fromEl.style.position = 'absolute'
     this.fromEl.style.inset = '0'
@@ -49,8 +48,7 @@ export class FlipRenderer implements TransitionRenderer {
     this.fromEl.style.overflow = 'hidden'
     this.fromEl.style.opacity = '1'
 
-    // To element (back face)
-    this.toEl = context.toNodeEl.cloneNode(true) as HTMLElement
+    this.toEl = context.toNodeEl
     this.toEl.className = 'transition-flip-to'
     this.toEl.style.position = 'absolute'
     this.toEl.style.inset = '0'
@@ -92,9 +90,6 @@ export class FlipRenderer implements TransitionRenderer {
     this.fromEl = null
     this.toEl = null
     this.config = null
-    if (this.styleEl && this.styleEl.parentNode) {
-      this.styleEl.parentNode.removeChild(this.styleEl)
-      this.styleEl = null
-    }
+    this.styleEl = null
   }
 }
