@@ -2,9 +2,11 @@ import type {
   PublishManifest,
   PublishHotspot,
   PublishNode,
+  PublishEdge,
+  BuiltinTransitionConfig,
 } from '../../shared/types.js'
 import type { BuiltinTransitionType } from '../../shared/types.js'
-import type { Transition } from '../transitions/index.js'
+import type { Transition, TransitionPlaybackDirection } from '../transitions/index.js'
 import { createTransition } from '../transitions/index.js'
 import { RuntimeResourcePreloader } from './resource-preloader.js'
 
@@ -27,16 +29,41 @@ interface SwitchNodeOptions {
   preserveVisualLayer?: boolean
 }
 
+interface TransitionHotspot {
+  normalizedX: number
+  normalizedY: number
+}
+
 interface PendingVisualCommit {
   kind: 'builtin' | 'video'
   targetNodeId: string
   cleanup: () => void
 }
 
+type ResolvedNavigationTransition =
+  | {
+    kind: 'builtin'
+    builtinTransition: BuiltinTransitionConfig
+  }
+  | {
+    kind: 'video'
+    videoUrl: string
+  }
+  | {
+    kind: 'none'
+  }
+
+interface NavigationHistoryEntry {
+  nodeId: string
+  viaEdgeId?: string
+  transitionKind: ResolvedNavigationTransition['kind']
+  resolvedBuiltinTransition?: BuiltinTransitionConfig
+}
+
 class PlayerCore {
   private manifest: PublishManifest | null = null
   private currentNodeId = 'root'
-  private history: string[] = []
+  private history: NavigationHistoryEntry[] = []
   private transitioning = false
   private preloading = false
 
@@ -102,7 +129,7 @@ class PlayerCore {
   }
 
   getHistory(): string[] {
-    return [...this.history]
+    return this.history.map(entry => entry.nodeId)
   }
 
   getCurrentNode(): PublishNode | null {
@@ -149,29 +176,12 @@ class PlayerCore {
     if (!this.manifest || this.transitioning) return
 
     const edge = this.manifest.edgeMap?.[hotspot.edgeId]
+    const transition = this.resolveForwardTransition(edge, hotspot)
 
     // Push current node to history before navigating
-    this.history.push(this.currentNodeId)
+    this.history.push(this.createHistoryEntry(this.currentNodeId, edge?.id, transition))
 
-    // Some builtin transitions can handle HTML nodes; others must skip them.
-    const hasHtmlNode = this.isHtmlNode(this.currentNodeId) || this.isHtmlNode(hotspot.targetNodeId)
-    const builtinAllowsHtml = hasHtmlNode && edge?.builtinTransition
-      ? HTML_SAFE_BUILTIN_TRANSITIONS.has(edge.builtinTransition.type)
-      : !hasHtmlNode
-
-    if (edge?.transitionType === 'builtin' && edge.builtinTransition && builtinAllowsHtml) {
-      this.transitioning = true
-      this.playBuiltinTransition(
-        hotspot.targetNodeId,
-        edge.builtinTransition,
-        hotspot,
-      )
-    } else if (edge?.videoUrl) {
-      this.transitioning = true
-      this.playVideoTransition(hotspot.targetNodeId, edge.videoUrl)
-    } else {
-      this.switchNode(hotspot.targetNodeId)
-    }
+    this.navigateWithResolvedTransition(hotspot.targetNodeId, transition, hotspot, 'forward')
   }
 
   handleHotspotById(edgeId: string): void {
@@ -196,9 +206,16 @@ class PlayerCore {
 
   handleBack(): void {
     if (this.history.length === 0) return
-    const prevNodeId = this.history[this.history.length - 1]
+    const previousEntry = this.history[this.history.length - 1]
+    const prevNodeId = previousEntry.nodeId
     this.history = this.history.slice(0, -1)
-    this.switchNode(prevNodeId)
+    const transition = this.resolveBackwardTransition(previousEntry)
+    this.navigateWithResolvedTransition(
+      prevNodeId,
+      transition,
+      { normalizedX: 0.5, normalizedY: 0.5 },
+      'backward',
+    )
   }
 
   switchNode(nodeId: string, options: SwitchNodeOptions = {}): void {
@@ -222,7 +239,7 @@ class PlayerCore {
 
   /** Breadcrumb click — push current node to history then switch. */
   navigateTo(nodeId: string): void {
-    this.history.push(this.currentNodeId)
+    this.history.push(this.createHistoryEntry(this.currentNodeId, undefined, { kind: 'none' }))
     this.switchNode(nodeId)
   }
 
@@ -348,7 +365,8 @@ class PlayerCore {
   private playBuiltinTransition(
     targetNodeId: string,
     config: NonNullable<ReturnType<typeof this.getEdgeConfig>['builtinTransition']>,
-    hotspot: PublishHotspot,
+    hotspot: TransitionHotspot,
+    playbackDirection: TransitionPlaybackDirection = 'forward',
   ): void {
     if (!this.manifest) return
 
@@ -385,6 +403,7 @@ class PlayerCore {
         toNodeEl: toEl,
         hotspot: { x: hotspot.normalizedX, y: hotspot.normalizedY },
         config,
+        playbackDirection,
       }
 
       const transitionPromise = this.activeTransition!.play(context)
@@ -530,6 +549,145 @@ class PlayerCore {
   private getEdgeConfig() {
     // Helper kept for type reference; not used at runtime.
     return null as any
+  }
+
+  private createHistoryEntry(
+    nodeId: string,
+    viaEdgeId: string | undefined,
+    transition: ResolvedNavigationTransition,
+  ): NavigationHistoryEntry {
+    return {
+      nodeId,
+      viaEdgeId,
+      transitionKind: transition.kind,
+      resolvedBuiltinTransition: transition.kind === 'builtin'
+        ? transition.builtinTransition
+        : undefined,
+    }
+  }
+
+  private resolveForwardTransition(
+    edge: PublishEdge | undefined,
+    hotspot: TransitionHotspot,
+  ): ResolvedNavigationTransition {
+    if (!edge) {
+      return { kind: 'none' }
+    }
+
+    const hasHtmlNode = this.isHtmlNode(edge.fromNodeId) || this.isHtmlNode(edge.toNodeId)
+    const builtinAllowsHtml = hasHtmlNode && edge.builtinTransition
+      ? HTML_SAFE_BUILTIN_TRANSITIONS.has(edge.builtinTransition.type)
+      : !hasHtmlNode
+
+    if (edge.transitionType === 'builtin' && edge.builtinTransition && builtinAllowsHtml) {
+      return {
+        kind: 'builtin',
+        builtinTransition: this.resolveBuiltinTransitionConfig(edge.builtinTransition, hotspot),
+      }
+    }
+
+    if (edge.videoUrl) {
+      return {
+        kind: 'video',
+        videoUrl: edge.videoUrl,
+      }
+    }
+
+    return { kind: 'none' }
+  }
+
+  private resolveBackwardTransition(
+    historyEntry: NavigationHistoryEntry,
+  ): ResolvedNavigationTransition {
+    if (
+      historyEntry.transitionKind === 'builtin'
+      && historyEntry.resolvedBuiltinTransition
+      && this.canPlayBuiltinTransitionBetween(
+        this.currentNodeId,
+        historyEntry.nodeId,
+        historyEntry.resolvedBuiltinTransition.type,
+      )
+    ) {
+      return {
+        kind: 'builtin',
+        builtinTransition: this.reverseBuiltinTransitionConfig(historyEntry.resolvedBuiltinTransition),
+      }
+    }
+
+    return { kind: 'none' }
+  }
+
+  private navigateWithResolvedTransition(
+    targetNodeId: string,
+    transition: ResolvedNavigationTransition,
+    hotspot: TransitionHotspot,
+    playbackDirection: TransitionPlaybackDirection,
+  ): void {
+    if (transition.kind === 'builtin') {
+      this.transitioning = true
+      this.playBuiltinTransition(targetNodeId, transition.builtinTransition, hotspot, playbackDirection)
+      return
+    }
+
+    if (transition.kind === 'video') {
+      this.transitioning = true
+      this.playVideoTransition(targetNodeId, transition.videoUrl)
+      return
+    }
+
+    this.switchNode(targetNodeId)
+  }
+
+  private canPlayBuiltinTransitionBetween(
+    fromNodeId: string,
+    toNodeId: string,
+    transitionType: BuiltinTransitionType,
+  ): boolean {
+    const hasHtmlNode = this.isHtmlNode(fromNodeId) || this.isHtmlNode(toNodeId)
+    if (!hasHtmlNode) return true
+    return HTML_SAFE_BUILTIN_TRANSITIONS.has(transitionType)
+  }
+
+  private resolveBuiltinTransitionConfig(
+    config: BuiltinTransitionConfig,
+    hotspot: TransitionHotspot,
+  ): BuiltinTransitionConfig {
+    if (config.type !== 'zoom') {
+      return { ...config }
+    }
+
+    return {
+      ...config,
+      centerX: config.centerX ?? hotspot.normalizedX,
+      centerY: config.centerY ?? hotspot.normalizedY,
+    }
+  }
+
+  private reverseBuiltinTransitionConfig(
+    config: BuiltinTransitionConfig,
+  ): BuiltinTransitionConfig {
+    if (config.type === 'pan') {
+      const reverseDirectionMap = {
+        left: 'right',
+        right: 'left',
+        up: 'down',
+        down: 'up',
+      } as const
+
+      return {
+        ...config,
+        direction: reverseDirectionMap[config.direction],
+      }
+    }
+
+    if (config.type === 'zoom') {
+      return {
+        ...config,
+        direction: config.direction === 'in' ? 'out' : 'in',
+      }
+    }
+
+    return { ...config }
   }
 }
 

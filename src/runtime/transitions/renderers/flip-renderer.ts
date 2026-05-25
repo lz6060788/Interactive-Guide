@@ -1,4 +1,9 @@
-import type { TransitionContext, TransitionRenderer, FlipTransitionConfig } from '../transition-interface.js'
+import type {
+  TransitionContext,
+  TransitionRenderer,
+  FlipTransitionConfig,
+  TransitionPlaybackDirection,
+} from '../transition-interface.js'
 
 const FLIP_CSS = `
   .transition-flip-container { position: absolute; inset: 0; perspective: 1000px; overflow: hidden; }
@@ -16,10 +21,12 @@ export class FlipRenderer implements TransitionRenderer {
   private toEl: HTMLElement | null = null
   private styleEl: HTMLStyleElement | null = null
   private config: FlipTransitionConfig | null = null
+  private playbackDirection: TransitionPlaybackDirection = 'forward'
 
   renderSetup(context: TransitionContext): void {
     // Store config for later use
     this.config = context.config as FlipTransitionConfig
+    this.playbackDirection = context.playbackDirection ?? 'forward'
 
     if (!document.getElementById('transition-flip-styles')) {
       this.styleEl = document.createElement('style')
@@ -29,6 +36,7 @@ export class FlipRenderer implements TransitionRenderer {
     }
 
     const isHorizontal = this.config.direction === 'horizontal'
+    const rotationSign = this.playbackDirection === 'backward' ? -1 : 1
 
     // Container with perspective
     this.containerEl = document.createElement('div')
@@ -65,7 +73,7 @@ export class FlipRenderer implements TransitionRenderer {
 
     const axis = isHorizontal ? 'Y' : 'X'
     this.fromEl.style.transform = `rotate${axis}(0deg)`
-    this.toEl.style.transform = `rotate${axis}(180deg)`
+    this.toEl.style.transform = `rotate${axis}(${180 * rotationSign}deg)`
     this.sceneEl.style.transform = `rotate${axis}(0deg)`
     this.sceneEl.style.transition = 'none'
   }
@@ -75,7 +83,7 @@ export class FlipRenderer implements TransitionRenderer {
 
     const isHorizontal = this.config.direction === 'horizontal'
     const axis = isHorizontal ? 'Y' : 'X'
-    const maxAngle = 180
+    const maxAngle = this.playbackDirection === 'backward' ? -180 : 180
 
     const rotateAngle = progress * maxAngle
     this.sceneEl.style.transform = `rotate${axis}(${rotateAngle}deg)`
@@ -90,6 +98,7 @@ export class FlipRenderer implements TransitionRenderer {
     this.fromEl = null
     this.toEl = null
     this.config = null
+    this.playbackDirection = 'forward'
     this.styleEl = null
   }
 }

@@ -49,6 +49,8 @@ export interface ZoomTransitionConfig {
 // Union type for all builtin transition configs
 export type BuiltinTransitionConfig = PanTransitionConfig | FlipTransitionConfig | ZoomTransitionConfig
 
+export type TransitionPlaybackDirection = 'forward' | 'backward'
+
 // Context passed to transitions and renderers
 export interface TransitionContext {
   container: HTMLElement
@@ -56,6 +58,7 @@ export interface TransitionContext {
   toNodeEl: HTMLElement
   hotspot: { x: number, y: number }  // normalized 0-1
   config: BuiltinTransitionConfig
+  playbackDirection?: TransitionPlaybackDirection
 }
 
 // Transition logic interface (pure computation, no DOM)
