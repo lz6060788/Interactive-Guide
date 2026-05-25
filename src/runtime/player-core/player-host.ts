@@ -1,5 +1,11 @@
 import type { PublishManifest, PublishHotspot, PublishNode } from '../../shared/types.js'
 import { getResolutionDimensions } from '../../shared/utils.js'
+import {
+  HtmlNodeBridge,
+  type HtmlNodeBackRequestPayload,
+  type HtmlNodeBackResponsePayload,
+  type HtmlNodeBridgeHostPort,
+} from './html-node-bridge.js'
 import PlayerCore from './player-core.js'
 
 export interface PlayerHostRefs {
@@ -58,6 +64,7 @@ const BACK_ICON_SVG = `
 `
 export class PlayerHost {
   private engine: PlayerCore
+  private htmlNodeBridge: HtmlNodeBridge
   private dragState: DragState = {
     active: false,
     pointerId: null,
@@ -90,6 +97,12 @@ export class PlayerHost {
       nodeIframe: refs.nodeIframe,
       video: refs.video,
     })
+    const htmlNodeBridgeHostPort: HtmlNodeBridgeHostPort = {
+      getRuntimeSnapshot: this.getHtmlNodeBridgeRuntimeSnapshot,
+      handleBackRequest: this.handleHtmlNodeBackRequest,
+      handleLegacyHotspotClick: edgeId => this.engine.handleHotspotById(edgeId),
+    }
+    this.htmlNodeBridge = new HtmlNodeBridge(htmlNodeBridgeHostPort)
 
     this.bindEvents()
     this.buildChrome()
@@ -177,6 +190,7 @@ export class PlayerHost {
   destroy(): void {
     this.destroyers.forEach(dispose => dispose())
     this.destroyers = []
+    this.htmlNodeBridge.destroy()
     this.htmlIframeEntries.forEach(entry => {
       entry.cleanup()
       entry.iframe.remove()
@@ -195,12 +209,10 @@ export class PlayerHost {
 
     this.refs.nodeImage.addEventListener('load', this.handleNodeImageLoad)
     this.refs.nodeImage.addEventListener('pointerdown', this.handleNodeImagePointerDown)
-    window.addEventListener('message', this.handleWindowMessage)
     window.addEventListener('resize', this.handleWindowResize)
 
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('load', this.handleNodeImageLoad))
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('pointerdown', this.handleNodeImagePointerDown))
-    this.destroyers.push(() => window.removeEventListener('message', this.handleWindowMessage))
     this.destroyers.push(() => window.removeEventListener('resize', this.handleWindowResize))
     this.destroyers.push(() => this.detachDragListeners())
   }
@@ -224,14 +236,21 @@ export class PlayerHost {
     })
   }
 
-  private handleWindowMessage = (event: MessageEvent): void => {
-    if (event.data?.type === 'hotspot-click' && event.data?.edgeId) {
-      this.engine.handleHotspotById(event.data.edgeId)
-    }
-  }
-
   private handleWindowResize = (): void => {
     this.updateLayout()
+  }
+
+  private handleHtmlNodeBackRequest = (
+    _payload: HtmlNodeBackRequestPayload | undefined,
+  ): HtmlNodeBackResponsePayload => {
+    const handled = this.engine.getHistory().length > 0
+    if (handled) {
+      this.engine.handleBack()
+    }
+    return {
+      handled,
+      runtime: this.getHtmlNodeBridgeRuntimeSnapshot(),
+    }
   }
 
   private handleNodeImagePointerDown = (event: PointerEvent): void => {
@@ -638,6 +657,14 @@ export class PlayerHost {
     this.refs.nodeIframe.style.opacity = entry.ready && !transitioning ? '1' : '0'
     this.refs.nodeIframe.style.pointerEvents = entry.ready && !transitioning ? 'auto' : 'none'
     this.htmlIframeLayer.style.pointerEvents = entry.ready && !transitioning ? 'auto' : 'none'
+    if (entry.ready && !transitioning) {
+      this.htmlNodeBridge.activateNode({
+        iframe: entry.iframe,
+        node: currentNode,
+      })
+    } else {
+      this.htmlNodeBridge.deactivateNode()
+    }
 
     this.renderHotspots()
     this.refs.hotspots.style.left = '0px'
@@ -654,6 +681,7 @@ export class PlayerHost {
     const fitMode = currentNode.imageFitMode ?? 'fill'
     this.activeContentType = 'image'
     this.activeHtmlIframeUrl = ''
+    this.htmlNodeBridge.deactivateNode()
 
     this.refs.nodeImage.style.visibility = 'visible'
     this.refs.nodeImage.style.pointerEvents = transitioning ? 'none' : 'auto'
@@ -725,6 +753,25 @@ export class PlayerHost {
     this.refs.nodeImage.style.transform = `translate(-50%, -50%) translate(${nextX}px, ${nextY}px)`
   }
 
+  private getImageHorizontalPanRange(): { min: number; max: number } {
+    const currentNode = this.engine.getCurrentNode()
+    if (!currentNode || (currentNode.imageFitMode ?? 'fill') !== 'fitHeight') {
+      return { min: 0, max: 0 }
+    }
+
+    const containerRect = this.refs.container.getBoundingClientRect()
+    const imageRect = this.refs.nodeImage.getBoundingClientRect()
+    if (imageRect.width <= containerRect.width) {
+      return { min: 0, max: 0 }
+    }
+
+    const maxOffsetX = (imageRect.width - containerRect.width) / 2
+    return {
+      min: -maxOffsetX,
+      max: maxOffsetX,
+    }
+  }
+
   private detachDragListeners(): void {
     document.removeEventListener('pointermove', this.handleDragMove)
     document.removeEventListener('pointerup', this.handleDragEnd)
@@ -742,7 +789,23 @@ export class PlayerHost {
     })
   }
 
+  private ensureHotspotAnimationStyle(): void {
+    const styleId = 'hotspot-pulse-animation'
+    if (document.getElementById(styleId)) return
+    const style = document.createElement('style')
+    style.id = styleId
+    style.textContent = `
+      @keyframes hotspot-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+    `
+    document.head.appendChild(style)
+  }
+
   private createHotspotButton(hotspot: PublishHotspot, _node?: PublishNode | null): HTMLButtonElement {
+    this.ensureHotspotAnimationStyle()
+
     const button = document.createElement('button')
     const label = document.createElement('span')
 
@@ -763,13 +826,13 @@ export class PlayerHost {
     button.style.border = '1px solid #000000'
     button.style.background = 'rgba(255, 255, 255, 0.9)'
     button.style.color = 'rgba(0, 0, 0, 0.84)'
-    button.style.opacity = '1'
     button.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.16)'
     button.style.cursor = 'pointer'
     button.style.pointerEvents = 'auto'
     button.style.whiteSpace = 'nowrap'
     button.style.zIndex = '1'
     button.style.maxWidth = '180px'
+    button.style.animation = 'hotspot-pulse 2.5s ease-in-out infinite'
 
     label.textContent = hotspot.label
     label.style.display = 'block'
@@ -880,6 +943,19 @@ export class PlayerHost {
   private isActiveHtmlIframeReady(): boolean {
     const entry = this.htmlIframeEntries.get(this.activeHtmlIframeUrl)
     return !!entry?.ready
+  }
+
+  private getHtmlNodeBridgeRuntimeSnapshot = (): {
+    currentNodeId: string
+    historyDepth: number
+    canGoBack: boolean
+  } => {
+    const history = this.engine.getHistory()
+    return {
+      currentNodeId: this.engine.getCurrentNodeId(),
+      historyDepth: history.length,
+      canGoBack: history.length > 0,
+    }
   }
 
   private isLoading(): boolean {
