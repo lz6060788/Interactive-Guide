@@ -7,7 +7,8 @@ export const HTML_NODE_BRIDGE_HTML_SOURCE = 'interactive-guide-html-node'
 
 export type HtmlNodeBridgeMessageKind = 'event' | 'request' | 'response'
 export type HtmlNodeBridgeHostEventType = 'host:node-init' | 'host:node-exit'
-export type HtmlNodeBridgeHtmlRequestType = 'html:request-back'
+export type HtmlNodeBridgeHtmlRouteOpenMode = 'current-tab' | 'new-tab'
+export type HtmlNodeBridgeHtmlRequestType = 'html:request-back' | 'html:request-route'
 export type HtmlNodeBridgeResponseType =
   | HtmlNodeBridgeHostEventType
   | HtmlNodeBridgeHtmlRequestType
@@ -40,6 +41,18 @@ export interface HtmlNodeBackResponsePayload {
   runtime: HtmlNodeBridgeRuntimeSnapshot
 }
 
+export interface HtmlNodeRouteRequestPayload {
+  route: string
+  reason?: string
+  openMode?: HtmlNodeBridgeHtmlRouteOpenMode
+}
+
+export interface HtmlNodeRouteResponsePayload {
+  handled: boolean
+  route: string
+  openMode: HtmlNodeBridgeHtmlRouteOpenMode
+}
+
 export interface HtmlNodeBridgeEnvelope<TType extends string = string, TPayload = unknown> {
   channel: typeof HTML_NODE_BRIDGE_CHANNEL
   version: typeof HTML_NODE_BRIDGE_VERSION
@@ -62,6 +75,9 @@ export interface HtmlNodeBridgeHostPort {
   handleBackRequest: (
     payload: HtmlNodeBackRequestPayload | undefined,
   ) => HtmlNodeBackResponsePayload
+  handleRouteRequest: (
+    payload: HtmlNodeRouteRequestPayload | undefined,
+  ) => HtmlNodeRouteResponsePayload
   handleLegacyHotspotClick?: (edgeId: string) => void
 }
 
@@ -180,6 +196,11 @@ export class HtmlNodeBridge {
 
     if (envelope.type === 'html:request-back') {
       this.handleBackRequest(parsed)
+      return
+    }
+
+    if (envelope.type === 'html:request-route') {
+      this.handleRouteRequest(parsed)
     }
   }
 
@@ -194,6 +215,26 @@ export class HtmlNodeBridge {
       this.postResponseToSourceWindow(
         message,
         'html:request-back',
+        false,
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+        requestId,
+      )
+    }
+  }
+
+  private handleRouteRequest(message: ParsedBridgeMessage): void {
+    const requestId = message.envelope.requestId
+    try {
+      const payload = this.hostPort.handleRouteRequest(
+        message.envelope.payload as HtmlNodeRouteRequestPayload | undefined,
+      )
+      this.postResponseToSourceWindow(message, 'html:request-route', true, payload, requestId)
+    } catch (error) {
+      this.postResponseToSourceWindow(
+        message,
+        'html:request-route',
         false,
         {
           message: error instanceof Error ? error.message : String(error),

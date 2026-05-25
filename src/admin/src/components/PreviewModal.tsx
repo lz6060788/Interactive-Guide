@@ -131,6 +131,11 @@ export function PreviewModal({ packageId, onClose }: Props) {
       onStateChange: nextState => {
         setRuntimeState(nextState)
       },
+      onHtmlRouteRequest: ({ resolvedUrl }) => !!window.open(
+        resolvedUrl,
+        '_blank',
+        'noopener,noreferrer',
+      ),
     })
     hostRef.current = host
     host.loadManifest(m)

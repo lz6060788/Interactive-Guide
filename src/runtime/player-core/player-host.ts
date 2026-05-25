@@ -5,6 +5,9 @@ import {
   type HtmlNodeBackRequestPayload,
   type HtmlNodeBackResponsePayload,
   type HtmlNodeBridgeHostPort,
+  type HtmlNodeBridgeHtmlRouteOpenMode,
+  type HtmlNodeRouteRequestPayload,
+  type HtmlNodeRouteResponsePayload,
 } from './html-node-bridge.js'
 import PlayerCore from './player-core.js'
 
@@ -30,6 +33,12 @@ export interface PlayerHostState {
 interface PlayerHostOptions {
   onStateChange?: (state: PlayerHostState) => void
   onError?: (error: Error) => void
+  onHtmlRouteRequest?: (payload: {
+    route: string
+    reason?: string
+    openMode: HtmlNodeBridgeHtmlRouteOpenMode
+    resolvedUrl: string
+  }) => boolean | void
   layout?: {
     mode?: 'contain-center' | 'immersive-mobile'
     getViewport?: () => { width: number; height: number }
@@ -100,6 +109,7 @@ export class PlayerHost {
     const htmlNodeBridgeHostPort: HtmlNodeBridgeHostPort = {
       getRuntimeSnapshot: this.getHtmlNodeBridgeRuntimeSnapshot,
       handleBackRequest: this.handleHtmlNodeBackRequest,
+      handleRouteRequest: this.handleHtmlNodeRouteRequest,
       handleLegacyHotspotClick: edgeId => this.engine.handleHotspotById(edgeId),
     }
     this.htmlNodeBridge = new HtmlNodeBridge(htmlNodeBridgeHostPort)
@@ -250,6 +260,40 @@ export class PlayerHost {
     return {
       handled,
       runtime: this.getHtmlNodeBridgeRuntimeSnapshot(),
+    }
+  }
+
+  private handleHtmlNodeRouteRequest = (
+    payload: HtmlNodeRouteRequestPayload | undefined,
+  ): HtmlNodeRouteResponsePayload => {
+    const route = payload?.route?.trim()
+    if (!route) {
+      throw new Error('缺少可跳转的 route')
+    }
+
+    const openMode = payload?.openMode === 'new-tab' ? 'new-tab' : 'current-tab'
+    const resolvedUrl = this.resolveHtmlRouteUrl(route)
+
+    let handled = false
+    const callbackResult = this.options.onHtmlRouteRequest?.({
+      route,
+      reason: payload?.reason,
+      openMode,
+      resolvedUrl,
+    })
+
+    if (typeof callbackResult === 'boolean') {
+      handled = callbackResult
+    } else if (this.options.onHtmlRouteRequest) {
+      handled = true
+    } else {
+      handled = this.performDefaultHtmlRouteNavigation(resolvedUrl, openMode)
+    }
+
+    return {
+      handled,
+      route: resolvedUrl,
+      openMode,
     }
   }
 
@@ -905,6 +949,39 @@ export class PlayerHost {
 
   private toAbsoluteUrl(url: string): string {
     return new URL(url, window.location.href).href
+  }
+
+  private resolveHtmlRouteUrl(route: string): string {
+    if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(route)) {
+      return new URL(route).toString()
+    }
+
+    if (route.startsWith('/')) {
+      return new URL(route, window.location.origin).toString()
+    }
+
+    if (
+      route.startsWith('./')
+      || route.startsWith('../')
+      || route.startsWith('?')
+      || route.startsWith('#')
+    ) {
+      return new URL(route, window.location.href).toString()
+    }
+
+    return new URL(`/${route.replace(/^\/+/, '')}`, window.location.origin).toString()
+  }
+
+  private performDefaultHtmlRouteNavigation(
+    resolvedUrl: string,
+    openMode: HtmlNodeBridgeHtmlRouteOpenMode,
+  ): boolean {
+    if (openMode === 'new-tab') {
+      return !!window.open(resolvedUrl, '_blank', 'noopener,noreferrer')
+    }
+
+    window.open(resolvedUrl, '_self')
+    return true
   }
 
   private applyManagedIframeBaseStyle(iframe: HTMLIFrameElement): void {
