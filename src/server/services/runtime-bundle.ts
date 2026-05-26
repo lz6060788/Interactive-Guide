@@ -229,6 +229,7 @@ export class RuntimeBundleGenerator {
       title: guide.title,
       rootNodeId: 'root',
       resolution: guide.resolution,
+      runtimeConfig: guide.runtimeConfig,
       nodes,
       edges,
       nodeMap,

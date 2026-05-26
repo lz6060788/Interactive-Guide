@@ -1,4 +1,10 @@
-import type { PublishManifest, PublishHotspot, PublishNode } from '../../shared/types.js'
+import type {
+  HtmlIframePreloadStrategy,
+  PublishManifest,
+  PublishHotspot,
+  PublishNode,
+  RuntimeConfig,
+} from '../../shared/types.js'
 import { getResolutionDimensions } from '../../shared/utils.js'
 import {
   HtmlNodeBridge,
@@ -43,6 +49,7 @@ interface PlayerHostOptions {
     mode?: 'contain-center' | 'immersive-mobile'
     getViewport?: () => { width: number; height: number }
   }
+  runtimeConfig?: RuntimeConfig
 }
 
 type DragState = {
@@ -93,7 +100,7 @@ export class PlayerHost {
   private htmlIframeLayer = document.createElement('div')
   private htmlIframeEntries = new Map<string, HtmlIframeEntry>()
   private htmlIframePreloading = false
-  private htmlIframePreloadStarted = false
+  private htmlIframePreloadedScopes = new Set<string>()
   private activeHtmlIframeUrl = ''
 
   constructor(
@@ -122,8 +129,8 @@ export class PlayerHost {
 
   loadManifest(manifest: PublishManifest): void {
     this.engine.loadManifest(manifest)
-    this.htmlIframePreloadStarted = false
     this.htmlIframePreloading = false
+    this.htmlIframePreloadedScopes.clear()
     this.updateLayout()
     this.render()
   }
@@ -161,6 +168,7 @@ export class PlayerHost {
   }
 
   handleHotspotById(edgeId: string): void {
+    this.primeHtmlIframeForEdgeId(edgeId)
     this.engine.handleHotspotById(edgeId)
   }
 
@@ -168,7 +176,7 @@ export class PlayerHost {
     const manifest = this.engine.getManifest()
     if (!manifest || this.engine.isTransitioning()) return false
     if (!manifest.edgeMap[edgeId]) return false
-    this.engine.handleHotspotById(edgeId)
+    this.handleHotspotById(edgeId)
     return true
   }
 
@@ -184,7 +192,7 @@ export class PlayerHost {
       edge.fromNodeId === currentNodeId && edge.toNodeId === nodeId)
 
     if (directEdge) {
-      this.engine.handleHotspotById(directEdge.id)
+      this.handleHotspotById(directEdge.id)
       return true
     }
 
@@ -896,7 +904,7 @@ export class PlayerHost {
     }
 
     button.addEventListener('click', () => {
-      this.engine.handleHotspotClick(hotspot)
+      this.handleHotspotNavigation(hotspot)
     })
 
     return button
@@ -1038,25 +1046,20 @@ export class PlayerHost {
   private isLoading(): boolean {
     const currentNode = this.engine.getCurrentNode()
     const waitingForActiveHtml = currentNode?.contentType === 'html' && !this.isActiveHtmlIframeReady()
-    return this.engine.isPreloading() || this.htmlIframePreloading || waitingForActiveHtml
+    return this.engine.isPreloading() || waitingForActiveHtml
   }
 
-  private async preloadHtmlIframes(manifest: PublishManifest): Promise<void> {
-    const htmlUrls = Array.from(new Set(
-      manifest.nodes
-        .filter(node => node.contentType === 'html' && node.htmlUrl)
-        .map(node => this.toAbsoluteUrl(node.htmlUrl as string)),
-    ))
+  private async preloadHtmlIframes(urls: string[]): Promise<void> {
+    const htmlUrls = Array.from(new Set(urls.map(url => this.toAbsoluteUrl(url))))
     if (htmlUrls.length === 0) return
 
     this.htmlIframePreloading = true
-    this.render()
 
     try {
       await Promise.allSettled(htmlUrls.map(url => this.ensureHtmlIframe(url).readyPromise))
     } finally {
       this.htmlIframePreloading = false
-      this.render()
+      this.maybeStartHtmlIframePreload()
     }
   }
 
@@ -1064,10 +1067,69 @@ export class PlayerHost {
     const manifest = this.engine.getManifest()
     if (!manifest) return
     if (this.engine.isPreloading()) return
-    if (this.htmlIframePreloading || this.htmlIframePreloadStarted) return
+    if (this.htmlIframePreloading) return
 
-    this.htmlIframePreloadStarted = true
-    void this.preloadHtmlIframes(manifest)
+    const strategy = this.resolveHtmlIframePreloadStrategy(manifest)
+    if (strategy === 'on-demand') return
+
+    const scope = this.getHtmlIframePreloadScope(manifest, strategy)
+    if (!scope) return
+    if (this.htmlIframePreloadedScopes.has(scope.key)) return
+
+    this.htmlIframePreloadedScopes.add(scope.key)
+    void this.preloadHtmlIframes(scope.urls)
+  }
+
+  private resolveHtmlIframePreloadStrategy(manifest: PublishManifest): HtmlIframePreloadStrategy {
+    return this.options.runtimeConfig?.htmlIframePreloadStrategy
+      ?? manifest.runtimeConfig?.htmlIframePreloadStrategy
+      ?? 'all'
+  }
+
+  private getHtmlIframePreloadScope(
+    manifest: PublishManifest,
+    strategy: Exclude<HtmlIframePreloadStrategy, 'on-demand'>,
+  ): { key: string, urls: string[] } | null {
+    if (strategy === 'all') {
+      const urls = manifest.nodes
+        .filter(node => node.contentType === 'html' && node.htmlUrl)
+        .map(node => node.htmlUrl as string)
+      return {
+        key: 'all',
+        urls,
+      }
+    }
+
+    const currentNodeId = this.engine.getCurrentNodeId()
+    const urls = manifest.edges
+      .filter(edge => edge.fromNodeId === currentNodeId)
+      .map(edge => manifest.nodeMap[edge.toNodeId])
+      .filter((node): node is PublishNode => !!node && node.contentType === 'html' && !!node.htmlUrl)
+      .map(node => node.htmlUrl as string)
+
+    return {
+      key: `current-node:${currentNodeId}`,
+      urls,
+    }
+  }
+
+  private primeHtmlIframeForEdgeId(edgeId: string): void {
+    const manifest = this.engine.getManifest()
+    const edge = manifest?.edgeMap[edgeId]
+    if (!edge) return
+    this.primeHtmlIframeForNodeId(edge.toNodeId)
+  }
+
+  private primeHtmlIframeForNodeId(nodeId: string): void {
+    const manifest = this.engine.getManifest()
+    const node = manifest?.nodeMap[nodeId]
+    if (!node || node.contentType !== 'html' || !node.htmlUrl) return
+    void this.ensureHtmlIframe(node.htmlUrl).readyPromise
+  }
+
+  private handleHotspotNavigation(hotspot: PublishHotspot): void {
+    this.primeHtmlIframeForNodeId(hotspot.targetNodeId)
+    this.engine.handleHotspotClick(hotspot)
   }
 
   private ensureHtmlIframe(url: string): HtmlIframeEntry {

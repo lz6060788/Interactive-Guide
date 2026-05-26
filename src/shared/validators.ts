@@ -5,6 +5,7 @@
 // No Zod dependency in shared — pure runtime checks.
 
 import type {
+  RuntimeConfig,
   KnowledgePackage,
   KnowledgeNode,
   KnowledgeEdge,
@@ -81,6 +82,20 @@ function validateBuiltinTransitionConfig(
   }
 }
 
+function validateRuntimeConfig(
+  runtimeConfig: RuntimeConfig | undefined,
+  label: string,
+  errors: string[],
+) {
+  const strategy = runtimeConfig?.htmlIframePreloadStrategy
+  if (strategy == null) return
+  if (!['all', 'current-node', 'on-demand'].includes(strategy)) {
+    errors.push(
+      `${label} runtimeConfig.htmlIframePreloadStrategy must be 'all', 'current-node', or 'on-demand', got '${strategy}'`,
+    )
+  }
+}
+
 // ─── KnowledgePackage Validation ────────────────────────────
 
 export function validateKnowledgePackage(pkg: KnowledgePackage): ValidationResult {
@@ -100,6 +115,7 @@ export function validateKnowledgePackage(pkg: KnowledgePackage): ValidationResul
   if (!isPackageResolution(pkg.resolution)) {
     errors.push(`KnowledgePackage.resolution must be one of ${PACKAGE_RESOLUTIONS.join(', ')}`)
   }
+  validateRuntimeConfig(pkg.runtimeConfig, 'KnowledgePackage', errors)
 
   // Nodes
   if (!Array.isArray(pkg.nodes) || pkg.nodes.length === 0) {
@@ -267,6 +283,7 @@ export function validatePublishManifest(manifest: PublishManifest): ValidationRe
   if (!manifest.version) errors.push('version is required')
   if (!manifest.title) errors.push('title is required')
   if (manifest.rootNodeId !== 'root') errors.push('rootNodeId must be "root"')
+  validateRuntimeConfig(manifest.runtimeConfig, 'PublishManifest', errors)
 
   // rootNodeId must exist in nodeMap
   if (!manifest.nodeMap['root']) {
