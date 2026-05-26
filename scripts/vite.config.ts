@@ -1,0 +1,55 @@
+import { defineConfig } from 'vite'
+import path from 'node:path'
+
+export default defineConfig({
+  build: {
+    lib: {
+      entry: path.resolve(__dirname, 'upload-bundle.ts'),
+      fileName: () => 'upload-bundle.mjs',
+      formats: ['es'],
+    },
+    rollupOptions: {
+      external: [
+        'node:fs',
+        'node:path',
+        'node:url',
+        'node:crypto',
+        'node:stream',
+        'node:buffer',
+        'node:events',
+        'node:util',
+        'node:os',
+        'node:net',
+        'node:tls',
+        'node:http',
+        'node:https',
+        'node:zlib',
+        'node:child_process',
+        'fs',
+        'path',
+        'url',
+        'crypto',
+        'stream',
+        'buffer',
+        'events',
+        'util',
+        'os',
+        'net',
+        'tls',
+        'http',
+        'https',
+        'zlib',
+        'child_process',
+      ],
+      output: {
+        banner: '#!/usr/bin/env node',
+        manualChunks: undefined,
+        inlineDynamicImports: true,
+      },
+    },
+    outDir: path.resolve(__dirname, 'dist'),
+    emptyOutDir: true,
+    minify: false,
+    target: 'node18',
+  },
+})

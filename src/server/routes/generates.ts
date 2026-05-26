@@ -30,6 +30,17 @@ export function createGeneratesRouter(generateService: GenerateService): Router 
     }
   })
 
+  // ─── Bundle Publish (Upload to OSS) ─────────────────────
+
+  router.post('/runtime-bundles/:bundleId/publish', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await generateService.publishBundle(String(req.params.bundleId))
+      res.json({ data: result })
+    } catch (err) {
+      next(err)
+    }
+  })
+
   // ─── Generate Status ───────────────────────────────────
 
   router.get('/generates', (_req: Request, res: Response) => {
