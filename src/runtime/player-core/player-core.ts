@@ -9,6 +9,7 @@ import type { BuiltinTransitionType } from '../../shared/types.js'
 import type { Transition, TransitionPlaybackDirection } from '../transitions/index.js'
 import { createTransition } from '../transitions/index.js'
 import { RuntimeResourcePreloader } from './resource-preloader.js'
+import { TransitionVideoController } from './transition-video-controller.js'
 
 // Builtin transitions that can safely handle HTML nodes (iframe content).
 // Transitions NOT in this set will skip HTML nodes and fall back to video / instant switch.
@@ -70,18 +71,23 @@ class PlayerCore {
   private activeTransition: Transition | null = null
   private transitionContainer: HTMLElement | null = null
   private animationFrameId: number | null = null
-  private videoCleanup: (() => void) | null = null
   private pendingVisualCommit: PendingVisualCommit | null = null
   private resourcePreloader = new RuntimeResourcePreloader()
+  private videoController: TransitionVideoController
 
   private listeners = new Map<EventName, Set<Function>>()
 
-  constructor(private refs: PlayerRefs) {}
+  constructor(private refs: PlayerRefs) {
+    this.videoController = new TransitionVideoController(this.refs.video)
+  }
 
   updateRefs(nextRefs: Partial<PlayerRefs>): void {
     this.refs = {
       ...this.refs,
       ...nextRefs,
+    }
+    if (this.refs.video) {
+      this.videoController.updateVideoElement(this.refs.video)
     }
   }
 
@@ -151,6 +157,7 @@ class PlayerCore {
       this.transitioning = false
       this.refs.nodeImage.style.opacity = '1'
       pending.cleanup()
+      void this.primeLikelyVideoTransition()
       this.emit('stateChange')
       this.emit('transitionEnd')
     })
@@ -166,6 +173,7 @@ class PlayerCore {
     this.preloading = true
     this.refs.nodeImage.style.opacity = '1'
     this.emit('stateChange')
+    void this.primeLikelyVideoTransition()
     void this.resourcePreloader.preloadAllResources(manifest).finally(() => {
       this.preloading = false
       this.emit('stateChange')
@@ -231,10 +239,12 @@ class PlayerCore {
 
     if (!options.preserveVisualLayer) {
       this.cleanupVideo()
-      this.refs.video.style.opacity = '0'
     }
 
     this.emit('stateChange')
+    if (!options.preserveVisualLayer) {
+      void this.primeLikelyVideoTransition()
+    }
   }
 
   /** Breadcrumb click — push current node to history then switch. */
@@ -267,7 +277,6 @@ class PlayerCore {
     this.cleanupVideo()
     this.resourcePreloader.clear()
     this.refs.nodeImage.style.opacity = '1'
-    this.refs.video.style.opacity = '0'
     this.listeners.clear()
   }
 
@@ -457,59 +466,29 @@ class PlayerCore {
   }
 
   private playVideoTransition(targetNodeId: string, videoUrl: string): void {
-    const video = this.refs.video
-    let started = false
+    this.videoController.play(videoUrl, {
+      onStart: () => {
+        this.refs.nodeImage.style.opacity = '0'
+        this.emit('stateChange')
+        this.emit('transitionStart')
+      },
+      onEnded: () => {
+        this.pendingVisualCommit = {
+          kind: 'video',
+          targetNodeId,
+          cleanup: () => {
+            this.cleanupVideo()
+          },
+        }
 
-    const startPlayback = () => {
-      if (started) return
-      started = true
-
-      this.refs.nodeImage.style.opacity = '0'
-      video.style.opacity = '1'
-      this.emit('stateChange')
-      this.emit('transitionStart')
-
-      video.play().catch(() => {
+        this.switchNode(targetNodeId, { preserveVisualLayer: true })
+      },
+      onError: () => {
         this.cleanupVideo()
         this.switchNode(targetNodeId)
         this.emit('transitionEnd')
-      })
-    }
-
-    const handleEnded = () => {
-      this.pendingVisualCommit = {
-        kind: 'video',
-        targetNodeId,
-        cleanup: () => {
-          this.cleanupVideo()
-        },
-      }
-
-      this.switchNode(targetNodeId, { preserveVisualLayer: true })
-    }
-
-    const handleError = () => {
-      this.cleanupVideo()
-      this.switchNode(targetNodeId)
-      this.emit('transitionEnd')
-    }
-
-    this.cleanupVideo()
-    video.onloadeddata = startPlayback
-    video.oncanplay = startPlayback
-    video.onended = handleEnded
-    video.onerror = handleError
-    video.src = videoUrl
-    video.currentTime = 0
-    video.load()
-
-    this.videoCleanup = () => {
-      video.onloadeddata = null
-      video.oncanplay = null
-      video.onended = null
-      video.onerror = null
-      video.style.opacity = '0'
-    }
+      },
+    })
   }
 
   private abortRunningTransition(): void {
@@ -526,15 +505,20 @@ class PlayerCore {
   }
 
   private cleanupVideo(): void {
-    if (this.videoCleanup) {
-      this.videoCleanup()
-      this.videoCleanup = null
-    }
-    const video = this.refs.video
-    video.pause()
-    video.removeAttribute('src')
-    video.load()
-    video.style.opacity = '0'
+    this.videoController.clear()
+  }
+
+  private getLikelyVideoTransitionUrl(nodeId: string): string | null {
+    if (!this.manifest) return null
+    const edge = this.manifest.edges.find(item => item.fromNodeId === nodeId && !!item.videoUrl)
+    return edge?.videoUrl ?? null
+  }
+
+  private async primeLikelyVideoTransition(): Promise<void> {
+    if (!this.manifest || this.transitioning) return
+
+    const nextVideoUrl = this.getLikelyVideoTransitionUrl(this.currentNodeId)
+    await this.videoController.prime(nextVideoUrl)
   }
 
   private clearPendingVisualCommit(reason: string): void {
