@@ -108,6 +108,7 @@ const configSchema = z.object({
   OBJECT_STORAGE_ADDRESSING_STYLE: z.enum(['virtual', 'path']).default('virtual'),
   OBJECT_STORAGE_SIGNED_URL_EXPIRES_SECONDS: z.coerce.number().default(86400),
   OBJECT_STORAGE_PUBLIC_BASE_URL: z.string().default(''),
+  BUNDLE_PUBLIC_BASE_URL: z.string().default(''),
 
   // Default resolution
   DEFAULT_RESOLUTION: z.enum(['16:9', '9:16', '375*808']).default('16:9'),

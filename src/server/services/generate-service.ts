@@ -9,6 +9,8 @@ import type { RuntimeBundlePayload } from '../../shared/types.js'
 import { BuildPipeline } from './pipeline.js'
 import { PromptBuilder } from './prompt-builder.js'
 import { RuntimeBundleGenerator } from './runtime-bundle.js'
+import { BundleUploader, type BundleUploadResult } from './bundle-uploader.js'
+import { isObjectStorageConfigured } from '../storage/object-storage.js'
 
 import type * as vision from '../ai/vision.js'
 import type * as image from '../ai/image.js'
@@ -73,8 +75,20 @@ export class GenerateService {
     return this._pipeline.regenerateHotspots(guideId, nodeId)
   }
 
-  async packageGuide(guideId: string): Promise<RuntimeBundlePayload> {
-    return this._pipeline.packageGuide(guideId)
+  async packageGuide(guideId: string, autoUpload: boolean = true): Promise<RuntimeBundlePayload> {
+    const bundle = await this._pipeline.packageGuide(guideId)
+
+    if (autoUpload && isObjectStorageConfigured()) {
+      const uploader = new BundleUploader()
+      await uploader.uploadBundle(bundle.bundleId)
+    }
+
+    return bundle
+  }
+
+  async publishBundle(bundleId: string): Promise<BundleUploadResult> {
+    const uploader = new BundleUploader()
+    return uploader.uploadBundle(bundleId)
   }
 
   // ─── PromptBuilder access (for internal use by tests) ────────
