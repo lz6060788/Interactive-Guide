@@ -239,6 +239,7 @@ export class FsRepository implements Repository {
       visualStyle: manifest.visualStyle,
       transitionStyle: manifest.transitionStyle,
       style: manifest.style,
+      runtimeConfig: manifest.runtimeConfig,
       nodes: manifest.nodes.map(node => ({
         id: node.id,
         title: node.title,
@@ -366,6 +367,7 @@ export class FsRepository implements Repository {
       visualStyle: guide.visualStyle,
       transitionStyle: guide.transitionStyle,
       style: guide.style,
+      runtimeConfig: guide.runtimeConfig,
       nodes,
       edges,
       nodeMap,

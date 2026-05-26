@@ -161,10 +161,15 @@ export class GuideService {
 
     this.repo.saveGuide(updated)
 
-    // Always sync resolution to workspace manifest when present
-    if (updates.resolution) {
+    // Keep preview manifest aligned for runtime-related top-level fields.
+    if (updates.resolution || updates.runtimeConfig) {
       this.patchWorkspaceManifest(id, manifest => {
-        manifest.resolution = updates.resolution as any
+        if (updates.resolution) {
+          manifest.resolution = updates.resolution as any
+        }
+        if (updates.runtimeConfig !== undefined) {
+          manifest.runtimeConfig = updates.runtimeConfig
+        }
       })
     }
 

@@ -19,6 +19,7 @@ export type TransitionDescriptionMode = 'auto' | 'manual'
 export type BuiltinTransitionType = 'pan' | 'flip' | 'zoom'
 export type ImageFitMode = 'fill' | 'fitHeight' | 'fitWidth'
 export type EasingType = 'ease-in-out' | 'ease-in' | 'ease-out' | 'linear'
+export type HtmlIframePreloadStrategy = 'all' | 'current-node' | 'on-demand'
 
 export interface NormalizedPoint {
   x: number
@@ -154,6 +155,16 @@ export interface PackageMetadata {
   updatedAt?: string
 }
 
+export interface RuntimeConfig {
+  /**
+   * Controls when HTML node iframes are warmed up.
+   * - 'all': eagerly preload every HTML node after runtime bootstraps.
+   * - 'current-node': preload direct HTML children of the current node.
+   * - 'on-demand': wait until the related hotspot/edge is triggered.
+   */
+  htmlIframePreloadStrategy?: HtmlIframePreloadStrategy
+}
+
 export interface KnowledgePackage {
   id: string
   title: string
@@ -165,6 +176,7 @@ export interface KnowledgePackage {
   transitionStyle?: string
   /** Infographic style key (e.g. 'morandi-journal', 'pop-laboratory') */
   style?: string
+  runtimeConfig?: RuntimeConfig
   nodes: KnowledgeNode[]
   edges: KnowledgeEdge[]
   metadata?: PackageMetadata
@@ -317,6 +329,7 @@ export interface PublishManifest {
   visualStyle?: string
   transitionStyle?: string
   style?: string
+  runtimeConfig?: RuntimeConfig
   nodes: PublishNode[]
   edges: PublishEdge[]
   nodeMap: Record<string, PublishNode>
