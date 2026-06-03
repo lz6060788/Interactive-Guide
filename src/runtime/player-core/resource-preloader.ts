@@ -5,9 +5,15 @@ type PreloadEntry = {
   promise: Promise<void>
 }
 
+export interface PreloadedImageMetadata {
+  naturalWidth: number
+  naturalHeight: number
+}
+
 export class RuntimeResourcePreloader {
   private imageEntries = new Map<string, PreloadEntry>()
   private htmlEntries = new Map<string, PreloadEntry>()
+  private imageMetadata = new Map<string, PreloadedImageMetadata>()
   private fullPreloadPromise: Promise<void> | null = null
 
   preloadImage(url?: string): Promise<void> {
@@ -32,6 +38,10 @@ export class RuntimeResourcePreloader {
         } catch {
           // decode() may reject even when the image is already usable.
         }
+        this.imageMetadata.set(url, {
+          naturalWidth: img.naturalWidth,
+          naturalHeight: img.naturalHeight,
+        })
         const entry = this.imageEntries.get(url)
         if (entry) entry.status = 'fulfilled'
         resolve()
@@ -83,8 +93,14 @@ export class RuntimeResourcePreloader {
     const imageJobs: Promise<void>[] = []
     const htmlJobs: Promise<void>[] = []
     for (const node of manifest.nodes) {
-      if (node.contentType === 'html') {
+      const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
+      if (nodeKind === 'html') {
         htmlJobs.push(this.preloadHtml(node.htmlUrl))
+      } else if (nodeKind === 'region') {
+        const sourceNode = node.regionViewport
+          ? manifest.nodeMap[node.regionViewport.sourceNodeId]
+          : undefined
+        imageJobs.push(this.preloadImage(sourceNode?.imageUrl))
       } else {
         imageJobs.push(this.preloadImage(node.imageUrl))
       }
@@ -101,5 +117,11 @@ export class RuntimeResourcePreloader {
     this.fullPreloadPromise = null
     this.imageEntries.clear()
     this.htmlEntries.clear()
+    this.imageMetadata.clear()
+  }
+
+  getImageMetadata(url?: string): PreloadedImageMetadata | null {
+    if (!url) return null
+    return this.imageMetadata.get(url) ?? null
   }
 }

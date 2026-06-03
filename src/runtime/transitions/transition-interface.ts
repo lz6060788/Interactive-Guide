@@ -37,10 +37,10 @@ export interface FlipTransitionConfig {
 export interface ZoomTransitionConfig {
   type: 'zoom'
   direction: 'in' | 'out'
-  scale: number           // default 1.5
-  centerX: number        // 0-1, default hotspot x
-  centerY: number        // 0-1, default hotspot y
-  focusMode?: 'center' | 'quad'
+  scale?: number           // default 1.5
+  centerX?: number        // 0-1, default hotspot x
+  centerY?: number        // 0-1, default hotspot y
+  focusMode?: 'center' | 'quad' | 'target-region-auto'
   focusQuad?: ZoomFocusQuad
   duration: number
   easing: EasingType

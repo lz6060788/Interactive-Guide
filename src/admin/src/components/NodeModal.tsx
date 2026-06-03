@@ -41,6 +41,16 @@ const IMAGE_FIT_OPTIONS = [
   { value: 'fitWidth', label: 'Fit Width — 等比按宽度（可纵拖）' },
 ]
 
+const NODE_KIND_OPTIONS = [
+  { value: 'image', label: 'Image — 普通图片节点' },
+  { value: 'region', label: 'Region — 局部子图节点' },
+  { value: 'html', label: 'HTML — 独立 HTML 页面' },
+]
+
+function formatJson(value: unknown): string {
+  return value ? JSON.stringify(value, null, 2) : ''
+}
+
 function Field({ label, value, onChange, disabled, multiline, rows, mono, placeholder }: {
   label: string
   value: string
@@ -207,11 +217,13 @@ export function NodeModal({
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadImageMsg, setUploadImageMsg] = useState<string | null>(null)
   const [imageFitMode, setImageFitMode] = useState(node.imageFitMode || 'fill')
-  const [contentType, setContentType] = useState(node.contentType || 'image')
+  const [nodeKind, setNodeKind] = useState(node.nodeKind || (node.contentType === 'html' ? 'html' : 'image'))
   const [htmlSource, setHtmlSource] = useState(node.htmlSource || '')
   const [hotspotEdgeIdsText, setHotspotEdgeIdsText] = useState((node.hotspotEdgeIds || []).join('\n'))
   const [uploadingHtml, setUploadingHtml] = useState(false)
   const [uploadHtmlMsg, setUploadHtmlMsg] = useState<string | null>(null)
+  const [regionViewportText, setRegionViewportText] = useState(formatJson(node.regionViewport))
+  const [regionOverlayText, setRegionOverlayText] = useState(formatJson(node.regionOverlay))
 
   useEffect(() => { setImageUrl(node.imageUrl) }, [node.imageUrl])
 
@@ -264,19 +276,38 @@ export function NodeModal({
           <Field label="标题" value={title} onChange={setTitle} />
           <SelectField label="主题类型" value={topicType} onChange={setTopicType} options={TOPIC_TYPE_OPTIONS} />
           <SelectField
-            label="内容类型"
-            value={contentType}
-            onChange={(v) => setContentType(v)}
-            options={[
-              { value: 'image', label: 'Image — AI 生成图片' },
-              { value: 'html', label: 'HTML — 自定义 HTML 页面' },
-            ]}
+            label="节点类型"
+            value={nodeKind}
+            onChange={(v) => setNodeKind(v)}
+            options={NODE_KIND_OPTIONS}
           />
           <Field label="页面摘要" value={summary} onChange={setSummary} multiline rows={3} />
-          {contentType === 'image' && (
+          {nodeKind === 'image' && (
             <>
               <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
               <SelectField label="图片填充模式" value={imageFitMode} onChange={setImageFitMode} options={IMAGE_FIT_OPTIONS} />
+            </>
+          )}
+          {nodeKind === 'region' && (
+            <>
+              <Field
+                label="Region 视窗配置 JSON"
+                value={regionViewportText}
+                onChange={setRegionViewportText}
+                multiline
+                rows={10}
+                mono
+                placeholder='{"sourceNodeId":"root","coordSpace":"source-normalized","panRange":{...},"initialWindowRule":{"mode":"derive-from-pan-range-center","fitBy":"height"}}'
+              />
+              <Field
+                label="Region 卡片配置 JSON"
+                value={regionOverlayText}
+                onChange={setRegionOverlayText}
+                multiline
+                rows={12}
+                mono
+                placeholder='{"template":"stock-info-v1","showWhenActive":true,"cards":[...]}'
+              />
             </>
           )}
 
@@ -356,7 +387,7 @@ export function NodeModal({
           </Box>
 
           {/* HTML 配置 / 上传 */}
-          {contentType === 'html' && (
+          {nodeKind === 'html' && (
             <Box mb="4">
               <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
                 HTML 配置
@@ -518,24 +549,43 @@ export function NodeModal({
 
           <SaveButton
             saving={saving}
-            onClick={() => onSave({
-              title,
-              topicType,
-              summary,
-              visualIntent,
-              presentationIntent: visualIntent,
-              sourceText,
-              keyContent: keyContentValue,
-              keyPoints: linesToArray(keyPointsText),
-              hotspotHints: linesToArray(hotspotHintsText),
-              imageFitMode,
-              contentType,
-              htmlSource: contentType === 'html' ? htmlSource : undefined,
-              hotspotEdgeIds: contentType === 'html' ? linesToArray(hotspotEdgeIdsText) : undefined,
-            })}
+            onClick={() => {
+              let parsedRegionViewport: any
+              let parsedRegionOverlay: any
+              try {
+                parsedRegionViewport = nodeKind === 'region' && regionViewportText.trim()
+                  ? JSON.parse(regionViewportText)
+                  : undefined
+                parsedRegionOverlay = nodeKind === 'region' && regionOverlayText.trim()
+                  ? JSON.parse(regionOverlayText)
+                  : undefined
+              } catch (error: any) {
+                window.alert(`Region JSON 配置无效: ${error.message}`)
+                return
+              }
+
+              onSave({
+                title,
+                topicType,
+                summary,
+                visualIntent,
+                presentationIntent: visualIntent,
+                sourceText,
+                keyContent: keyContentValue,
+                keyPoints: linesToArray(keyPointsText),
+                hotspotHints: linesToArray(hotspotHintsText),
+                imageFitMode,
+                nodeKind,
+                contentType: nodeKind === 'html' ? 'html' : 'image',
+                htmlSource: nodeKind === 'html' ? htmlSource : undefined,
+                hotspotEdgeIds: nodeKind === 'html' ? linesToArray(hotspotEdgeIdsText) : undefined,
+                regionViewport: nodeKind === 'region' ? parsedRegionViewport : undefined,
+                regionOverlay: nodeKind === 'region' ? parsedRegionOverlay : undefined,
+              })
+            }}
           />
 
-          {onRegenerateNode && contentType === 'image' && (
+          {onRegenerateNode && nodeKind === 'image' && (
             <Button
               w="100%"
               mt="3"
