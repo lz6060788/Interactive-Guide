@@ -66,6 +66,8 @@ type DragState = {
   startY: number
   startOffsetX: number
   startOffsetY: number
+  maxOffsetX: number
+  maxOffsetY: number
   moved: boolean
 }
 
@@ -96,6 +98,8 @@ export class PlayerHost {
     startY: 0,
     startOffsetX: 0,
     startOffsetY: 0,
+    maxOffsetX: 0,
+    maxOffsetY: 0,
     moved: false,
   }
   private imageOffset = { x: 0, y: 0 }
@@ -113,6 +117,7 @@ export class PlayerHost {
   private htmlIframePreloadedScopes = new Set<string>()
   private activeHtmlIframeUrl = ''
   private viewportPointerDownTarget: EventTarget | null = null
+  private hotspotViewportFrameId: number | null = null
 
   constructor(
     private refs: PlayerHostRefs,
@@ -217,6 +222,10 @@ export class PlayerHost {
   }
 
   destroy(): void {
+    if (this.hotspotViewportFrameId !== null) {
+      cancelAnimationFrame(this.hotspotViewportFrameId)
+      this.hotspotViewportFrameId = null
+    }
     this.destroyers.forEach(dispose => dispose())
     this.destroyers = []
     this.htmlNodeBridge.destroy()
@@ -358,6 +367,8 @@ export class PlayerHost {
         startY: event.clientY,
         startOffsetX: this.imageOffset.x,
         startOffsetY: this.imageOffset.y,
+        maxOffsetX: 0,
+        maxOffsetY: 0,
         moved: false,
       }
       this.refs.nodeImage.style.cursor = 'grabbing'
@@ -373,6 +384,14 @@ export class PlayerHost {
     if (!event.isPrimary) return
 
     event.preventDefault()
+    const containerRect = this.refs.container.getBoundingClientRect()
+    const imageRect = this.refs.nodeImage.getBoundingClientRect()
+    const maxOffsetX = imageRect.width > containerRect.width
+      ? (imageRect.width - containerRect.width) / 2
+      : 0
+    const maxOffsetY = imageRect.height > containerRect.height
+      ? (imageRect.height - containerRect.height) / 2
+      : 0
     this.dragState = {
       active: true,
       pointerId: event.pointerId,
@@ -380,6 +399,8 @@ export class PlayerHost {
       startY: event.clientY,
       startOffsetX: this.imageOffset.x,
       startOffsetY: this.imageOffset.y,
+      maxOffsetX,
+      maxOffsetY,
       moved: false,
     }
 
@@ -408,43 +429,31 @@ export class PlayerHost {
       let nextX = this.dragState.startOffsetX + (event.clientX - this.dragState.startX)
       nextX = clampRegionOffsetX(nextX, this.activeRegionLayout)
       this.applyRegionImageTransform(nextX)
-      requestAnimationFrame(() => {
-        this.updateHotspotViewport()
-      })
+      this.scheduleHotspotViewportUpdate()
       return
     }
 
     const fitMode = currentNode.imageFitMode ?? 'fill'
-    const containerRect = this.refs.container.getBoundingClientRect()
-    const imageRect = this.refs.nodeImage.getBoundingClientRect()
 
     let nextX = this.dragState.startOffsetX
     let nextY = this.dragState.startOffsetY
 
     if (fitMode === 'fitHeight') {
       nextX += event.clientX - this.dragState.startX
-      if (imageRect.width > containerRect.width) {
-        const maxOffsetX = (imageRect.width - containerRect.width) / 2
-        nextX = Math.max(-maxOffsetX, Math.min(maxOffsetX, nextX))
-      } else {
-        nextX = 0
-      }
+      nextX = this.dragState.maxOffsetX > 0
+        ? Math.max(-this.dragState.maxOffsetX, Math.min(this.dragState.maxOffsetX, nextX))
+        : 0
       nextY = 0
     } else if (fitMode === 'fitWidth') {
       nextY += event.clientY - this.dragState.startY
-      if (imageRect.height > containerRect.height) {
-        const maxOffsetY = (imageRect.height - containerRect.height) / 2
-        nextY = Math.max(-maxOffsetY, Math.min(maxOffsetY, nextY))
-      } else {
-        nextY = 0
-      }
+      nextY = this.dragState.maxOffsetY > 0
+        ? Math.max(-this.dragState.maxOffsetY, Math.min(this.dragState.maxOffsetY, nextY))
+        : 0
       nextX = 0
     }
 
     this.applyImageTransform(nextX, nextY)
-    requestAnimationFrame(() => {
-      this.updateHotspotViewport()
-    })
+    this.scheduleHotspotViewportUpdate()
   }
 
   private handleDragEnd = (): void => {
@@ -610,6 +619,7 @@ export class PlayerHost {
       visibility: 'visible',
       opacity: '1',
       pointerEvents: 'auto',
+      willChange: 'transform',
     })
 
     this.applyManagedIframeBaseStyle(nodeIframe)
@@ -635,6 +645,7 @@ export class PlayerHost {
       opacity: '1',
       pointerEvents: 'none',
       transition: 'opacity 180ms ease',
+      willChange: 'transform,left,top,width,height',
     })
 
     if (this.htmlIframeLayer.parentElement !== container) {
@@ -731,23 +742,14 @@ export class PlayerHost {
 
   private render(): void {
     const state = this.getState()
-    const { currentNode, preloading, transitioning } = state
-    const corePreloading = this.engine.isPreloading()
+    const { currentNode, transitioning } = state
     if (!currentNode) {
       this.renderChrome(state)
       this.emitState()
       return
     }
 
-    if (this.refs.stage) {
-      this.refs.stage.hidden = corePreloading
-    }
-
-    if (corePreloading) {
-      this.renderChrome(state)
-      this.emitState()
-      return
-    }
+    this.refs.stage.hidden = false
 
     const nodeKind = this.getNodeKind(currentNode)
     if (nodeKind === 'html') {
@@ -987,6 +989,14 @@ export class PlayerHost {
     document.removeEventListener('pointermove', this.handleDragMove)
     document.removeEventListener('pointerup', this.handleDragEnd)
     document.removeEventListener('pointercancel', this.handleDragEnd)
+  }
+
+  private scheduleHotspotViewportUpdate(): void {
+    if (this.hotspotViewportFrameId !== null) return
+    this.hotspotViewportFrameId = requestAnimationFrame(() => {
+      this.hotspotViewportFrameId = null
+      this.updateHotspotViewport()
+    })
   }
 
   private renderAnnotations(currentNode: PublishNode | null, transitioning: boolean): void {
@@ -1331,7 +1341,7 @@ export class PlayerHost {
   private isLoading(): boolean {
     const currentNode = this.engine.getCurrentNode()
     const waitingForActiveHtml = this.getNodeKind(currentNode) === 'html' && !this.isActiveHtmlIframeReady()
-    return this.engine.isPreloading() || waitingForActiveHtml
+    return waitingForActiveHtml
   }
 
   private async preloadHtmlIframes(urls: string[]): Promise<void> {
@@ -1351,7 +1361,6 @@ export class PlayerHost {
   private maybeStartHtmlIframePreload(): void {
     const manifest = this.engine.getManifest()
     if (!manifest) return
-    if (this.engine.isPreloading()) return
     if (this.htmlIframePreloading) return
 
     const strategy = this.resolveHtmlIframePreloadStrategy(manifest)
@@ -1368,7 +1377,7 @@ export class PlayerHost {
   private resolveHtmlIframePreloadStrategy(manifest: PublishManifest): HtmlIframePreloadStrategy {
     return this.options.runtimeConfig?.htmlIframePreloadStrategy
       ?? manifest.runtimeConfig?.htmlIframePreloadStrategy
-      ?? 'all'
+      ?? 'on-demand'
   }
 
   private getHtmlIframePreloadScope(
