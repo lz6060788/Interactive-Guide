@@ -267,10 +267,13 @@ export class FsRepository implements Repository {
         status: node.status,
         extensions: node.extensions,
         contentType: node.contentType,
+        nodeKind: node.nodeKind,
         htmlSource: node.htmlSource,
         htmlUrl: node.htmlUrl,
         hotspotEdgeIds: node.hotspotEdgeIds,
         imageFitMode: node.imageFitMode,
+        regionViewport: node.regionViewport,
+        regionOverlay: node.regionOverlay,
       })),
       edges: manifest.edges.map(edge => ({
         id: edge.id,
@@ -326,10 +329,13 @@ export class FsRepository implements Repository {
       status: node.status,
       extensions: node.extensions,
       contentType: node.contentType,
+      nodeKind: node.nodeKind,
       htmlSource: node.htmlSource,
       htmlUrl: node.htmlUrl,
       hotspotEdgeIds: node.hotspotEdgeIds,
       imageFitMode: node.imageFitMode,
+      regionViewport: node.regionViewport,
+      regionOverlay: node.regionOverlay,
     }))
     const edges = guide.edges.map(edge => ({
       id: edge.id,

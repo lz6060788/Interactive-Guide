@@ -3,6 +3,8 @@ import type {
   PublishManifest,
   PublishHotspot,
   PublishNode,
+  RegionOverlayCard,
+  RuntimeAction,
   RuntimeConfig,
 } from '../../shared/types.js'
 import { getResolutionDimensions } from '../../shared/utils.js'
@@ -16,6 +18,11 @@ import {
   type HtmlNodeRouteResponsePayload,
 } from './html-node-bridge.js'
 import PlayerCore from './player-core.js'
+import {
+  clampRegionOffsetX,
+  resolveInitialRegionViewport,
+  type RegionViewportSolveResult,
+} from './region-viewport.js'
 
 export interface PlayerHostRefs {
   viewport: HTMLElement
@@ -59,6 +66,7 @@ type DragState = {
   startY: number
   startOffsetX: number
   startOffsetY: number
+  moved: boolean
 }
 
 type HtmlIframeEntry = {
@@ -88,6 +96,7 @@ export class PlayerHost {
     startY: 0,
     startOffsetX: 0,
     startOffsetY: 0,
+    moved: false,
   }
   private imageOffset = { x: 0, y: 0 }
   private destroyers: Array<() => void> = []
@@ -97,11 +106,13 @@ export class PlayerHost {
   private backLabelEl = document.createElement('div')
   private dragHintEl = document.createElement('div')
   private activeContentType: 'image' | 'html' = 'image'
+  private activeRegionLayout: RegionViewportSolveResult | null = null
   private htmlIframeLayer = document.createElement('div')
   private htmlIframeEntries = new Map<string, HtmlIframeEntry>()
   private htmlIframePreloading = false
   private htmlIframePreloadedScopes = new Set<string>()
   private activeHtmlIframeUrl = ''
+  private viewportPointerDownTarget: EventTarget | null = null
 
   constructor(
     private refs: PlayerHostRefs,
@@ -228,10 +239,14 @@ export class PlayerHost {
     this.refs.nodeImage.addEventListener('load', this.handleNodeImageLoad)
     this.refs.nodeImage.addEventListener('pointerdown', this.handleNodeImagePointerDown)
     window.addEventListener('resize', this.handleWindowResize)
+    this.refs.viewport.addEventListener('pointerdown', this.handleViewportPointerDown)
+    this.refs.viewport.addEventListener('click', this.handleViewportClick)
 
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('load', this.handleNodeImageLoad))
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('pointerdown', this.handleNodeImagePointerDown))
     this.destroyers.push(() => window.removeEventListener('resize', this.handleWindowResize))
+    this.destroyers.push(() => this.refs.viewport.removeEventListener('pointerdown', this.handleViewportPointerDown))
+    this.destroyers.push(() => this.refs.viewport.removeEventListener('click', this.handleViewportClick))
     this.destroyers.push(() => this.detachDragListeners())
   }
 
@@ -256,6 +271,30 @@ export class PlayerHost {
 
   private handleWindowResize = (): void => {
     this.updateLayout()
+  }
+
+  private handleViewportPointerDown = (event: PointerEvent): void => {
+    this.viewportPointerDownTarget = event.target
+  }
+
+  private handleViewportClick = (event: MouseEvent): void => {
+    const currentNode = this.engine.getCurrentNode()
+    if (!currentNode || this.getNodeKind(currentNode) !== 'region') return
+    if (this.engine.isTransitioning()) return
+    if (this.dragState.moved) {
+      this.dragState.moved = false
+      return
+    }
+
+    const pointerDownTarget = this.viewportPointerDownTarget
+    this.viewportPointerDownTarget = null
+    if (this.isInteractiveRegionTarget(pointerDownTarget) || this.isInteractiveRegionTarget(event.target)) {
+      return
+    }
+
+    if (this.engine.getHistory().length > 0) {
+      this.engine.handleBack()
+    }
   }
 
   private handleHtmlNodeBackRequest = (
@@ -309,6 +348,26 @@ export class PlayerHost {
     const currentNode = this.engine.getCurrentNode()
     if (!currentNode) return
 
+    if (this.getNodeKind(currentNode) === 'region') {
+      if (!this.activeRegionLayout?.canPanHorizontally || !event.isPrimary) return
+      event.preventDefault()
+      this.dragState = {
+        active: true,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startOffsetX: this.imageOffset.x,
+        startOffsetY: this.imageOffset.y,
+        moved: false,
+      }
+      this.refs.nodeImage.style.cursor = 'grabbing'
+      this.refs.nodeImage.setPointerCapture?.(event.pointerId)
+      document.addEventListener('pointermove', this.handleDragMove)
+      document.addEventListener('pointerup', this.handleDragEnd)
+      document.addEventListener('pointercancel', this.handleDragEnd)
+      return
+    }
+
     const fitMode = currentNode.imageFitMode ?? 'fill'
     if (fitMode === 'fill') return
     if (!event.isPrimary) return
@@ -321,6 +380,7 @@ export class PlayerHost {
       startY: event.clientY,
       startOffsetX: this.imageOffset.x,
       startOffsetY: this.imageOffset.y,
+      moved: false,
     }
 
     this.refs.nodeImage.style.cursor = 'grabbing'
@@ -334,8 +394,25 @@ export class PlayerHost {
     if (!this.dragState.active) return
     if (this.dragState.pointerId !== null && event.pointerId !== this.dragState.pointerId) return
 
+    if (
+      Math.abs(event.clientX - this.dragState.startX) > 3
+      || Math.abs(event.clientY - this.dragState.startY) > 3
+    ) {
+      this.dragState.moved = true
+    }
+
     const currentNode = this.engine.getCurrentNode()
     if (!currentNode) return
+
+    if (this.getNodeKind(currentNode) === 'region' && this.activeRegionLayout) {
+      let nextX = this.dragState.startOffsetX + (event.clientX - this.dragState.startX)
+      nextX = clampRegionOffsetX(nextX, this.activeRegionLayout)
+      this.applyRegionImageTransform(nextX)
+      requestAnimationFrame(() => {
+        this.updateHotspotViewport()
+      })
+      return
+    }
 
     const fitMode = currentNode.imageFitMode ?? 'fill'
     const containerRect = this.refs.container.getBoundingClientRect()
@@ -380,6 +457,11 @@ export class PlayerHost {
     }
 
     const currentNode = this.engine.getCurrentNode()
+    if (this.getNodeKind(currentNode) === 'region') {
+      this.refs.nodeImage.style.cursor = this.activeRegionLayout?.canPanHorizontally ? 'grab' : 'default'
+      return
+    }
+
     const fitMode = currentNode?.imageFitMode ?? 'fill'
     this.refs.nodeImage.style.cursor = fitMode === 'fill' ? 'default' : 'grab'
   }
@@ -667,8 +749,11 @@ export class PlayerHost {
       return
     }
 
-    if (currentNode.contentType === 'html') {
+    const nodeKind = this.getNodeKind(currentNode)
+    if (nodeKind === 'html') {
       this.renderHtmlNode(currentNode, transitioning)
+    } else if (nodeKind === 'region') {
+      this.renderRegionNode(currentNode, transitioning)
     } else {
       this.renderImageNode(currentNode, transitioning)
     }
@@ -684,7 +769,10 @@ export class PlayerHost {
   private renderChrome(state: PlayerHostState): void {
     const currentNode = state.currentNode
     const hasBack = state.history.length > 0
-    const showHorizontalDragHint = currentNode?.imageFitMode === 'fitHeight'
+    const nodeKind = this.getNodeKind(currentNode)
+    const showHorizontalDragHint = nodeKind === 'region'
+      ? !!this.activeRegionLayout?.canPanHorizontally
+      : currentNode?.imageFitMode === 'fitHeight'
     const chromeVisible = !!currentNode && !state.transitioning && !state.preloading
 
     this.backControlEl.style.display = hasBack ? 'flex' : 'none'
@@ -697,6 +785,7 @@ export class PlayerHost {
   }
 
   private renderHtmlNode(currentNode: PublishNode, transitioning: boolean): void {
+    this.activeRegionLayout = null
     this.activeContentType = 'html'
     const htmlUrl = currentNode.htmlUrl ?? ''
     const entry = this.ensureHtmlIframe(htmlUrl)
@@ -718,7 +807,7 @@ export class PlayerHost {
       this.htmlNodeBridge.deactivateNode()
     }
 
-    this.renderHotspots()
+    this.renderAnnotations(currentNode, transitioning)
     this.refs.hotspots.style.left = '0px'
     this.refs.hotspots.style.top = '0px'
     this.refs.hotspots.style.width = '100%'
@@ -731,6 +820,7 @@ export class PlayerHost {
 
   private renderImageNode(currentNode: PublishNode, transitioning: boolean): void {
     const fitMode = currentNode.imageFitMode ?? 'fill'
+    this.activeRegionLayout = null
     this.activeContentType = 'image'
     this.activeHtmlIframeUrl = ''
     this.htmlNodeBridge.deactivateNode()
@@ -744,7 +834,7 @@ export class PlayerHost {
 
     this.applyImageFitMode(fitMode)
 
-    this.renderHotspots()
+    this.renderAnnotations(currentNode, transitioning)
     this.refs.hotspots.style.left = '0px'
     this.refs.hotspots.style.top = '0px'
     this.refs.hotspots.style.width = '100%'
@@ -755,6 +845,48 @@ export class PlayerHost {
       if (fitMode !== 'fill') {
         this.applyImageTransform(0, 0)
       }
+      this.updateHotspotViewport()
+    })
+  }
+
+  private renderRegionNode(currentNode: PublishNode, transitioning: boolean): void {
+    const manifest = this.engine.getManifest()
+    const sourceNode = currentNode.regionViewport
+      ? manifest?.nodeMap[currentNode.regionViewport.sourceNodeId]
+      : undefined
+
+    if (!manifest || !currentNode.regionViewport || !sourceNode?.imageUrl) {
+      this.activeRegionLayout = null
+      this.renderImageNode(currentNode, transitioning)
+      return
+    }
+
+    this.activeContentType = 'image'
+    this.activeHtmlIframeUrl = ''
+    this.htmlNodeBridge.deactivateNode()
+    this.hideAllManagedIframes()
+
+    this.activeRegionLayout = resolveInitialRegionViewport({
+      viewportWidth: this.refs.container.clientWidth,
+      viewportHeight: this.refs.container.clientHeight,
+      sourceAspect: this.engine.getSourceNodeAspectRatio(sourceNode) ?? (sourceNode.imageUrl === this.refs.nodeImage.currentSrc || sourceNode.imageUrl === this.refs.nodeImage.src
+        ? this.refs.nodeImage.naturalWidth / Math.max(this.refs.nodeImage.naturalHeight, 1)
+        : 1),
+      regionViewport: currentNode.regionViewport,
+      imageFitMode: currentNode.imageFitMode,
+    })
+
+    this.refs.nodeImage.style.visibility = 'visible'
+    this.refs.nodeImage.style.pointerEvents = transitioning ? 'none' : 'auto'
+    this.refs.nodeImage.src = sourceNode.imageUrl
+    this.refs.nodeImage.alt = currentNode.title ?? currentNode.id
+    this.refs.nodeImage.style.opacity = transitioning ? '0' : '1'
+
+    this.applyRegionImageLayout(this.activeRegionLayout)
+    this.renderAnnotations(currentNode, transitioning)
+
+    this.refs.hotspots.style.opacity = transitioning ? '0' : '1'
+    requestAnimationFrame(() => {
       this.updateHotspotViewport()
     })
   }
@@ -775,6 +907,7 @@ export class PlayerHost {
     nodeImage.style.objectFit = 'fill'
     nodeImage.style.objectPosition = '50% 50%'
     nodeImage.style.transform = ''
+    nodeImage.style.clipPath = ''
     container.style.overflow = fitMode === 'fill' ? 'visible' : 'hidden'
 
     if (fitMode === 'fitHeight') {
@@ -796,6 +929,26 @@ export class PlayerHost {
     }
   }
 
+  private applyRegionImageLayout(layout: RegionViewportSolveResult): void {
+    const { nodeImage, container } = this.refs
+    this.imageOffset = { x: layout.offsetX, y: layout.offsetY }
+
+    container.style.overflow = 'hidden'
+    nodeImage.style.position = 'absolute'
+    nodeImage.style.left = '0'
+    nodeImage.style.top = '0'
+    nodeImage.style.width = `${layout.scaledImageWidth}px`
+    nodeImage.style.height = `${layout.scaledImageHeight}px`
+    nodeImage.style.maxWidth = 'none'
+    nodeImage.style.maxHeight = 'none'
+    nodeImage.style.objectFit = 'fill'
+    nodeImage.style.objectPosition = '50% 50%'
+    nodeImage.style.transform = `translate(${layout.offsetX}px, ${layout.offsetY}px)`
+    nodeImage.style.clipPath = layout.clipPath
+    nodeImage.style.cursor = layout.canPanHorizontally ? 'grab' : 'default'
+    nodeImage.style.touchAction = layout.canPanHorizontally ? 'none' : 'auto'
+  }
+
   private applyImageTransform(offsetX: number, offsetY: number): void {
     const currentNode = this.engine.getCurrentNode()
     const fitMode = currentNode?.imageFitMode ?? 'fill'
@@ -803,6 +956,12 @@ export class PlayerHost {
     const nextY = fitMode === 'fitWidth' ? offsetY : 0
     this.imageOffset = { x: nextX, y: nextY }
     this.refs.nodeImage.style.transform = `translate(-50%, -50%) translate(${nextX}px, ${nextY}px)`
+  }
+
+  private applyRegionImageTransform(offsetX: number): void {
+    if (!this.activeRegionLayout) return
+    this.imageOffset = { x: offsetX, y: this.activeRegionLayout.offsetY }
+    this.refs.nodeImage.style.transform = `translate(${offsetX}px, ${this.activeRegionLayout.offsetY}px)`
   }
 
   private getImageHorizontalPanRange(): { min: number; max: number } {
@@ -830,11 +989,15 @@ export class PlayerHost {
     document.removeEventListener('pointercancel', this.handleDragEnd)
   }
 
-  private renderHotspots(): void {
-    const currentNode = this.engine.getCurrentNode()
+  private renderAnnotations(currentNode: PublishNode | null, transitioning: boolean): void {
     this.refs.hotspots.innerHTML = ''
     for (const hotspot of currentNode?.hotspots ?? []) {
       this.refs.hotspots.appendChild(this.createHotspotButton(hotspot, currentNode))
+    }
+    if (!transitioning && this.getNodeKind(currentNode) === 'region' && currentNode?.regionOverlay) {
+      for (const card of currentNode.regionOverlay.cards) {
+        this.refs.hotspots.appendChild(this.createRegionOverlayCard(card))
+      }
     }
     requestAnimationFrame(() => {
       this.updateHotspotViewport()
@@ -910,6 +1073,119 @@ export class PlayerHost {
     return button
   }
 
+  private createRegionOverlayCard(card: RegionOverlayCard): HTMLDivElement {
+    const root = document.createElement('div')
+    const outer = document.createElement('div')
+    const inner = document.createElement('div')
+    const title = document.createElement('div')
+
+    root.style.position = 'absolute'
+    root.style.left = `${card.anchor.x * 100}%`
+    root.style.top = `${card.anchor.y * 100}%`
+    root.style.transform = 'translate(-50%, -50%)'
+    root.style.pointerEvents = 'auto'
+    root.style.zIndex = '2'
+    root.dataset.regionOverlayCard = 'true'
+
+    outer.style.boxSizing = 'border-box'
+    outer.style.background = 'rgba(255, 255, 255, 0.92)'
+    outer.style.border = '1px solid #000'
+    outer.style.borderRadius = '6px'
+    outer.style.padding = '5px 10px'
+    outer.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.16)'
+
+    inner.style.display = 'flex'
+    inner.style.flexDirection = 'column'
+    inner.style.alignItems = 'center'
+    inner.style.justifyContent = 'center'
+    inner.style.gap = '2px'
+
+    title.textContent = card.title
+    title.style.fontFamily = '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
+    title.style.fontSize = '12px'
+    title.style.fontWeight = '400'
+    title.style.lineHeight = '18px'
+    title.style.color = 'rgba(0, 0, 0, 0.84)'
+    title.style.textAlign = 'center'
+    title.style.whiteSpace = 'nowrap'
+    inner.appendChild(title)
+
+    const distinctTags = (card.tags ?? []).filter(tagText =>
+      !(card.stocks ?? []).some(stock => stock.label === tagText))
+
+    if (distinctTags.length) {
+      const tagRow = document.createElement('div')
+      tagRow.style.display = 'flex'
+      tagRow.style.flexDirection = 'row'
+      tagRow.style.alignItems = 'flex-start'
+      tagRow.style.gap = '4px'
+      for (const tagText of distinctTags) {
+        const tag = document.createElement('span')
+        tag.textContent = tagText
+        Object.assign(tag.style, {
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '3px 10px',
+          borderRadius: '8px',
+          background: '#FF2436',
+          fontFamily: '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
+          fontSize: '10px',
+          fontWeight: '500',
+          lineHeight: '15px',
+          color: '#fff',
+          whiteSpace: 'nowrap',
+        })
+        tagRow.appendChild(tag)
+      }
+      inner.appendChild(tagRow)
+    }
+
+    if (card.stocks?.length) {
+      const stockRow = document.createElement('div')
+      stockRow.style.display = 'flex'
+      stockRow.style.flexDirection = 'row'
+      stockRow.style.alignItems = 'flex-start'
+      stockRow.style.gap = '4px'
+      stockRow.style.flexWrap = 'wrap'
+      for (const stock of card.stocks) {
+        const stockBtn = document.createElement(stock.action ? 'button' : 'span')
+        stockBtn.textContent = stock.label
+        ;(stockBtn as HTMLElement).dataset.regionOverlayStock = 'true'
+        Object.assign(stockBtn.style, {
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '3px 10px',
+          borderRadius: '8px',
+          background: '#FF2436',
+          fontFamily: '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
+          fontSize: '10px',
+          fontWeight: '500',
+          lineHeight: '15px',
+          color: '#fff',
+          whiteSpace: 'nowrap',
+          border: 'none',
+        })
+        if (stock.action) {
+          ;(stockBtn as HTMLButtonElement).type = 'button'
+          stockBtn.style.cursor = 'pointer'
+          stockBtn.addEventListener('click', event => {
+            event.preventDefault()
+            event.stopPropagation()
+            this.executeRuntimeAction(stock.action as RuntimeAction)
+          })
+        }
+        stockRow.appendChild(stockBtn)
+      }
+      inner.appendChild(stockRow)
+    }
+
+    outer.appendChild(inner)
+    root.appendChild(outer)
+    return root
+  }
+
   private updateHotspotViewport(): void {
     const { container, nodeImage, nodeIframe, hotspots, stage } = this.refs
     if (stage.hidden) return
@@ -926,6 +1202,7 @@ export class PlayerHost {
     hotspots.style.top = `${contentRect.top - mediaRect.top}px`
     hotspots.style.width = `${contentRect.width}px`
     hotspots.style.height = `${contentRect.height}px`
+    hotspots.style.clipPath = this.activeRegionLayout?.clipPath ?? ''
   }
 
   private confirmHostVisualCommitIfReady(reason: string): void {
@@ -939,15 +1216,18 @@ export class PlayerHost {
       && reason !== 'node-image:onLoad:next-frame'
       && reason !== 'node-iframe:onLoad:next-frame'
     ) {
-      if (currentNode.contentType !== 'html' || !this.isActiveHtmlIframeReady()) {
+      if (this.getNodeKind(currentNode) !== 'html' || !this.isActiveHtmlIframeReady()) {
         return
       }
     }
 
-    if (currentNode.contentType === 'html') {
+    if (this.getNodeKind(currentNode) === 'html') {
       if (!this.isActiveHtmlIframeReady()) return
     } else {
-      const expectedSrc = this.toAbsoluteUrl(currentNode.imageUrl ?? '')
+      const expectedNode = this.getNodeKind(currentNode) === 'region'
+        ? this.getRegionSourceNode(currentNode)
+        : currentNode
+      const expectedSrc = this.toAbsoluteUrl(expectedNode?.imageUrl ?? '')
       const actualSrc = this.refs.nodeImage.currentSrc || this.refs.nodeImage.src
       if (!this.refs.nodeImage.complete || actualSrc !== expectedSrc) return
     }
@@ -957,6 +1237,11 @@ export class PlayerHost {
 
   private toAbsoluteUrl(url: string): string {
     return new URL(url, window.location.href).href
+  }
+
+  private isInteractiveRegionTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof Element)) return false
+    return !!target.closest('[data-region-overlay-card="true"], [data-region-overlay-stock="true"], button')
   }
 
   private resolveHtmlRouteUrl(route: string): string {
@@ -1045,7 +1330,7 @@ export class PlayerHost {
 
   private isLoading(): boolean {
     const currentNode = this.engine.getCurrentNode()
-    const waitingForActiveHtml = currentNode?.contentType === 'html' && !this.isActiveHtmlIframeReady()
+    const waitingForActiveHtml = this.getNodeKind(currentNode) === 'html' && !this.isActiveHtmlIframeReady()
     return this.engine.isPreloading() || waitingForActiveHtml
   }
 
@@ -1092,7 +1377,7 @@ export class PlayerHost {
   ): { key: string, urls: string[] } | null {
     if (strategy === 'all') {
       const urls = manifest.nodes
-        .filter(node => node.contentType === 'html' && node.htmlUrl)
+        .filter(node => this.getNodeKind(node) === 'html' && node.htmlUrl)
         .map(node => node.htmlUrl as string)
       return {
         key: 'all',
@@ -1104,7 +1389,7 @@ export class PlayerHost {
     const urls = manifest.edges
       .filter(edge => edge.fromNodeId === currentNodeId)
       .map(edge => manifest.nodeMap[edge.toNodeId])
-      .filter((node): node is PublishNode => !!node && node.contentType === 'html' && !!node.htmlUrl)
+      .filter((node): node is PublishNode => !!node && this.getNodeKind(node) === 'html' && !!node.htmlUrl)
       .map(node => node.htmlUrl as string)
 
     return {
@@ -1123,8 +1408,36 @@ export class PlayerHost {
   private primeHtmlIframeForNodeId(nodeId: string): void {
     const manifest = this.engine.getManifest()
     const node = manifest?.nodeMap[nodeId]
-    if (!node || node.contentType !== 'html' || !node.htmlUrl) return
+    if (!node || this.getNodeKind(node) !== 'html' || !node.htmlUrl) return
     void this.ensureHtmlIframe(node.htmlUrl).readyPromise
+  }
+
+  private executeRuntimeAction(action: RuntimeAction): void {
+    if (action.type === 'navigate-edge') {
+      this.navigateByEdge(action.edgeId)
+      return
+    }
+    if (action.type === 'open-route') {
+      const resolvedUrl = this.resolveHtmlRouteUrl(action.route)
+      this.performDefaultHtmlRouteNavigation(resolvedUrl, action.openMode ?? 'current-tab')
+      return
+    }
+    if (action.type === 'open-url') {
+      window.open(action.url, action.target ?? '_blank', 'noopener,noreferrer')
+    }
+  }
+
+  private getNodeKind(node: PublishNode | null | undefined): 'image' | 'region' | 'html' {
+    if (!node) return 'image'
+    return node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
+  }
+
+  private getRegionSourceNode(node: PublishNode): PublishNode | null {
+    const manifest = this.engine.getManifest()
+    if (!manifest || this.getNodeKind(node) !== 'region') return null
+    const sourceNodeId = node.regionViewport?.sourceNodeId
+    if (!sourceNodeId) return null
+    return manifest.nodeMap[sourceNodeId] ?? null
   }
 
   private handleHotspotNavigation(hotspot: PublishHotspot): void {

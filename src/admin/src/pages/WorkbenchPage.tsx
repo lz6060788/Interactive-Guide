@@ -70,8 +70,15 @@ export function WorkbenchPage() {
 
   useEffect(() => { load() }, [load])
 
-  const isNodeReady = (n: any) =>
-    n.contentType === 'html' ? !!n.htmlUrl : (n.imageStatus === 'success' || n.status === 'success')
+  const isNodeReady = (n: any) => {
+    const nodeKind = n.nodeKind || (n.contentType === 'html' ? 'html' : 'image')
+    if (nodeKind === 'html') return !!n.htmlUrl
+    if (nodeKind === 'region') {
+      const sourceNode = pkg?.nodes?.find((item: any) => item.id === n.regionViewport?.sourceNodeId)
+      return !!sourceNode && (sourceNode.imageStatus === 'success' || sourceNode.status === 'success' || !!sourceNode.imageUrl)
+    }
+    return n.imageStatus === 'success' || n.status === 'success'
+  }
 
   // Build React Flow nodes and edges (position placeholders, ELK will compute layout)
   const { flowNodes, flowEdges } = useMemo(() => {
@@ -249,7 +256,12 @@ export function WorkbenchPage() {
   const allNodesReady = useMemo(() => {
     if (!pkg?.nodes?.length) return false
     return pkg.nodes.every((node: any) => {
-      if (node.contentType === 'html') return !!node.htmlUrl
+      const nodeKind = node.nodeKind || (node.contentType === 'html' ? 'html' : 'image')
+      if (nodeKind === 'html') return !!node.htmlUrl
+      if (nodeKind === 'region') {
+        const sourceNode = pkg.nodes.find((item: any) => item.id === node.regionViewport?.sourceNodeId)
+        return !!sourceNode && (sourceNode.imageStatus === 'success' || sourceNode.status === 'success' || !!sourceNode.imageUrl)
+      }
       return node.imageStatus === 'success' || node.status === 'success'
     })
   }, [pkg])
