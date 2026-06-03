@@ -75,6 +75,8 @@ class PlayerCore {
   private pendingVisualCommit: PendingVisualCommit | null = null
   private resourcePreloader = new RuntimeResourcePreloader()
   private videoController: TransitionVideoController
+  private backgroundPreloadTimer: number | null = null
+  private videoPrimeTimer: number | null = null
 
   private listeners = new Map<EventName, Set<Function>>()
 
@@ -167,18 +169,18 @@ class PlayerCore {
   // ─── Actions ───────────────────────────────────────────────
 
   loadManifest(manifest: PublishManifest): void {
+    this.clearBackgroundTasks()
+    this.resourcePreloader.clear()
     this.manifest = manifest
     this.currentNodeId = manifest.rootNodeId
     this.history = []
     this.transitioning = false
-    this.preloading = true
+    this.preloading = false
     this.refs.nodeImage.style.opacity = '1'
     this.emit('stateChange')
-    void this.primeLikelyVideoTransition()
-    void this.resourcePreloader.preloadAllResources(manifest).finally(() => {
-      this.preloading = false
-      this.emit('stateChange')
-    })
+    void this.resourcePreloader.preloadNodeResources(manifest, manifest.rootNodeId)
+    this.scheduleLikelyVideoTransitionPrime()
+    this.scheduleManifestBackgroundPreload(manifest)
   }
 
   handleHotspotClick(hotspot: PublishHotspot): void {
@@ -244,7 +246,7 @@ class PlayerCore {
 
     this.emit('stateChange')
     if (!options.preserveVisualLayer) {
-      void this.primeLikelyVideoTransition()
+      this.scheduleLikelyVideoTransitionPrime()
     }
   }
 
@@ -273,6 +275,7 @@ class PlayerCore {
   // ─── Lifecycle ─────────────────────────────────────────────
 
   destroy(): void {
+    this.clearBackgroundTasks()
     this.clearPendingVisualCommit('destroy')
     this.abortRunningTransition()
     this.cleanupVideo()
@@ -551,6 +554,57 @@ class PlayerCore {
 
     const nextVideoUrl = this.getLikelyVideoTransitionUrl(this.currentNodeId)
     await this.videoController.prime(nextVideoUrl)
+  }
+
+  private scheduleManifestBackgroundPreload(manifest: PublishManifest): void {
+    this.clearBackgroundPreloadTimer()
+    this.backgroundPreloadTimer = window.setTimeout(() => {
+      this.backgroundPreloadTimer = null
+      void this.runWhenIdle(() => this.resourcePreloader.preloadAllResources(manifest, {
+        excludeNodeIds: [manifest.rootNodeId],
+      }))
+    }, 1200)
+  }
+
+  private scheduleLikelyVideoTransitionPrime(): void {
+    this.clearVideoPrimeTimer()
+    this.videoPrimeTimer = window.setTimeout(() => {
+      this.videoPrimeTimer = null
+      void this.runWhenIdle(() => this.primeLikelyVideoTransition())
+    }, 1200)
+  }
+
+  private clearBackgroundTasks(): void {
+    this.clearBackgroundPreloadTimer()
+    this.clearVideoPrimeTimer()
+  }
+
+  private clearBackgroundPreloadTimer(): void {
+    if (this.backgroundPreloadTimer === null) return
+    window.clearTimeout(this.backgroundPreloadTimer)
+    this.backgroundPreloadTimer = null
+  }
+
+  private clearVideoPrimeTimer(): void {
+    if (this.videoPrimeTimer === null) return
+    window.clearTimeout(this.videoPrimeTimer)
+    this.videoPrimeTimer = null
+  }
+
+  private runWhenIdle(task: () => void | Promise<void>): Promise<void> {
+    return new Promise(resolve => {
+      const execute = () => {
+        Promise.resolve(task()).finally(() => resolve())
+      }
+
+      const browserWindow = globalThis as typeof globalThis & Window
+      if (typeof browserWindow.requestIdleCallback === 'function') {
+        browserWindow.requestIdleCallback(() => execute(), { timeout: 1500 })
+        return
+      }
+
+      globalThis.setTimeout(execute, 0)
+    })
   }
 
   private clearPendingVisualCommit(reason: string): void {
