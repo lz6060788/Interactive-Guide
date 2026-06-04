@@ -5,6 +5,7 @@ import {
 } from '@chakra-ui/react'
 import { X, Crosshair, Save, Image as ImageIcon, Trash2, RefreshCw, Upload } from 'lucide-react'
 import { uploadNodeImage, uploadNodeHtml } from '../services/api'
+import { RegionNodeDesigner, RegionNodeEditorModal } from './RegionNodeDesigner'
 
 const BORDER = '#2a2d3a'
 
@@ -49,6 +50,15 @@ const NODE_KIND_OPTIONS = [
 
 function formatJson(value: unknown): string {
   return value ? JSON.stringify(value, null, 2) : ''
+}
+
+function parseJsonSafe<T>(value: string): T | null {
+  if (!value.trim()) return null
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return null
+  }
 }
 
 function Field({ label, value, onChange, disabled, multiline, rows, mono, placeholder }: {
@@ -224,8 +234,52 @@ export function NodeModal({
   const [uploadHtmlMsg, setUploadHtmlMsg] = useState<string | null>(null)
   const [regionViewportText, setRegionViewportText] = useState(formatJson(node.regionViewport))
   const [regionOverlayText, setRegionOverlayText] = useState(formatJson(node.regionOverlay))
+  const [showRegionEditor, setShowRegionEditor] = useState(false)
 
   useEffect(() => { setImageUrl(node.imageUrl) }, [node.imageUrl])
+  useEffect(() => { setRegionViewportText(formatJson(node.regionViewport)) }, [node.regionViewport])
+  useEffect(() => { setRegionOverlayText(formatJson(node.regionOverlay)) }, [node.regionOverlay])
+
+  const parsedRegionViewport = parseJsonSafe<any>(regionViewportText)
+  const regionSourceNode = nodeKind === 'region'
+    ? pkg.nodes.find((item: any) => item.id === parsedRegionViewport?.sourceNodeId)
+    : null
+  const regionEditorImageUrl = regionSourceNode?.imageUrl || imageUrl
+
+  function submitNodeSave() {
+    let parsedRegionViewport: any
+    let parsedRegionOverlay: any
+    try {
+      parsedRegionViewport = nodeKind === 'region' && regionViewportText.trim()
+        ? JSON.parse(regionViewportText)
+        : undefined
+      parsedRegionOverlay = nodeKind === 'region' && regionOverlayText.trim()
+        ? JSON.parse(regionOverlayText)
+        : undefined
+    } catch (error: any) {
+      window.alert(`Region JSON 配置无效: ${error.message}`)
+      return
+    }
+
+    onSave({
+      title,
+      topicType,
+      summary,
+      visualIntent,
+      presentationIntent: visualIntent,
+      sourceText,
+      keyContent: keyContentValue,
+      keyPoints: linesToArray(keyPointsText),
+      hotspotHints: linesToArray(hotspotHintsText),
+      imageFitMode,
+      nodeKind,
+      contentType: nodeKind === 'html' ? 'html' : 'image',
+      htmlSource: nodeKind === 'html' ? htmlSource : undefined,
+      hotspotEdgeIds: nodeKind === 'html' ? linesToArray(hotspotEdgeIdsText) : undefined,
+      regionViewport: nodeKind === 'region' ? parsedRegionViewport : undefined,
+      regionOverlay: nodeKind === 'region' ? parsedRegionOverlay : undefined,
+    })
+  }
 
   return (
     <Flex position="fixed" top="0" right="0" bottom="0" zIndex={100}>
@@ -282,32 +336,37 @@ export function NodeModal({
             options={NODE_KIND_OPTIONS}
           />
           <Field label="页面摘要" value={summary} onChange={setSummary} multiline rows={3} />
-          {nodeKind === 'image' && (
+          {(nodeKind === 'image' || nodeKind === 'region') && (
             <>
-              <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
+              {nodeKind === 'image' && (
+                <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
+              )}
               <SelectField label="图片填充模式" value={imageFitMode} onChange={setImageFitMode} options={IMAGE_FIT_OPTIONS} />
             </>
           )}
           {nodeKind === 'region' && (
             <>
-              <Field
-                label="Region 视窗配置 JSON"
-                value={regionViewportText}
-                onChange={setRegionViewportText}
-                multiline
-                rows={10}
-                mono
-                placeholder='{"sourceNodeId":"root","coordSpace":"source-normalized","panRange":{...},"initialWindowRule":{"mode":"derive-from-pan-range-center","fitBy":"height"}}'
+              <RegionNodeDesigner
+                imageUrl={regionEditorImageUrl}
+                sourceNodeTitle={regionSourceNode?.title}
+                packageResolution={pkg.resolution}
+                imageFitMode={imageFitMode}
+                regionViewportText={regionViewportText}
+                onRegionViewportTextChange={setRegionViewportText}
+                regionOverlayText={regionOverlayText}
+                onRegionOverlayTextChange={setRegionOverlayText}
+                compact
+                editable={false}
+                onOpenEditor={() => setShowRegionEditor(true)}
               />
-              <Field
-                label="Region 卡片配置 JSON"
-                value={regionOverlayText}
-                onChange={setRegionOverlayText}
-                multiline
-                rows={12}
-                mono
-                placeholder='{"template":"stock-info-v1","showWhenActive":true,"cards":[...]}'
-              />
+              <Box mb="4" p="3" rounded="md" style={{ border: `1px solid ${BORDER}`, background: '#0a0b0f' }}>
+                <Text fontSize="xs" color="text-secondary" mb="1.5">
+                  节点详情中仅保留预览。请点击上方“打开大画布编辑”进入独立编辑器，调整框选范围和标的信息位置。
+                </Text>
+                <Text fontSize="2xs" color="text-tertiary">
+                  编辑结果会同步回当前节点详情；完成调整后，点击本弹窗底部“保存”即可持久化。
+                </Text>
+              </Box>
             </>
           )}
 
@@ -549,40 +608,7 @@ export function NodeModal({
 
           <SaveButton
             saving={saving}
-            onClick={() => {
-              let parsedRegionViewport: any
-              let parsedRegionOverlay: any
-              try {
-                parsedRegionViewport = nodeKind === 'region' && regionViewportText.trim()
-                  ? JSON.parse(regionViewportText)
-                  : undefined
-                parsedRegionOverlay = nodeKind === 'region' && regionOverlayText.trim()
-                  ? JSON.parse(regionOverlayText)
-                  : undefined
-              } catch (error: any) {
-                window.alert(`Region JSON 配置无效: ${error.message}`)
-                return
-              }
-
-              onSave({
-                title,
-                topicType,
-                summary,
-                visualIntent,
-                presentationIntent: visualIntent,
-                sourceText,
-                keyContent: keyContentValue,
-                keyPoints: linesToArray(keyPointsText),
-                hotspotHints: linesToArray(hotspotHintsText),
-                imageFitMode,
-                nodeKind,
-                contentType: nodeKind === 'html' ? 'html' : 'image',
-                htmlSource: nodeKind === 'html' ? htmlSource : undefined,
-                hotspotEdgeIds: nodeKind === 'html' ? linesToArray(hotspotEdgeIdsText) : undefined,
-                regionViewport: nodeKind === 'region' ? parsedRegionViewport : undefined,
-                regionOverlay: nodeKind === 'region' ? parsedRegionOverlay : undefined,
-              })
-            }}
+            onClick={submitNodeSave}
           />
 
           {onRegenerateNode && nodeKind === 'image' && (
@@ -620,6 +646,22 @@ export function NodeModal({
           )}
         </Box>
       </Box>
+      {nodeKind === 'region' && (
+        <RegionNodeEditorModal
+          isOpen={showRegionEditor}
+          onClose={() => setShowRegionEditor(false)}
+          onSaveCurrent={submitNodeSave}
+          saving={saving}
+          imageUrl={regionEditorImageUrl}
+          sourceNodeTitle={regionSourceNode?.title}
+          packageResolution={pkg.resolution}
+          imageFitMode={imageFitMode}
+          regionViewportText={regionViewportText}
+          onRegionViewportTextChange={setRegionViewportText}
+          regionOverlayText={regionOverlayText}
+          onRegionOverlayTextChange={setRegionOverlayText}
+        />
+      )}
     </Flex>
   )
 }
