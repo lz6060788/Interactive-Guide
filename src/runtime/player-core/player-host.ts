@@ -3,7 +3,11 @@ import type {
   PublishManifest,
   PublishHotspot,
   PublishNode,
-  RegionOverlayCard,
+  CameraState,
+  SurfaceCard,
+  SurfaceConfig,
+  SurfaceFocusLayer,
+  SurfaceHotspot,
   RuntimeAction,
   RuntimeConfig,
 } from '../../shared/types.js'
@@ -19,10 +23,13 @@ import {
 } from './html-node-bridge.js'
 import PlayerCore from './player-core.js'
 import {
-  clampRegionOffsetX,
-  resolveInitialRegionViewport,
-  type RegionViewportSolveResult,
-} from './region-viewport.js'
+  clampSurfaceCamera,
+  interpolateCamera,
+  projectSurfacePoint,
+  resolveVisibleSurfaceAnnotations,
+  resolveSurfaceCameraLayout,
+  type SurfaceCameraLayout,
+} from './surface-camera.js'
 
 export interface PlayerHostRefs {
   viewport: HTMLElement
@@ -110,7 +117,10 @@ export class PlayerHost {
   private backLabelEl = document.createElement('div')
   private dragHintEl = document.createElement('div')
   private activeContentType: 'image' | 'html' = 'image'
-  private activeRegionLayout: RegionViewportSolveResult | null = null
+  private activeSurfaceLayout: SurfaceCameraLayout | null = null
+  private activeSurfaceNodeId: string | null = null
+  private currentSurfaceCamera: CameraState | null = null
+  private surfaceAnimationFrameId: number | null = null
   private htmlIframeLayer = document.createElement('div')
   private htmlIframeEntries = new Map<string, HtmlIframeEntry>()
   private htmlIframePreloading = false
@@ -180,7 +190,7 @@ export class PlayerHost {
   }
 
   handleBack(): void {
-    this.engine.handleBack()
+    this.handleBackAction()
   }
 
   handleHotspotById(edgeId: string): void {
@@ -218,6 +228,11 @@ export class PlayerHost {
 
   updateLayout(): void {
     this.applyStageLayout()
+    const currentNode = this.engine.getCurrentNode()
+    if (currentNode && this.getNodeKind(currentNode) === 'surface') {
+      this.applySurfaceImageLayout(currentNode)
+      this.renderAnnotations(currentNode, this.engine.isTransitioning())
+    }
     this.updateHotspotViewport()
   }
 
@@ -225,6 +240,10 @@ export class PlayerHost {
     if (this.hotspotViewportFrameId !== null) {
       cancelAnimationFrame(this.hotspotViewportFrameId)
       this.hotspotViewportFrameId = null
+    }
+    if (this.surfaceAnimationFrameId !== null) {
+      cancelAnimationFrame(this.surfaceAnimationFrameId)
+      this.surfaceAnimationFrameId = null
     }
     this.destroyers.forEach(dispose => dispose())
     this.destroyers = []
@@ -250,12 +269,14 @@ export class PlayerHost {
     window.addEventListener('resize', this.handleWindowResize)
     this.refs.viewport.addEventListener('pointerdown', this.handleViewportPointerDown)
     this.refs.viewport.addEventListener('click', this.handleViewportClick)
+    this.refs.viewport.addEventListener('wheel', this.handleViewportWheel, { passive: false })
 
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('load', this.handleNodeImageLoad))
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('pointerdown', this.handleNodeImagePointerDown))
     this.destroyers.push(() => window.removeEventListener('resize', this.handleWindowResize))
     this.destroyers.push(() => this.refs.viewport.removeEventListener('pointerdown', this.handleViewportPointerDown))
     this.destroyers.push(() => this.refs.viewport.removeEventListener('click', this.handleViewportClick))
+    this.destroyers.push(() => this.refs.viewport.removeEventListener('wheel', this.handleViewportWheel))
     this.destroyers.push(() => this.detachDragListeners())
   }
 
@@ -288,7 +309,7 @@ export class PlayerHost {
 
   private handleViewportClick = (event: MouseEvent): void => {
     const currentNode = this.engine.getCurrentNode()
-    if (!currentNode || this.getNodeKind(currentNode) !== 'region') return
+    if (!currentNode || this.getNodeKind(currentNode) !== 'surface') return
     if (this.engine.isTransitioning()) return
     if (this.dragState.moved) {
       this.dragState.moved = false
@@ -297,13 +318,41 @@ export class PlayerHost {
 
     const pointerDownTarget = this.viewportPointerDownTarget
     this.viewportPointerDownTarget = null
-    if (this.isInteractiveRegionTarget(pointerDownTarget) || this.isInteractiveRegionTarget(event.target)) {
+    if (this.isInteractiveSurfaceTarget(pointerDownTarget) || this.isInteractiveSurfaceTarget(event.target)) {
       return
     }
+  }
 
-    if (this.engine.getHistory().length > 0) {
-      this.engine.handleBack()
-    }
+  private handleViewportWheel = (event: WheelEvent): void => {
+    const currentNode = this.engine.getCurrentNode()
+    if (!currentNode || this.getNodeKind(currentNode) !== 'surface' || !this.currentSurfaceCamera) return
+    if (this.engine.isTransitioning()) return
+    event.preventDefault()
+
+    const surfaceConfig = currentNode.surfaceConfig
+    const layout = this.activeSurfaceLayout
+    if (!surfaceConfig || !layout) return
+
+    const rect = this.refs.container.getBoundingClientRect()
+    const pointerX = event.clientX - rect.left
+    const pointerY = event.clientY - rect.top
+    const imageNormX = (pointerX - layout.originX - layout.translateX) / Math.max(layout.scaledWidth, 1)
+    const imageNormY = (pointerY - layout.originY - layout.translateY) / Math.max(layout.scaledHeight, 1)
+    const zoomFactor = event.deltaY < 0 ? 1.12 : 1 / 1.12
+    const nextZoom = this.currentSurfaceCamera.zoom * zoomFactor
+    const nextCamera = clampSurfaceCamera(
+      {
+        centerX: imageNormX - (pointerX - rect.width / 2) / Math.max(layout.baseWidth * nextZoom, 1),
+        centerY: imageNormY - (pointerY - rect.height / 2) / Math.max(layout.baseHeight * nextZoom, 1),
+        zoom: nextZoom,
+      },
+      rect.width,
+      rect.height,
+      this.getNodeAspectRatio(currentNode) ?? 1,
+      surfaceConfig.bounds,
+    )
+
+    this.setSurfaceCamera(nextCamera, false)
   }
 
   private handleHtmlNodeBackRequest = (
@@ -357,16 +406,16 @@ export class PlayerHost {
     const currentNode = this.engine.getCurrentNode()
     if (!currentNode) return
 
-    if (this.getNodeKind(currentNode) === 'region') {
-      if (!this.activeRegionLayout?.canPanHorizontally || !event.isPrimary) return
+    if (this.getNodeKind(currentNode) === 'surface') {
+      if (!event.isPrimary || !this.currentSurfaceCamera) return
       event.preventDefault()
       this.dragState = {
         active: true,
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
-        startOffsetX: this.imageOffset.x,
-        startOffsetY: this.imageOffset.y,
+        startOffsetX: this.currentSurfaceCamera.centerX,
+        startOffsetY: this.currentSurfaceCamera.centerY,
         maxOffsetX: 0,
         maxOffsetY: 0,
         moved: false,
@@ -425,11 +474,20 @@ export class PlayerHost {
     const currentNode = this.engine.getCurrentNode()
     if (!currentNode) return
 
-    if (this.getNodeKind(currentNode) === 'region' && this.activeRegionLayout) {
-      let nextX = this.dragState.startOffsetX + (event.clientX - this.dragState.startX)
-      nextX = clampRegionOffsetX(nextX, this.activeRegionLayout)
-      this.applyRegionImageTransform(nextX)
-      this.scheduleHotspotViewportUpdate()
+    if (this.getNodeKind(currentNode) === 'surface' && this.activeSurfaceLayout && this.currentSurfaceCamera && currentNode.surfaceConfig) {
+      const rect = this.refs.container.getBoundingClientRect()
+      const nextCamera = clampSurfaceCamera(
+        {
+          centerX: this.dragState.startOffsetX - (event.clientX - this.dragState.startX) / Math.max(this.activeSurfaceLayout.baseWidth * this.currentSurfaceCamera.zoom, 1),
+          centerY: this.dragState.startOffsetY - (event.clientY - this.dragState.startY) / Math.max(this.activeSurfaceLayout.baseHeight * this.currentSurfaceCamera.zoom, 1),
+          zoom: this.currentSurfaceCamera.zoom,
+        },
+        rect.width,
+        rect.height,
+        this.getNodeAspectRatio(currentNode) ?? 1,
+        currentNode.surfaceConfig.bounds,
+      )
+      this.setSurfaceCamera(nextCamera, false)
       return
     }
 
@@ -466,8 +524,8 @@ export class PlayerHost {
     }
 
     const currentNode = this.engine.getCurrentNode()
-    if (this.getNodeKind(currentNode) === 'region') {
-      this.refs.nodeImage.style.cursor = this.activeRegionLayout?.canPanHorizontally ? 'grab' : 'default'
+    if (this.getNodeKind(currentNode) === 'surface') {
+      this.refs.nodeImage.style.cursor = 'grab'
       return
     }
 
@@ -486,7 +544,7 @@ export class PlayerHost {
     this.backButtonEl.type = 'button'
     this.backButtonEl.setAttribute('aria-label', '返回上一页')
     this.backButtonEl.innerHTML = BACK_ICON_SVG
-    this.backButtonEl.addEventListener('click', () => this.handleBack())
+    this.backButtonEl.addEventListener('click', () => this.handleBackAction())
 
     this.backControlEl.appendChild(this.backButtonEl)
     this.backControlEl.appendChild(this.backLabelEl)
@@ -754,8 +812,8 @@ export class PlayerHost {
     const nodeKind = this.getNodeKind(currentNode)
     if (nodeKind === 'html') {
       this.renderHtmlNode(currentNode, transitioning)
-    } else if (nodeKind === 'region') {
-      this.renderRegionNode(currentNode, transitioning)
+    } else if (nodeKind === 'surface') {
+      this.renderSurfaceNode(currentNode, transitioning)
     } else {
       this.renderImageNode(currentNode, transitioning)
     }
@@ -770,10 +828,10 @@ export class PlayerHost {
 
   private renderChrome(state: PlayerHostState): void {
     const currentNode = state.currentNode
-    const hasBack = state.history.length > 0
+    const hasBack = state.history.length > 0 || this.canResetSurfaceCamera(currentNode)
     const nodeKind = this.getNodeKind(currentNode)
-    const showHorizontalDragHint = nodeKind === 'region'
-      ? !!this.activeRegionLayout?.canPanHorizontally
+    const showHorizontalDragHint = nodeKind === 'surface'
+      ? true
       : currentNode?.imageFitMode === 'fitHeight'
     const chromeVisible = !!currentNode && !state.transitioning && !state.preloading
 
@@ -787,7 +845,9 @@ export class PlayerHost {
   }
 
   private renderHtmlNode(currentNode: PublishNode, transitioning: boolean): void {
-    this.activeRegionLayout = null
+    this.activeSurfaceLayout = null
+    this.activeSurfaceNodeId = null
+    this.currentSurfaceCamera = null
     this.activeContentType = 'html'
     const htmlUrl = currentNode.htmlUrl ?? ''
     const entry = this.ensureHtmlIframe(htmlUrl)
@@ -822,7 +882,9 @@ export class PlayerHost {
 
   private renderImageNode(currentNode: PublishNode, transitioning: boolean): void {
     const fitMode = currentNode.imageFitMode ?? 'fill'
-    this.activeRegionLayout = null
+    this.activeSurfaceLayout = null
+    this.activeSurfaceNodeId = null
+    this.currentSurfaceCamera = null
     this.activeContentType = 'image'
     this.activeHtmlIframeUrl = ''
     this.htmlNodeBridge.deactivateNode()
@@ -851,40 +913,27 @@ export class PlayerHost {
     })
   }
 
-  private renderRegionNode(currentNode: PublishNode, transitioning: boolean): void {
-    const manifest = this.engine.getManifest()
-    const sourceNode = currentNode.regionViewport
-      ? manifest?.nodeMap[currentNode.regionViewport.sourceNodeId]
-      : undefined
-
-    if (!manifest || !currentNode.regionViewport || !sourceNode?.imageUrl) {
-      this.activeRegionLayout = null
+  private renderSurfaceNode(currentNode: PublishNode, transitioning: boolean): void {
+    if (!currentNode.surfaceConfig) {
       this.renderImageNode(currentNode, transitioning)
       return
     }
-
     this.activeContentType = 'image'
     this.activeHtmlIframeUrl = ''
     this.htmlNodeBridge.deactivateNode()
     this.hideAllManagedIframes()
-
-    this.activeRegionLayout = resolveInitialRegionViewport({
-      viewportWidth: this.refs.container.clientWidth,
-      viewportHeight: this.refs.container.clientHeight,
-      sourceAspect: this.engine.getSourceNodeAspectRatio(sourceNode) ?? (sourceNode.imageUrl === this.refs.nodeImage.currentSrc || sourceNode.imageUrl === this.refs.nodeImage.src
-        ? this.refs.nodeImage.naturalWidth / Math.max(this.refs.nodeImage.naturalHeight, 1)
-        : 1),
-      regionViewport: currentNode.regionViewport,
-      imageFitMode: currentNode.imageFitMode,
-    })
+    const previousSurfaceNodeId = this.activeSurfaceNodeId
+    this.activeSurfaceNodeId = currentNode.id
+    if (!this.currentSurfaceCamera || previousSurfaceNodeId !== currentNode.id) {
+      this.currentSurfaceCamera = currentNode.surfaceConfig.initialCamera
+    }
 
     this.refs.nodeImage.style.visibility = 'visible'
     this.refs.nodeImage.style.pointerEvents = transitioning ? 'none' : 'auto'
-    this.refs.nodeImage.src = sourceNode.imageUrl
+    this.refs.nodeImage.src = currentNode.surfaceConfig.sourceImageUrl
     this.refs.nodeImage.alt = currentNode.title ?? currentNode.id
     this.refs.nodeImage.style.opacity = transitioning ? '0' : '1'
-
-    this.applyRegionImageLayout(this.activeRegionLayout)
+    this.applySurfaceImageLayout(currentNode)
     this.renderAnnotations(currentNode, transitioning)
 
     this.refs.hotspots.style.opacity = transitioning ? '0' : '1'
@@ -931,24 +980,35 @@ export class PlayerHost {
     }
   }
 
-  private applyRegionImageLayout(layout: RegionViewportSolveResult): void {
+  private applySurfaceImageLayout(currentNode: PublishNode): void {
+    const surfaceConfig = currentNode.surfaceConfig
+    if (!surfaceConfig || !this.currentSurfaceCamera) return
     const { nodeImage, container } = this.refs
-    this.imageOffset = { x: layout.offsetX, y: layout.offsetY }
+    const layout = resolveSurfaceCameraLayout({
+      viewportWidth: container.clientWidth,
+      viewportHeight: container.clientHeight,
+      sourceAspect: this.getNodeAspectRatio(currentNode) ?? 1,
+      camera: this.currentSurfaceCamera,
+      bounds: surfaceConfig.bounds,
+    })
+    this.activeSurfaceLayout = layout
+    this.currentSurfaceCamera = layout.camera
+    this.imageOffset = { x: layout.translateX + layout.originX, y: layout.translateY + layout.originY }
 
     container.style.overflow = 'hidden'
     nodeImage.style.position = 'absolute'
     nodeImage.style.left = '0'
     nodeImage.style.top = '0'
-    nodeImage.style.width = `${layout.scaledImageWidth}px`
-    nodeImage.style.height = `${layout.scaledImageHeight}px`
+    nodeImage.style.width = `${layout.scaledWidth}px`
+    nodeImage.style.height = `${layout.scaledHeight}px`
     nodeImage.style.maxWidth = 'none'
     nodeImage.style.maxHeight = 'none'
     nodeImage.style.objectFit = 'fill'
     nodeImage.style.objectPosition = '50% 50%'
-    nodeImage.style.transform = `translate(${layout.offsetX}px, ${layout.offsetY}px)`
-    nodeImage.style.clipPath = layout.clipPath
-    nodeImage.style.cursor = layout.canPanHorizontally ? 'grab' : 'default'
-    nodeImage.style.touchAction = layout.canPanHorizontally ? 'none' : 'auto'
+    nodeImage.style.transform = `translate(${layout.translateX + layout.originX}px, ${layout.translateY + layout.originY}px)`
+    nodeImage.style.clipPath = ''
+    nodeImage.style.cursor = 'grab'
+    nodeImage.style.touchAction = 'none'
   }
 
   private applyImageTransform(offsetX: number, offsetY: number): void {
@@ -958,12 +1018,6 @@ export class PlayerHost {
     const nextY = fitMode === 'fitWidth' ? offsetY : 0
     this.imageOffset = { x: nextX, y: nextY }
     this.refs.nodeImage.style.transform = `translate(-50%, -50%) translate(${nextX}px, ${nextY}px)`
-  }
-
-  private applyRegionImageTransform(offsetX: number): void {
-    if (!this.activeRegionLayout) return
-    this.imageOffset = { x: offsetX, y: this.activeRegionLayout.offsetY }
-    this.refs.nodeImage.style.transform = `translate(${offsetX}px, ${this.activeRegionLayout.offsetY}px)`
   }
 
   private getImageHorizontalPanRange(): { min: number; max: number } {
@@ -1001,13 +1055,29 @@ export class PlayerHost {
 
   private renderAnnotations(currentNode: PublishNode | null, transitioning: boolean): void {
     this.refs.hotspots.innerHTML = ''
-    for (const hotspot of currentNode?.hotspots ?? []) {
-      this.refs.hotspots.appendChild(this.createHotspotButton(hotspot, currentNode))
-    }
-    if (!transitioning && this.getNodeKind(currentNode) === 'region' && currentNode?.regionOverlay) {
-      for (const card of currentNode.regionOverlay.cards) {
-        this.refs.hotspots.appendChild(this.createRegionOverlayCard(card))
+    if (!currentNode) return
+
+    if (this.getNodeKind(currentNode) === 'surface') {
+      const annotations = resolveVisibleSurfaceAnnotations(
+        currentNode.surfaceLayers,
+        this.currentSurfaceCamera ?? currentNode.surfaceConfig?.initialCamera ?? { centerX: 0.5, centerY: 0.5, zoom: 1 },
+      )
+      for (const hotspot of annotations.hotspots) {
+        this.refs.hotspots.appendChild(this.createSurfaceHotspotButton(hotspot, currentNode))
       }
+      if (!transitioning) {
+        for (const card of annotations.cards) {
+          this.refs.hotspots.appendChild(this.createSurfaceCard(card))
+        }
+      }
+      requestAnimationFrame(() => {
+        this.updateHotspotViewport()
+      })
+      return
+    }
+
+    for (const hotspot of currentNode.hotspots ?? []) {
+      this.refs.hotspots.appendChild(this.createHotspotButton(hotspot, currentNode))
     }
     requestAnimationFrame(() => {
       this.updateHotspotViewport()
@@ -1028,7 +1098,11 @@ export class PlayerHost {
     document.head.appendChild(style)
   }
 
-  private createHotspotButton(hotspot: PublishHotspot, _node?: PublishNode | null): HTMLButtonElement {
+  private createHotspotButton(
+    hotspot: PublishHotspot,
+    _node?: PublishNode | null,
+    onClick?: () => void,
+  ): HTMLButtonElement {
     this.ensureHotspotAnimationStyle()
 
     const button = document.createElement('button')
@@ -1077,47 +1151,62 @@ export class PlayerHost {
     }
 
     button.addEventListener('click', () => {
-      this.handleHotspotNavigation(hotspot)
+      if (onClick) {
+        onClick()
+      } else {
+        this.handleHotspotNavigation(hotspot)
+      }
     })
 
     return button
   }
 
-  private createRegionOverlayCard(card: RegionOverlayCard): HTMLDivElement {
+  private createSurfaceCard(card: SurfaceCard): HTMLDivElement {
     const root = document.createElement('div')
     const outer = document.createElement('div')
     const inner = document.createElement('div')
     const title = document.createElement('div')
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
 
     root.style.position = 'absolute'
-    root.style.left = `${card.anchor.x * 100}%`
-    root.style.top = `${card.anchor.y * 100}%`
-    root.style.transform = 'translate(-50%, -50%)'
-    root.style.pointerEvents = 'auto'
+    root.style.inset = '0'
+    root.style.pointerEvents = 'none'
     root.style.zIndex = '2'
-    root.dataset.regionOverlayCard = 'true'
+    root.dataset.surfaceCard = 'true'
+    root.dataset.anchorX = String(card.anchor.x)
+    root.dataset.anchorY = String(card.anchor.y)
 
     outer.style.boxSizing = 'border-box'
     outer.style.background = 'rgba(255, 255, 255, 0.92)'
     outer.style.border = '1px solid #000'
     outer.style.borderRadius = '6px'
-    outer.style.padding = '5px 10px'
+    outer.style.padding = '8px 12px'
     outer.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.16)'
+    outer.style.position = 'absolute'
+    outer.style.transform = 'translate(-50%, -50%)'
+    outer.style.pointerEvents = 'auto'
+    outer.style.minWidth = '84px'
+    outer.style.maxWidth = '220px'
+    outer.style.width = 'max-content'
+    outer.style.contain = 'layout paint style'
+    outer.style.willChange = 'left,top'
 
     inner.style.display = 'flex'
     inner.style.flexDirection = 'column'
-    inner.style.alignItems = 'center'
+    inner.style.alignItems = 'stretch'
     inner.style.justifyContent = 'center'
-    inner.style.gap = '2px'
+    inner.style.gap = '4px'
 
     title.textContent = card.title
     title.style.fontFamily = '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
     title.style.fontSize = '12px'
-    title.style.fontWeight = '400'
+    title.style.fontWeight = '500'
     title.style.lineHeight = '18px'
     title.style.color = 'rgba(0, 0, 0, 0.84)'
     title.style.textAlign = 'center'
-    title.style.whiteSpace = 'nowrap'
+    title.style.whiteSpace = 'normal'
+    title.style.wordBreak = 'break-word'
     inner.appendChild(title)
 
     const distinctTags = (card.tags ?? []).filter(tagText =>
@@ -1127,8 +1216,10 @@ export class PlayerHost {
       const tagRow = document.createElement('div')
       tagRow.style.display = 'flex'
       tagRow.style.flexDirection = 'row'
-      tagRow.style.alignItems = 'flex-start'
+      tagRow.style.alignItems = 'center'
+      tagRow.style.justifyContent = 'center'
       tagRow.style.gap = '4px'
+      tagRow.style.flexWrap = 'wrap'
       for (const tagText of distinctTags) {
         const tag = document.createElement('span')
         tag.textContent = tagText
@@ -1155,13 +1246,14 @@ export class PlayerHost {
       const stockRow = document.createElement('div')
       stockRow.style.display = 'flex'
       stockRow.style.flexDirection = 'row'
-      stockRow.style.alignItems = 'flex-start'
+      stockRow.style.alignItems = 'center'
+      stockRow.style.justifyContent = 'center'
       stockRow.style.gap = '4px'
       stockRow.style.flexWrap = 'wrap'
       for (const stock of card.stocks) {
         const stockBtn = document.createElement(stock.action ? 'button' : 'span')
         stockBtn.textContent = stock.label
-        ;(stockBtn as HTMLElement).dataset.regionOverlayStock = 'true'
+        ;(stockBtn as HTMLElement).dataset.surfaceStock = 'true'
         Object.assign(stockBtn.style, {
           display: 'inline-flex',
           alignItems: 'center',
@@ -1193,12 +1285,63 @@ export class PlayerHost {
 
     outer.appendChild(inner)
     root.appendChild(outer)
+    if (card.callout) {
+      root.dataset.calloutDock = card.callout.fromDock
+      root.dataset.calloutTargetX = String(card.callout.target.x)
+      root.dataset.calloutTargetY = String(card.callout.target.y)
+      Object.assign(svg.style, {
+        position: 'absolute',
+        inset: '0',
+        width: '100%',
+        height: '100%',
+        overflow: 'visible',
+        pointerEvents: 'none',
+      })
+      line.setAttribute('stroke', 'rgba(255,255,255,0.95)')
+      line.setAttribute('stroke-width', '2')
+      line.setAttribute('stroke-linecap', 'round')
+      line.setAttribute('x1', '0')
+      line.setAttribute('y1', '0')
+      line.setAttribute('x2', '0')
+      line.setAttribute('y2', '0')
+      svg.appendChild(line)
+      root.appendChild(svg)
+    }
     return root
+  }
+
+  private createSurfaceHotspotButton(hotspot: SurfaceHotspot, currentNode: PublishNode): HTMLButtonElement {
+    const button = this.createHotspotButton({
+      edgeId: hotspot.target.type === 'edge' ? hotspot.target.edgeId : hotspot.id,
+      targetNodeId: hotspot.target.type === 'edge'
+        ? this.engine.getManifest()?.edgeMap[hotspot.target.edgeId]?.toNodeId ?? currentNode.id
+        : currentNode.id,
+      label: hotspot.label,
+      normalizedX: hotspot.anchor.x,
+      normalizedY: hotspot.anchor.y,
+      radius: 12,
+      markerType: 'dot',
+      style: hotspot.style,
+    }, currentNode, () => this.handleSurfaceHotspotNavigation(hotspot, currentNode))
+    button.dataset.surfaceAnchorX = String(hotspot.anchor.x)
+    button.dataset.surfaceAnchorY = String(hotspot.anchor.y)
+    return button
   }
 
   private updateHotspotViewport(): void {
     const { container, nodeImage, nodeIframe, hotspots, stage } = this.refs
     if (stage.hidden) return
+
+    const currentNode = this.engine.getCurrentNode()
+    if (currentNode && this.getNodeKind(currentNode) === 'surface' && this.activeSurfaceLayout) {
+      hotspots.style.left = '0px'
+      hotspots.style.top = '0px'
+      hotspots.style.width = '100%'
+      hotspots.style.height = '100%'
+      hotspots.style.clipPath = ''
+      this.positionSurfaceAnnotations(hotspots, this.activeSurfaceLayout)
+      return
+    }
 
     const mediaRect = container.getBoundingClientRect()
     const contentEl = this.activeContentType === 'html' ? nodeIframe : nodeImage
@@ -1212,7 +1355,7 @@ export class PlayerHost {
     hotspots.style.top = `${contentRect.top - mediaRect.top}px`
     hotspots.style.width = `${contentRect.width}px`
     hotspots.style.height = `${contentRect.height}px`
-    hotspots.style.clipPath = this.activeRegionLayout?.clipPath ?? ''
+    hotspots.style.clipPath = ''
   }
 
   private confirmHostVisualCommitIfReady(reason: string): void {
@@ -1234,10 +1377,8 @@ export class PlayerHost {
     if (this.getNodeKind(currentNode) === 'html') {
       if (!this.isActiveHtmlIframeReady()) return
     } else {
-      const expectedNode = this.getNodeKind(currentNode) === 'region'
-        ? this.getRegionSourceNode(currentNode)
-        : currentNode
-      const expectedSrc = this.toAbsoluteUrl(expectedNode?.imageUrl ?? '')
+      const expectedNode = currentNode
+      const expectedSrc = this.toAbsoluteUrl(this.getNodeImageSource(expectedNode) ?? '')
       const actualSrc = this.refs.nodeImage.currentSrc || this.refs.nodeImage.src
       if (!this.refs.nodeImage.complete || actualSrc !== expectedSrc) return
     }
@@ -1249,9 +1390,9 @@ export class PlayerHost {
     return new URL(url, window.location.href).href
   }
 
-  private isInteractiveRegionTarget(target: EventTarget | null): boolean {
+  private isInteractiveSurfaceTarget(target: EventTarget | null): boolean {
     if (!(target instanceof Element)) return false
-    return !!target.closest('[data-region-overlay-card="true"], [data-region-overlay-stock="true"], button')
+    return !!target.closest('[data-surface-card="true"], [data-surface-stock="true"], button')
   }
 
   private resolveHtmlRouteUrl(route: string): string {
@@ -1421,6 +1562,159 @@ export class PlayerHost {
     void this.ensureHtmlIframe(node.htmlUrl).readyPromise
   }
 
+  private handleBackAction(): void {
+    const currentNode = this.engine.getCurrentNode()
+    if (this.canResetSurfaceCamera(currentNode)) {
+      const surfaceConfig = currentNode?.surfaceConfig
+      if (surfaceConfig) {
+        this.setSurfaceCamera(surfaceConfig.initialCamera, true)
+      }
+      return
+    }
+    this.engine.handleBack()
+  }
+
+  private canResetSurfaceCamera(node: PublishNode | null | undefined): boolean {
+    if (!node || this.getNodeKind(node) !== 'surface' || !node.surfaceConfig || !this.currentSurfaceCamera) {
+      return false
+    }
+    const initial = node.surfaceConfig.initialCamera
+    return (
+      Math.abs(this.currentSurfaceCamera.centerX - initial.centerX) > 0.0001
+      || Math.abs(this.currentSurfaceCamera.centerY - initial.centerY) > 0.0001
+      || Math.abs(this.currentSurfaceCamera.zoom - initial.zoom) > 0.0001
+    )
+  }
+
+  private setSurfaceCamera(camera: CameraState, animated: boolean): void {
+    const currentNode = this.engine.getCurrentNode()
+    if (!currentNode || this.getNodeKind(currentNode) !== 'surface' || !currentNode.surfaceConfig) return
+
+    const apply = (nextCamera: CameraState) => {
+      this.currentSurfaceCamera = nextCamera
+      this.applySurfaceImageLayout(currentNode)
+      this.renderAnnotations(currentNode, this.engine.isTransitioning())
+      this.updateHotspotViewport()
+      this.renderChrome(this.getState())
+      this.emitState()
+    }
+
+    if (!animated || !this.currentSurfaceCamera) {
+      if (this.surfaceAnimationFrameId !== null) {
+        cancelAnimationFrame(this.surfaceAnimationFrameId)
+        this.surfaceAnimationFrameId = null
+      }
+      apply(camera)
+      return
+    }
+
+    const from = this.currentSurfaceCamera
+    const to = camera
+    const startTime = performance.now()
+    const duration = 260
+    const step = (now: number) => {
+      const progress = Math.min((now - startTime) / duration, 1)
+      const eased = 1 - (1 - progress) * (1 - progress)
+      apply(interpolateCamera(from, to, eased))
+      if (progress < 1) {
+        this.surfaceAnimationFrameId = requestAnimationFrame(step)
+      } else {
+        this.surfaceAnimationFrameId = null
+      }
+    }
+
+    if (this.surfaceAnimationFrameId !== null) {
+      cancelAnimationFrame(this.surfaceAnimationFrameId)
+    }
+    this.surfaceAnimationFrameId = requestAnimationFrame(step)
+  }
+
+  private handleSurfaceHotspotNavigation(hotspot: SurfaceHotspot, currentNode: PublishNode): void {
+    if (hotspot.target.type === 'edge') {
+      this.navigateByEdge(hotspot.target.edgeId)
+      return
+    }
+    if (hotspot.target.type === 'camera-preset') {
+      this.setSurfaceCamera(hotspot.target.camera, true)
+      return
+    }
+    if (hotspot.target.type === 'focus-layer') {
+      const { layerId } = hotspot.target
+      const layer = currentNode.surfaceLayers?.find(item => item.id === layerId)
+      if (layer?.cameraPreset) {
+        this.setSurfaceCamera({
+          ...layer.cameraPreset,
+          zoom: layer.visibility.minZoom,
+        }, true)
+      }
+    }
+  }
+
+  private positionSurfaceAnnotations(
+    hotspots: HTMLElement,
+    layout: SurfaceCameraLayout,
+  ): void {
+    hotspots.querySelectorAll<HTMLElement>('[data-surface-anchor-x]').forEach(el => {
+      const x = Number(el.dataset.surfaceAnchorX ?? '0')
+      const y = Number(el.dataset.surfaceAnchorY ?? '0')
+      const point = projectSurfacePoint({ x, y }, layout)
+      el.style.left = `${point.x}px`
+      el.style.top = `${point.y}px`
+      el.style.transform = 'translate(-50%, -50%)'
+    })
+
+    hotspots.querySelectorAll<HTMLDivElement>('[data-surface-card="true"]').forEach(cardRoot => {
+      const anchorX = Number(cardRoot.dataset.anchorX ?? '0')
+      const anchorY = Number(cardRoot.dataset.anchorY ?? '0')
+      const point = projectSurfacePoint({ x: anchorX, y: anchorY }, layout)
+      const outer = cardRoot.firstElementChild as HTMLElement | null
+      if (outer) {
+        outer.style.left = `${point.x}px`
+        outer.style.top = `${point.y}px`
+      }
+      const dock = cardRoot.dataset.calloutDock
+      const targetX = cardRoot.dataset.calloutTargetX
+      const targetY = cardRoot.dataset.calloutTargetY
+      const svg = cardRoot.querySelector('svg')
+      const line = cardRoot.querySelector('line')
+      if (!svg || !line || !outer || !dock || !targetX || !targetY) return
+
+      const outerRect = outer.getBoundingClientRect()
+      const rootRect = hotspots.getBoundingClientRect()
+      const targetPoint = projectSurfacePoint({ x: Number(targetX), y: Number(targetY) }, layout)
+      let startX = outerRect.left - rootRect.left + outerRect.width / 2
+      let startY = outerRect.top - rootRect.top + outerRect.height / 2
+      if (dock === 'top') startY = outerRect.top - rootRect.top
+      if (dock === 'bottom') startY = outerRect.bottom - rootRect.top
+      if (dock === 'left') startX = outerRect.left - rootRect.left
+      if (dock === 'right') startX = outerRect.right - rootRect.left
+
+      line.setAttribute('x1', String(startX))
+      line.setAttribute('y1', String(startY))
+      line.setAttribute('x2', String(targetPoint.x))
+      line.setAttribute('y2', String(targetPoint.y))
+    })
+  }
+
+  private getNodeImageSource(node: PublishNode | null | undefined): string | undefined {
+    if (!node) return undefined
+    if (this.getNodeKind(node) === 'surface') {
+      return node.surfaceConfig?.sourceImageUrl ?? node.imageUrl
+    }
+    return node.imageUrl
+  }
+
+  private getNodeAspectRatio(node: PublishNode | null | undefined): number | null {
+    const imageUrl = this.getNodeImageSource(node)
+    if (!imageUrl) return null
+    const absoluteUrl = this.toAbsoluteUrl(imageUrl)
+    const currentSrc = this.refs.nodeImage.currentSrc || this.refs.nodeImage.src
+    if ((currentSrc && absoluteUrl === currentSrc) && this.refs.nodeImage.naturalWidth > 0 && this.refs.nodeImage.naturalHeight > 0) {
+      return this.refs.nodeImage.naturalWidth / this.refs.nodeImage.naturalHeight
+    }
+    return this.engine.getSourceNodeAspectRatio(node)
+  }
+
   private executeRuntimeAction(action: RuntimeAction): void {
     if (action.type === 'navigate-edge') {
       this.navigateByEdge(action.edgeId)
@@ -1436,17 +1730,9 @@ export class PlayerHost {
     }
   }
 
-  private getNodeKind(node: PublishNode | null | undefined): 'image' | 'region' | 'html' {
+  private getNodeKind(node: PublishNode | null | undefined): 'surface' | 'image' | 'html' {
     if (!node) return 'image'
     return node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
-  }
-
-  private getRegionSourceNode(node: PublishNode): PublishNode | null {
-    const manifest = this.engine.getManifest()
-    if (!manifest || this.getNodeKind(node) !== 'region') return null
-    const sourceNodeId = node.regionViewport?.sourceNodeId
-    if (!sourceNodeId) return null
-    return manifest.nodeMap[sourceNodeId] ?? null
   }
 
   private handleHotspotNavigation(hotspot: PublishHotspot): void {

@@ -138,15 +138,13 @@ export class RuntimeResourcePreloader {
       return [() => this.preloadHtml(node.htmlUrl)]
     }
 
-    if (nodeKind === 'region') {
-      const sourceNode = node.regionViewport
-        ? manifest.nodeMap[node.regionViewport.sourceNodeId]
-        : undefined
-      return [() => this.preloadImage(sourceNode?.imageUrl)]
+    if (nodeKind === 'surface') {
+      return [() => this.preloadImage(node.surfaceConfig?.sourceImageUrl ?? node.imageUrl)]
     }
 
     return [() => this.preloadImage(node.imageUrl)]
   }
+
 
   private async runJobsInBackground(jobs: Array<() => Promise<void>>): Promise<void> {
     for (const job of jobs) {

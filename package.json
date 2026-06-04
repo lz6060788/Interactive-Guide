@@ -13,7 +13,7 @@
     "build:player-core": "npm run build:player-host",
     "build:upload-bundle": "cd scripts && npx vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/region-viewport.test.ts tests/region-manifest-validation.test.ts",
+    "test": "node --import tsx --test tests/surface-camera.test.ts tests/region-manifest-validation.test.ts",
     "validate:package": "tsx src/shared/validate-package.ts"
   },
   "dependencies": {

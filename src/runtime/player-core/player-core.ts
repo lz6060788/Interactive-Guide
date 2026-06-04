@@ -4,11 +4,12 @@ import type {
   PublishNode,
   PublishEdge,
   BuiltinTransitionConfig,
+  SurfaceConfig,
 } from '../../shared/types.js'
 import type { BuiltinTransitionType } from '../../shared/types.js'
 import type { Transition, TransitionPlaybackDirection } from '../transitions/index.js'
 import { createTransition } from '../transitions/index.js'
-import { resolveInitialRegionViewport } from './region-viewport.js'
+import { resolveSurfaceCameraLayout } from './surface-camera.js'
 import { RuntimeResourcePreloader } from './resource-preloader.js'
 import { TransitionVideoController } from './transition-video-controller.js'
 
@@ -40,6 +41,13 @@ interface PendingVisualCommit {
   kind: 'builtin' | 'video'
   targetNodeId: string
   cleanup: () => void
+}
+
+interface SurfaceLayoutResult {
+  scaledImageWidth: number
+  scaledImageHeight: number
+  offsetX: number
+  offsetY: number
 }
 
 type ResolvedNavigationTransition =
@@ -300,12 +308,6 @@ class PlayerCore {
   private createTransitionVisualFromCurrentImage(borderRadius: string): HTMLElement {
     const wrapper = this.createTransitionVisualShell(borderRadius)
     const clone = this.refs.nodeImage.cloneNode(true) as HTMLImageElement
-    const currentNode = this.getCurrentNode()
-    if (this.getNodeKind(currentNode) === 'region') {
-      clone.draggable = false
-      wrapper.appendChild(clone)
-      return wrapper
-    }
     const containerRect = this.refs.container.getBoundingClientRect()
     const imageRect = this.refs.nodeImage.getBoundingClientRect()
     clone.draggable = false
@@ -329,8 +331,8 @@ class PlayerCore {
     img: HTMLImageElement,
     node: PublishNode,
   ): void {
-    if (this.getNodeKind(node) === 'region') {
-      const layout = this.resolveRegionViewportForNode(node)
+    if (this.getNodeKind(node) === 'surface') {
+      const layout = this.resolveSurfaceLayoutForNode(node)
       if (layout) {
         img.draggable = false
         img.style.display = 'block'
@@ -346,7 +348,6 @@ class PlayerCore {
         img.style.objectFit = 'fill'
         img.style.objectPosition = '50% 50%'
         img.style.transform = `translate(${layout.offsetX}px, ${layout.offsetY}px)`
-        img.style.clipPath = layout.clipPath
         return
       }
     }
@@ -396,10 +397,7 @@ class PlayerCore {
   ): { visual: HTMLElement, image: HTMLImageElement } {
     const wrapper = this.createTransitionVisualShell(borderRadius)
     const img = document.createElement('img')
-    const sourceNode = this.getNodeKind(node) === 'region'
-      ? this.getRegionSourceNode(node)
-      : node
-    img.src = sourceNode?.imageUrl ?? node.imageUrl ?? ''
+    img.src = this.getNodeImageSource(node) ?? ''
     img.alt = node.title ?? node.id
     this.applyTransitionNodeImageStyle(img, node)
     wrapper.appendChild(img)
@@ -727,20 +725,6 @@ class PlayerCore {
       return { ...config }
     }
 
-    if (config.focusMode === 'target-region-auto' && targetNodeId) {
-      const targetNode = this.manifest?.nodeMap[targetNodeId]
-      const layout = targetNode ? this.resolveRegionViewportForNode(targetNode) : null
-      if (layout) {
-        return {
-          ...config,
-          focusMode: 'quad',
-          focusQuad: layout.initialWindow,
-          centerX: undefined,
-          centerY: undefined,
-        }
-      }
-    }
-
     return {
       ...config,
       centerX: config.centerX ?? hotspot.normalizedX,
@@ -748,38 +732,45 @@ class PlayerCore {
     }
   }
 
-  private getNodeKind(node: PublishNode | null | undefined): 'image' | 'region' | 'html' {
+  private getNodeKind(node: PublishNode | null | undefined): 'surface' | 'image' | 'html' {
     if (!node) return 'image'
     return node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
   }
 
-  private getRegionSourceNode(node: PublishNode): PublishNode | null {
-    if (!this.manifest || this.getNodeKind(node) !== 'region') return null
-    const sourceNodeId = node.regionViewport?.sourceNodeId
-    if (!sourceNodeId) return null
-    return this.manifest.nodeMap[sourceNodeId] ?? null
+  private getNodeImageSource(node: PublishNode | null | undefined): string | undefined {
+    if (!node) return undefined
+    if (this.getNodeKind(node) === 'surface') {
+      return node.surfaceConfig?.sourceImageUrl ?? node.imageUrl
+    }
+    return node.imageUrl
   }
 
-  private resolveRegionViewportForNode(node: PublishNode) {
-    if (!this.manifest || this.getNodeKind(node) !== 'region' || !node.regionViewport) {
+  private resolveSurfaceLayoutForNode(node: PublishNode): SurfaceLayoutResult | null {
+    if (this.getNodeKind(node) !== 'surface' || !node.surfaceConfig) {
       return null
     }
-    const sourceNode = this.getRegionSourceNode(node)
-    const sourceAspect = this.getSourceNodeAspectRatio(sourceNode)
-    if (!sourceNode?.imageUrl || !sourceAspect) return null
+    const sourceAspect = this.getSourceNodeAspectRatio(node)
+    if (!sourceAspect) return null
 
     const rect = this.refs.container.getBoundingClientRect()
-    return resolveInitialRegionViewport({
+    const layout = resolveSurfaceCameraLayout({
       viewportWidth: rect.width,
       viewportHeight: rect.height,
       sourceAspect,
-      regionViewport: node.regionViewport,
-      imageFitMode: node.imageFitMode,
+      camera: node.surfaceConfig.initialCamera,
+      bounds: node.surfaceConfig.bounds,
     })
+
+    return {
+      scaledImageWidth: layout.scaledWidth,
+      scaledImageHeight: layout.scaledHeight,
+      offsetX: layout.originX + layout.translateX,
+      offsetY: layout.originY + layout.translateY,
+    }
   }
 
   getSourceNodeAspectRatio(node: PublishNode | null | undefined): number | null {
-    const imageUrl = node?.imageUrl
+    const imageUrl = this.getNodeImageSource(node)
     if (!imageUrl) return null
 
     const metadata = this.resourcePreloader.getImageMetadata(imageUrl)

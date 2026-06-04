@@ -630,11 +630,11 @@ export class BuildPipeline {
           record.summary.nodeSuccess++
 
           this.appendLog(generateId, `[Node] "${node.id}" HTML file copied from ${htmlSource}`)
-        } else if (nodeKind === 'region') {
+        } else if (nodeKind === 'surface') {
           nodeRecord.imageStatus = 'success'
           nodeRecord.status = 'success'
           record.summary.nodeSuccess++
-          this.appendLog(generateId, `[Node] "${node.id}" region node reuses source image from ${node.regionViewport?.sourceNodeId ?? 'unknown'}`)
+          this.appendLog(generateId, `[Node] "${node.id}" surface node reuses configured source image`)
         } else {
           // Check for pre-existing image asset in guide directory
           const guideAssetPath = `guides/${guide.id}/current/assets/nodes/${node.id}.png`
@@ -713,7 +713,7 @@ export class BuildPipeline {
         continue
       }
 
-      if (nodeKind === 'region') {
+      if (nodeKind === 'surface') {
         const manualHotspots = (node.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
           targetNodeId: hs.targetNodeId,
@@ -732,7 +732,7 @@ export class BuildPipeline {
           `${GENERATES_DIR}/${generateId}/hotspots/${node.id}/final.json`,
           manualHotspots,
         )
-        this.appendLog(generateId, `[Hotspot] Node "${node.id}": region node, ${manualHotspots.length} hotspots (manual)`)
+        this.appendLog(generateId, `[Hotspot] Node "${node.id}": surface node, ${manualHotspots.length} hotspots (manual)`)
         continue
       }
 
@@ -941,8 +941,7 @@ export class BuildPipeline {
     const node = guide.nodes.find(item => item.id === nodeId)
     if (!node) return nodeId
     const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
-    if (nodeKind !== 'region') return nodeId
-    return node.regionViewport?.sourceNodeId ?? nodeId
+    return nodeId
   }
 
   private publishFromGenerate(generateId: string, guide: KnowledgePackage) {
@@ -963,8 +962,10 @@ export class BuildPipeline {
         if (this.repo.fileExists(previewImageSrc)) {
           this.repo.copyFile(previewImageSrc, `${publishDir}/assets/nodes/${node.id}.png`)
         }
-      } else if (nodeKind !== 'region') {
-        const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
+      } else {
+        const generatedSrc = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
+        const workspaceSrc = `workspace/${guide.id}/nodes/${node.id}.png`
+        const src = this.repo.fileExists(generatedSrc) ? generatedSrc : workspaceSrc
         if (this.repo.fileExists(src)) {
           this.repo.copyFile(src, `${publishDir}/assets/nodes/${node.id}.png`)
         }
@@ -998,7 +999,7 @@ export class BuildPipeline {
         if (this.repo.fileExists(htmlSrc)) {
           this.repo.copyFile(htmlSrc, `${workspaceDir}/nodes/${node.id}.html`)
         }
-      } else if (nodeKind !== 'region') {
+      } else {
         const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
         if (this.repo.fileExists(src)) {
           this.repo.copyFile(src, `${workspaceDir}/nodes/${node.id}.png`)
@@ -1042,8 +1043,10 @@ export class BuildPipeline {
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
           nodeKind,
-          regionViewport: n.regionViewport,
-          regionOverlay: n.regionOverlay,
+          surfaceConfig: n.surfaceConfig
+            ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/assets/nodes/${n.id}.png` }
+            : undefined,
+          surfaceLayers: n.surfaceLayers,
           hotspots: [] as Array<{
             edgeId: string; targetNodeId: string; label: string
             normalizedX: number; normalizedY: number; radius?: number
@@ -1060,11 +1063,13 @@ export class BuildPipeline {
         keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
         topicType: n.topicType,
         sourceText: n.sourceText?.trim() || undefined,
-        imageUrl: nodeKind === 'region' ? undefined : `${mediaBase}/assets/nodes/${n.id}.png`,
+        imageUrl: `${mediaBase}/assets/nodes/${n.id}.png`,
         imageFitMode: n.imageFitMode,
         nodeKind,
-        regionViewport: n.regionViewport,
-        regionOverlay: n.regionOverlay,
+        surfaceConfig: n.surfaceConfig
+          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/assets/nodes/${n.id}.png` }
+          : undefined,
+        surfaceLayers: n.surfaceLayers,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
           targetNodeId: hs.targetNodeId,
@@ -1150,8 +1155,10 @@ export class BuildPipeline {
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
           nodeKind,
-          regionViewport: n.regionViewport,
-          regionOverlay: n.regionOverlay,
+          surfaceConfig: n.surfaceConfig
+            ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${n.id}.png` }
+            : undefined,
+          surfaceLayers: n.surfaceLayers,
           hotspots: [] as Array<{
             edgeId: string; targetNodeId: string; label: string
             normalizedX: number; normalizedY: number; radius?: number
@@ -1172,14 +1179,16 @@ export class BuildPipeline {
         visualIntent: n.visualIntent,
         hotspotHints: n.hotspotHints,
         presentationIntent: n.presentationIntent,
-        imageUrl: nodeKind === 'region' ? undefined : `${mediaBase}/nodes/${n.id}.png`,
+        imageUrl: `${mediaBase}/nodes/${n.id}.png`,
         imageStatus: n.imageStatus,
         status: n.status,
         extensions: n.extensions,
         imageFitMode: n.imageFitMode,
         nodeKind,
-        regionViewport: n.regionViewport,
-        regionOverlay: n.regionOverlay,
+        surfaceConfig: n.surfaceConfig
+          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${n.id}.png` }
+          : undefined,
+        surfaceLayers: n.surfaceLayers,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
           targetNodeId: hs.targetNodeId,

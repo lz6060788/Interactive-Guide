@@ -73,9 +73,8 @@ export function WorkbenchPage() {
   const isNodeReady = (n: any) => {
     const nodeKind = n.nodeKind || (n.contentType === 'html' ? 'html' : 'image')
     if (nodeKind === 'html') return !!n.htmlUrl
-    if (nodeKind === 'region') {
-      const sourceNode = pkg?.nodes?.find((item: any) => item.id === n.regionViewport?.sourceNodeId)
-      return !!sourceNode && (sourceNode.imageStatus === 'success' || sourceNode.status === 'success' || !!sourceNode.imageUrl)
+    if (nodeKind === 'surface') {
+      return !!n.surfaceConfig?.sourceImageUrl || !!n.imageUrl
     }
     return n.imageStatus === 'success' || n.status === 'success'
   }
@@ -198,7 +197,7 @@ export function WorkbenchPage() {
   )
 
   const handleSave = useCallback(async (data: any) => {
-    if (!selected || !pkg || !guideId) return
+    if (!selected || !pkg || !guideId) return false
     try {
       setSaving(true)
       if (selected.type === 'package') {
@@ -209,8 +208,10 @@ export function WorkbenchPage() {
         await api.updateEdge(guideId, selected.id, data)
       }
       await load()
+      return true
     } catch (e: any) {
       setError(e.message)
+      return false
     } finally {
       setSaving(false)
     }
@@ -258,9 +259,8 @@ export function WorkbenchPage() {
     return pkg.nodes.every((node: any) => {
       const nodeKind = node.nodeKind || (node.contentType === 'html' ? 'html' : 'image')
       if (nodeKind === 'html') return !!node.htmlUrl
-      if (nodeKind === 'region') {
-        const sourceNode = pkg.nodes.find((item: any) => item.id === node.regionViewport?.sourceNodeId)
-        return !!sourceNode && (sourceNode.imageStatus === 'success' || sourceNode.status === 'success' || !!sourceNode.imageUrl)
+      if (nodeKind === 'surface') {
+        return !!node.surfaceConfig?.sourceImageUrl || !!node.imageUrl
       }
       return node.imageStatus === 'success' || node.status === 'success'
     })
