@@ -75,6 +75,7 @@ All AI/ML provider configs must come from environment variables. The flip-book p
 - `docs/开发计划.md`: 当前开发阶段、已完成能力与后续重点
 - `docs/项目技术架构与核心逻辑总览.md`: 项目全局技术架构、核心逻辑链路、模块分层与应用场景总览
 - `docs/运行时渲染架构与扩展设计.md`: 运行时三层结构、`PlayerHost/PlayerCore` 职责边界、iframe `postMessage` 协议与独立运行时集成约束
+- `docs/局部子图节点与区域视窗架构设计.md`: `region` 节点的数据契约、基于父图原图的局部视窗求解规则、激活态 overlay、编辑器区域标注与迁移策略
 - `docs/宏观经济学导览生成复盘与知识沉淀-2026-05-11.md`: 内容驱动导览出图改造复盘
 - `docs/边转场视频与预览链路修复-2026-05-11.md`: 边视频、对象存储暴露、预览播放与状态回写修复
 - `docs/生图内容描述规范.md`: 场景图与知识信息图的提示词规范

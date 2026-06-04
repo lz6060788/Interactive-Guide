@@ -5,9 +5,19 @@ type PreloadEntry = {
   promise: Promise<void>
 }
 
+interface ManifestPreloadOptions {
+  excludeNodeIds?: Iterable<string>
+}
+
+export interface PreloadedImageMetadata {
+  naturalWidth: number
+  naturalHeight: number
+}
+
 export class RuntimeResourcePreloader {
   private imageEntries = new Map<string, PreloadEntry>()
   private htmlEntries = new Map<string, PreloadEntry>()
+  private imageMetadata = new Map<string, PreloadedImageMetadata>()
   private fullPreloadPromise: Promise<void> | null = null
 
   preloadImage(url?: string): Promise<void> {
@@ -32,6 +42,10 @@ export class RuntimeResourcePreloader {
         } catch {
           // decode() may reject even when the image is already usable.
         }
+        this.imageMetadata.set(url, {
+          naturalWidth: img.naturalWidth,
+          naturalHeight: img.naturalHeight,
+        })
         const entry = this.imageEntries.get(url)
         if (entry) entry.status = 'fulfilled'
         resolve()
@@ -77,20 +91,26 @@ export class RuntimeResourcePreloader {
     return promise
   }
 
-  preloadAllResources(manifest: PublishManifest): Promise<void> {
+  preloadNodeResources(manifest: PublishManifest, nodeId: string): Promise<void> {
+    const node = manifest.nodeMap[nodeId]
+    if (!node) return Promise.resolve()
+
+    const jobs = this.createNodePreloadJobs(manifest, node)
+    return Promise.allSettled(jobs.map(job => job())).then(() => undefined)
+  }
+
+  preloadAllResources(
+    manifest: PublishManifest,
+    options: ManifestPreloadOptions = {},
+  ): Promise<void> {
     if (this.fullPreloadPromise) return this.fullPreloadPromise
 
-    const imageJobs: Promise<void>[] = []
-    const htmlJobs: Promise<void>[] = []
-    for (const node of manifest.nodes) {
-      if (node.contentType === 'html') {
-        htmlJobs.push(this.preloadHtml(node.htmlUrl))
-      } else {
-        imageJobs.push(this.preloadImage(node.imageUrl))
-      }
-    }
+    const excludedNodeIds = new Set(options.excludeNodeIds ?? [])
+    const jobs = manifest.nodes
+      .filter(node => !excludedNodeIds.has(node.id))
+      .flatMap(node => this.createNodePreloadJobs(manifest, node))
 
-    this.fullPreloadPromise = Promise.allSettled([...imageJobs, ...htmlJobs]).then(() => {
+    this.fullPreloadPromise = this.runJobsInBackground(jobs).finally(() => {
       this.fullPreloadPromise = null
     })
 
@@ -101,5 +121,47 @@ export class RuntimeResourcePreloader {
     this.fullPreloadPromise = null
     this.imageEntries.clear()
     this.htmlEntries.clear()
+    this.imageMetadata.clear()
+  }
+
+  getImageMetadata(url?: string): PreloadedImageMetadata | null {
+    if (!url) return null
+    return this.imageMetadata.get(url) ?? null
+  }
+
+  private createNodePreloadJobs(
+    manifest: PublishManifest,
+    node: PublishManifest['nodes'][number],
+  ): Array<() => Promise<void>> {
+    const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
+    if (nodeKind === 'html') {
+      return [() => this.preloadHtml(node.htmlUrl)]
+    }
+
+    if (nodeKind === 'region') {
+      const sourceNode = node.regionViewport
+        ? manifest.nodeMap[node.regionViewport.sourceNodeId]
+        : undefined
+      return [() => this.preloadImage(sourceNode?.imageUrl)]
+    }
+
+    return [() => this.preloadImage(node.imageUrl)]
+  }
+
+  private async runJobsInBackground(jobs: Array<() => Promise<void>>): Promise<void> {
+    for (const job of jobs) {
+      await job()
+      await this.yieldToMainThread()
+    }
+  }
+
+  private yieldToMainThread(): Promise<void> {
+    return new Promise(resolve => {
+      if (typeof window !== 'undefined') {
+        window.setTimeout(resolve, 0)
+        return
+      }
+      setTimeout(resolve, 0)
+    })
   }
 }

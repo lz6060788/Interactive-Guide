@@ -402,8 +402,14 @@ export class BuildPipeline {
         },
       )
 
-      const firstFrame = await this.mediaModule.exposeNodeImage(generateId, edge.fromNodeId)
-      const lastFrame = await this.mediaModule.exposeNodeImage(generateId, edge.toNodeId)
+      const firstFrame = await this.mediaModule.exposeNodeImage(
+        generateId,
+        this.resolveVideoFrameNodeId(guide, edge.fromNodeId),
+      )
+      const lastFrame = await this.mediaModule.exposeNodeImage(
+        generateId,
+        this.resolveVideoFrameNodeId(guide, edge.toNodeId),
+      )
 
       edgeRecord.videoStatus = 'running'
       this.appendLog(generateId, `[Regen] Generating video "${edge.id}" (${edge.fromNodeId} → ${edge.toNodeId})...`)
@@ -604,8 +610,10 @@ export class BuildPipeline {
       }
 
       try {
+        const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
+
         // HTML nodes: skip AI image generation, copy HTML file
-        if (node.contentType === 'html') {
+        if (nodeKind === 'html') {
           const htmlSource = node.htmlSource!
           const guideDir = `guides/${guide.id}/current`
           const srcPath = `${guideDir}/${htmlSource}`
@@ -622,6 +630,11 @@ export class BuildPipeline {
           record.summary.nodeSuccess++
 
           this.appendLog(generateId, `[Node] "${node.id}" HTML file copied from ${htmlSource}`)
+        } else if (nodeKind === 'region') {
+          nodeRecord.imageStatus = 'success'
+          nodeRecord.status = 'success'
+          record.summary.nodeSuccess++
+          this.appendLog(generateId, `[Node] "${node.id}" region node reuses source image from ${node.regionViewport?.sourceNodeId ?? 'unknown'}`)
         } else {
           // Check for pre-existing image asset in guide directory
           const guideAssetPath = `guides/${guide.id}/current/assets/nodes/${node.id}.png`
@@ -691,11 +704,35 @@ export class BuildPipeline {
     record: PackageBuildRecord,
   ) {
     for (const node of guide.nodes) {
+      const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
       // HTML nodes: skip visual hotspot recommendation, use hotspotEdgeIds for validation only
-      if (node.contentType === 'html') {
+      if (nodeKind === 'html') {
         if (node.hotspotEdgeIds && node.hotspotEdgeIds.length > 0) {
           this.appendLog(generateId, `[Hotspot] Node "${node.id}": HTML node, ${node.hotspotEdgeIds.length} declared edge ids (no visual hotspots)`)
         }
+        continue
+      }
+
+      if (nodeKind === 'region') {
+        const manualHotspots = (node.hotspots ?? []).map(hs => ({
+          edgeId: hs.edgeId,
+          targetNodeId: hs.targetNodeId,
+          label: hs.label,
+          normalizedX: hs.normalizedX,
+          normalizedY: hs.normalizedY,
+          radius: hs.radius ?? 12,
+          source: 'manual' as const,
+        }))
+        record.summary.hotspotReady += manualHotspots.length
+        this.repo.writeJson(
+          `${GENERATES_DIR}/${generateId}/nodes/${node.id}/hotspots.final.json`,
+          manualHotspots,
+        )
+        this.repo.writeJson(
+          `${GENERATES_DIR}/${generateId}/hotspots/${node.id}/final.json`,
+          manualHotspots,
+        )
+        this.appendLog(generateId, `[Hotspot] Node "${node.id}": region node, ${manualHotspots.length} hotspots (manual)`)
         continue
       }
 
@@ -851,8 +888,14 @@ export class BuildPipeline {
             },
           )
 
-          const firstFrame = await this.mediaModule.exposeNodeImage(generateId, edge.fromNodeId)
-          const lastFrame = await this.mediaModule.exposeNodeImage(generateId, edge.toNodeId)
+          const firstFrame = await this.mediaModule.exposeNodeImage(
+            generateId,
+            this.resolveVideoFrameNodeId(guide, edge.fromNodeId),
+          )
+          const lastFrame = await this.mediaModule.exposeNodeImage(
+            generateId,
+            this.resolveVideoFrameNodeId(guide, edge.toNodeId),
+          )
 
           edgeRecord.videoStatus = 'running'
           this.appendLog(generateId, `[Edge] Generating video "${edge.id}" (${edge.fromNodeId} → ${edge.toNodeId})...`)
@@ -894,6 +937,14 @@ export class BuildPipeline {
     this.repo.saveGenerateRecord(record)
   }
 
+  private resolveVideoFrameNodeId(guide: KnowledgePackage, nodeId: string): string {
+    const node = guide.nodes.find(item => item.id === nodeId)
+    if (!node) return nodeId
+    const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
+    if (nodeKind !== 'region') return nodeId
+    return node.regionViewport?.sourceNodeId ?? nodeId
+  }
+
   private publishFromGenerate(generateId: string, guide: KnowledgePackage) {
     this.syncAssetsToWorkspace(guide, generateId)
 
@@ -902,7 +953,8 @@ export class BuildPipeline {
     this.repo.ensureDir(`${publishDir}/assets/edges`)
 
     for (const node of guide.nodes) {
-      if (node.contentType === 'html') {
+      const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
+      if (nodeKind === 'html') {
         const htmlSrc = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/content.html`
         if (this.repo.fileExists(htmlSrc)) {
           this.repo.copyFile(htmlSrc, `${publishDir}/assets/nodes/${node.id}.html`)
@@ -911,7 +963,7 @@ export class BuildPipeline {
         if (this.repo.fileExists(previewImageSrc)) {
           this.repo.copyFile(previewImageSrc, `${publishDir}/assets/nodes/${node.id}.png`)
         }
-      } else {
+      } else if (nodeKind !== 'region') {
         const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
         if (this.repo.fileExists(src)) {
           this.repo.copyFile(src, `${publishDir}/assets/nodes/${node.id}.png`)
@@ -940,12 +992,13 @@ export class BuildPipeline {
     this.repo.ensureDir(`${workspaceDir}/edges`)
 
     for (const node of guide.nodes) {
-      if (node.contentType === 'html') {
+      const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
+      if (nodeKind === 'html') {
         const htmlSrc = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/content.html`
         if (this.repo.fileExists(htmlSrc)) {
           this.repo.copyFile(htmlSrc, `${workspaceDir}/nodes/${node.id}.html`)
         }
-      } else {
+      } else if (nodeKind !== 'region') {
         const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
         if (this.repo.fileExists(src)) {
           this.repo.copyFile(src, `${workspaceDir}/nodes/${node.id}.png`)
@@ -974,7 +1027,8 @@ export class BuildPipeline {
       const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
       const hasHtmlPreviewImage = this.repo.fileExists(`workspace/${guide.id}/nodes/${n.id}.png`)
 
-      if (n.contentType === 'html') {
+      const nodeKind = n.nodeKind ?? (n.contentType === 'html' ? 'html' : 'image')
+      if (nodeKind === 'html') {
         return {
           id: n.id,
           title: n.title,
@@ -987,6 +1041,9 @@ export class BuildPipeline {
           imageUrl: hasHtmlPreviewImage ? `${mediaBase}/assets/nodes/${n.id}.png` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
+          nodeKind,
+          regionViewport: n.regionViewport,
+          regionOverlay: n.regionOverlay,
           hotspots: [] as Array<{
             edgeId: string; targetNodeId: string; label: string
             normalizedX: number; normalizedY: number; radius?: number
@@ -1003,8 +1060,11 @@ export class BuildPipeline {
         keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
         topicType: n.topicType,
         sourceText: n.sourceText?.trim() || undefined,
-        imageUrl: `${mediaBase}/assets/nodes/${n.id}.png`,
+        imageUrl: nodeKind === 'region' ? undefined : `${mediaBase}/assets/nodes/${n.id}.png`,
         imageFitMode: n.imageFitMode,
+        nodeKind,
+        regionViewport: n.regionViewport,
+        regionOverlay: n.regionOverlay,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
           targetNodeId: hs.targetNodeId,
@@ -1067,7 +1127,8 @@ export class BuildPipeline {
       const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
       const hasHtmlPreviewImage = this.repo.fileExists(`workspace/${guide.id}/nodes/${n.id}.png`)
 
-      if (n.contentType === 'html') {
+      const nodeKind = n.nodeKind ?? (n.contentType === 'html' ? 'html' : 'image')
+      if (nodeKind === 'html') {
         return {
           id: n.id,
           title: n.title,
@@ -1088,6 +1149,9 @@ export class BuildPipeline {
           imageUrl: hasHtmlPreviewImage ? `${mediaBase}/nodes/${n.id}.png` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
+          nodeKind,
+          regionViewport: n.regionViewport,
+          regionOverlay: n.regionOverlay,
           hotspots: [] as Array<{
             edgeId: string; targetNodeId: string; label: string
             normalizedX: number; normalizedY: number; radius?: number
@@ -1108,11 +1172,14 @@ export class BuildPipeline {
         visualIntent: n.visualIntent,
         hotspotHints: n.hotspotHints,
         presentationIntent: n.presentationIntent,
-        imageUrl: `${mediaBase}/nodes/${n.id}.png`,
+        imageUrl: nodeKind === 'region' ? undefined : `${mediaBase}/nodes/${n.id}.png`,
         imageStatus: n.imageStatus,
         status: n.status,
         extensions: n.extensions,
         imageFitMode: n.imageFitMode,
+        nodeKind,
+        regionViewport: n.regionViewport,
+        regionOverlay: n.regionOverlay,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
           targetNodeId: hs.targetNodeId,

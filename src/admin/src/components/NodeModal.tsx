@@ -5,6 +5,7 @@ import {
 } from '@chakra-ui/react'
 import { X, Crosshair, Save, Image as ImageIcon, Trash2, RefreshCw, Upload } from 'lucide-react'
 import { uploadNodeImage, uploadNodeHtml } from '../services/api'
+import { RegionNodeDesigner, RegionNodeEditorModal } from './RegionNodeDesigner'
 
 const BORDER = '#2a2d3a'
 
@@ -40,6 +41,25 @@ const IMAGE_FIT_OPTIONS = [
   { value: 'fitHeight', label: 'Fit Height — 等比按高度（可横拖）' },
   { value: 'fitWidth', label: 'Fit Width — 等比按宽度（可纵拖）' },
 ]
+
+const NODE_KIND_OPTIONS = [
+  { value: 'image', label: 'Image — 普通图片节点' },
+  { value: 'region', label: 'Region — 局部子图节点' },
+  { value: 'html', label: 'HTML — 独立 HTML 页面' },
+]
+
+function formatJson(value: unknown): string {
+  return value ? JSON.stringify(value, null, 2) : ''
+}
+
+function parseJsonSafe<T>(value: string): T | null {
+  if (!value.trim()) return null
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return null
+  }
+}
 
 function Field({ label, value, onChange, disabled, multiline, rows, mono, placeholder }: {
   label: string
@@ -207,13 +227,59 @@ export function NodeModal({
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadImageMsg, setUploadImageMsg] = useState<string | null>(null)
   const [imageFitMode, setImageFitMode] = useState(node.imageFitMode || 'fill')
-  const [contentType, setContentType] = useState(node.contentType || 'image')
+  const [nodeKind, setNodeKind] = useState(node.nodeKind || (node.contentType === 'html' ? 'html' : 'image'))
   const [htmlSource, setHtmlSource] = useState(node.htmlSource || '')
   const [hotspotEdgeIdsText, setHotspotEdgeIdsText] = useState((node.hotspotEdgeIds || []).join('\n'))
   const [uploadingHtml, setUploadingHtml] = useState(false)
   const [uploadHtmlMsg, setUploadHtmlMsg] = useState<string | null>(null)
+  const [regionViewportText, setRegionViewportText] = useState(formatJson(node.regionViewport))
+  const [regionOverlayText, setRegionOverlayText] = useState(formatJson(node.regionOverlay))
+  const [showRegionEditor, setShowRegionEditor] = useState(false)
 
   useEffect(() => { setImageUrl(node.imageUrl) }, [node.imageUrl])
+  useEffect(() => { setRegionViewportText(formatJson(node.regionViewport)) }, [node.regionViewport])
+  useEffect(() => { setRegionOverlayText(formatJson(node.regionOverlay)) }, [node.regionOverlay])
+
+  const parsedRegionViewport = parseJsonSafe<any>(regionViewportText)
+  const regionSourceNode = nodeKind === 'region'
+    ? pkg.nodes.find((item: any) => item.id === parsedRegionViewport?.sourceNodeId)
+    : null
+  const regionEditorImageUrl = regionSourceNode?.imageUrl || imageUrl
+
+  function submitNodeSave() {
+    let parsedRegionViewport: any
+    let parsedRegionOverlay: any
+    try {
+      parsedRegionViewport = nodeKind === 'region' && regionViewportText.trim()
+        ? JSON.parse(regionViewportText)
+        : undefined
+      parsedRegionOverlay = nodeKind === 'region' && regionOverlayText.trim()
+        ? JSON.parse(regionOverlayText)
+        : undefined
+    } catch (error: any) {
+      window.alert(`Region JSON 配置无效: ${error.message}`)
+      return
+    }
+
+    onSave({
+      title,
+      topicType,
+      summary,
+      visualIntent,
+      presentationIntent: visualIntent,
+      sourceText,
+      keyContent: keyContentValue,
+      keyPoints: linesToArray(keyPointsText),
+      hotspotHints: linesToArray(hotspotHintsText),
+      imageFitMode,
+      nodeKind,
+      contentType: nodeKind === 'html' ? 'html' : 'image',
+      htmlSource: nodeKind === 'html' ? htmlSource : undefined,
+      hotspotEdgeIds: nodeKind === 'html' ? linesToArray(hotspotEdgeIdsText) : undefined,
+      regionViewport: nodeKind === 'region' ? parsedRegionViewport : undefined,
+      regionOverlay: nodeKind === 'region' ? parsedRegionOverlay : undefined,
+    })
+  }
 
   return (
     <Flex position="fixed" top="0" right="0" bottom="0" zIndex={100}>
@@ -264,19 +330,43 @@ export function NodeModal({
           <Field label="标题" value={title} onChange={setTitle} />
           <SelectField label="主题类型" value={topicType} onChange={setTopicType} options={TOPIC_TYPE_OPTIONS} />
           <SelectField
-            label="内容类型"
-            value={contentType}
-            onChange={(v) => setContentType(v)}
-            options={[
-              { value: 'image', label: 'Image — AI 生成图片' },
-              { value: 'html', label: 'HTML — 自定义 HTML 页面' },
-            ]}
+            label="节点类型"
+            value={nodeKind}
+            onChange={(v) => setNodeKind(v)}
+            options={NODE_KIND_OPTIONS}
           />
           <Field label="页面摘要" value={summary} onChange={setSummary} multiline rows={3} />
-          {contentType === 'image' && (
+          {(nodeKind === 'image' || nodeKind === 'region') && (
             <>
-              <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
+              {nodeKind === 'image' && (
+                <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
+              )}
               <SelectField label="图片填充模式" value={imageFitMode} onChange={setImageFitMode} options={IMAGE_FIT_OPTIONS} />
+            </>
+          )}
+          {nodeKind === 'region' && (
+            <>
+              <RegionNodeDesigner
+                imageUrl={regionEditorImageUrl}
+                sourceNodeTitle={regionSourceNode?.title}
+                packageResolution={pkg.resolution}
+                imageFitMode={imageFitMode}
+                regionViewportText={regionViewportText}
+                onRegionViewportTextChange={setRegionViewportText}
+                regionOverlayText={regionOverlayText}
+                onRegionOverlayTextChange={setRegionOverlayText}
+                compact
+                editable={false}
+                onOpenEditor={() => setShowRegionEditor(true)}
+              />
+              <Box mb="4" p="3" rounded="md" style={{ border: `1px solid ${BORDER}`, background: '#0a0b0f' }}>
+                <Text fontSize="xs" color="text-secondary" mb="1.5">
+                  节点详情中仅保留预览。请点击上方“打开大画布编辑”进入独立编辑器，调整框选范围和标的信息位置。
+                </Text>
+                <Text fontSize="2xs" color="text-tertiary">
+                  编辑结果会同步回当前节点详情；完成调整后，点击本弹窗底部“保存”即可持久化。
+                </Text>
+              </Box>
             </>
           )}
 
@@ -356,7 +446,7 @@ export function NodeModal({
           </Box>
 
           {/* HTML 配置 / 上传 */}
-          {contentType === 'html' && (
+          {nodeKind === 'html' && (
             <Box mb="4">
               <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
                 HTML 配置
@@ -518,24 +608,10 @@ export function NodeModal({
 
           <SaveButton
             saving={saving}
-            onClick={() => onSave({
-              title,
-              topicType,
-              summary,
-              visualIntent,
-              presentationIntent: visualIntent,
-              sourceText,
-              keyContent: keyContentValue,
-              keyPoints: linesToArray(keyPointsText),
-              hotspotHints: linesToArray(hotspotHintsText),
-              imageFitMode,
-              contentType,
-              htmlSource: contentType === 'html' ? htmlSource : undefined,
-              hotspotEdgeIds: contentType === 'html' ? linesToArray(hotspotEdgeIdsText) : undefined,
-            })}
+            onClick={submitNodeSave}
           />
 
-          {onRegenerateNode && contentType === 'image' && (
+          {onRegenerateNode && nodeKind === 'image' && (
             <Button
               w="100%"
               mt="3"
@@ -570,6 +646,22 @@ export function NodeModal({
           )}
         </Box>
       </Box>
+      {nodeKind === 'region' && (
+        <RegionNodeEditorModal
+          isOpen={showRegionEditor}
+          onClose={() => setShowRegionEditor(false)}
+          onSaveCurrent={submitNodeSave}
+          saving={saving}
+          imageUrl={regionEditorImageUrl}
+          sourceNodeTitle={regionSourceNode?.title}
+          packageResolution={pkg.resolution}
+          imageFitMode={imageFitMode}
+          regionViewportText={regionViewportText}
+          onRegionViewportTextChange={setRegionViewportText}
+          regionOverlayText={regionOverlayText}
+          onRegionOverlayTextChange={setRegionOverlayText}
+        />
+      )}
     </Flex>
   )
 }

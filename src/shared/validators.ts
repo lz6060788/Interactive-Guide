@@ -10,6 +10,7 @@ import type {
   KnowledgeNode,
   KnowledgeEdge,
   PublishManifest,
+  QuadRange,
 } from './types.js'
 import { isPackageResolution, PACKAGE_RESOLUTIONS } from './utils.js'
 
@@ -56,18 +57,23 @@ function validateBuiltinTransitionConfig(
 
   if (builtin.type !== 'zoom') return
 
-  if (typeof builtin.scale !== 'number' || builtin.scale <= 1) {
+  if (builtin.scale != null && (typeof builtin.scale !== 'number' || builtin.scale <= 1)) {
     errors.push(`${edgeLabel} zoom scale must be > 1, got ${String(builtin.scale)}`)
   }
-  if (typeof builtin.centerX !== 'number' || builtin.centerX < 0 || builtin.centerX > 1) {
+  if (builtin.centerX != null && (typeof builtin.centerX !== 'number' || builtin.centerX < 0 || builtin.centerX > 1)) {
     errors.push(`${edgeLabel} zoom centerX must be 0~1, got ${String(builtin.centerX)}`)
   }
-  if (typeof builtin.centerY !== 'number' || builtin.centerY < 0 || builtin.centerY > 1) {
+  if (builtin.centerY != null && (typeof builtin.centerY !== 'number' || builtin.centerY < 0 || builtin.centerY > 1)) {
     errors.push(`${edgeLabel} zoom centerY must be 0~1, got ${String(builtin.centerY)}`)
   }
 
-  if (builtin.focusMode != null && builtin.focusMode !== 'center' && builtin.focusMode !== 'quad') {
-    errors.push(`${edgeLabel} zoom focusMode must be 'center' or 'quad', got ${String(builtin.focusMode)}`)
+  if (
+    builtin.focusMode != null
+    && builtin.focusMode !== 'center'
+    && builtin.focusMode !== 'quad'
+    && builtin.focusMode !== 'target-region-auto'
+  ) {
+    errors.push(`${edgeLabel} zoom focusMode must be 'center', 'quad', or 'target-region-auto', got ${String(builtin.focusMode)}`)
   }
 
   if (builtin.focusMode === 'quad') {
@@ -80,6 +86,18 @@ function validateBuiltinTransitionConfig(
     validateNormalizedPoint(builtin.focusQuad.bottomRight, `${edgeLabel} zoom focusQuad.bottomRight`, errors)
     validateNormalizedPoint(builtin.focusQuad.bottomLeft, `${edgeLabel} zoom focusQuad.bottomLeft`, errors)
   }
+}
+
+function validateQuadRange(range: unknown, label: string, errors: string[]) {
+  if (!range || typeof range !== 'object') {
+    errors.push(`${label} must be an object with topLeft/topRight/bottomRight/bottomLeft`)
+    return
+  }
+  const quad = range as QuadRange
+  validateNormalizedPoint(quad.topLeft, `${label}.topLeft`, errors)
+  validateNormalizedPoint(quad.topRight, `${label}.topRight`, errors)
+  validateNormalizedPoint(quad.bottomRight, `${label}.bottomRight`, errors)
+  validateNormalizedPoint(quad.bottomLeft, `${label}.bottomLeft`, errors)
 }
 
 function validateRuntimeConfig(
@@ -191,11 +209,28 @@ function validateNode(
   }
 
   const contentType = node.contentType ?? 'image'
+  const nodeKind = node.nodeKind ?? (contentType === 'html' ? 'html' : 'image')
+
+  if (!['image', 'region', 'html'].includes(nodeKind)) {
+    errors.push(`Node "${node.id}" nodeKind must be 'image', 'region', or 'html', got '${String(node.nodeKind)}'`)
+  }
 
   // Content type validation
-  if (contentType === 'html') {
+  if (nodeKind === 'html' || contentType === 'html') {
     if (!node.htmlSource || typeof node.htmlSource !== 'string' || node.htmlSource.trim() === '') {
       errors.push(`Node "${node.id}" contentType is 'html' but htmlSource is missing or empty`)
+    }
+  } else if (nodeKind === 'region') {
+    if (!node.regionViewport) {
+      errors.push(`Node "${node.id}" nodeKind is 'region' but regionViewport is missing`)
+    } else {
+      if (!node.regionViewport.sourceNodeId || typeof node.regionViewport.sourceNodeId !== 'string') {
+        errors.push(`Node "${node.id}" regionViewport.sourceNodeId is required`)
+      }
+      if (node.regionViewport.coordSpace !== 'source-normalized') {
+        errors.push(`Node "${node.id}" regionViewport.coordSpace must be 'source-normalized'`)
+      }
+      validateQuadRange(node.regionViewport.panRange, `Node "${node.id}" regionViewport.panRange`, errors)
     }
   } else {
     if (!node.keyContent || typeof node.keyContent !== 'string' || node.keyContent.trim() === '') {
@@ -324,12 +359,23 @@ export function validatePublishManifest(manifest: PublishManifest): ValidationRe
 
   // Hotspot validation & HTML node validation
   for (const node of manifest.nodes) {
+    const nodeKind = node.nodeKind ?? ((node.contentType ?? 'image') === 'html' ? 'html' : 'image')
     // HTML node must have htmlUrl
-    if (node.contentType === 'html' && !node.htmlUrl) {
+    if (nodeKind === 'html' && !node.htmlUrl) {
       errors.push(`HTML Node "${node.id}" must have htmlUrl`)
     }
+    if (nodeKind === 'region') {
+      if (!node.regionViewport) {
+        errors.push(`Region Node "${node.id}" must have regionViewport`)
+      } else {
+        if (!manifest.nodeMap[node.regionViewport.sourceNodeId]) {
+          errors.push(`Region Node "${node.id}" sourceNodeId "${node.regionViewport.sourceNodeId}" not found`)
+        }
+        validateQuadRange(node.regionViewport.panRange, `Node "${node.id}" regionViewport.panRange`, errors)
+      }
+    }
     // Image node (or default) must have imageUrl
-    if ((node.contentType ?? 'image') === 'image' && !node.imageUrl) {
+    if (nodeKind === 'image' && !node.imageUrl) {
       errors.push(`Image Node "${node.id}" must have imageUrl`)
     }
     // hotspotEdgeIds validation for HTML nodes
