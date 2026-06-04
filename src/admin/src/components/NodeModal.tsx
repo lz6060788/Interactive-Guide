@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import {
   Box, Flex, Text, Button, Heading, Badge,
-  IconButton, VStack, HStack,
+  IconButton, HStack,
 } from '@chakra-ui/react'
 import { X, Crosshair, Save, Image as ImageIcon, Trash2, RefreshCw, Upload } from 'lucide-react'
 import { uploadNodeImage, uploadNodeHtml } from '../services/api'
-import { RegionNodeDesigner, RegionNodeEditorModal } from './RegionNodeDesigner'
+import { SurfaceNodeDesigner, SurfaceNodeEditorModal } from './SurfaceNodeDesigner'
 
 const BORDER = '#2a2d3a'
 
@@ -13,7 +13,7 @@ interface NodeModalProps {
   pkg: any
   nodeId: string
   onClose: () => void
-  onSave: (data: any) => void
+  onSave: (data: any) => Promise<boolean> | boolean
   saving: boolean
   onOpenHotspotEditor: (nodeId: string) => void
   onDeleteNode?: (nodeId: string) => void
@@ -43,8 +43,8 @@ const IMAGE_FIT_OPTIONS = [
 ]
 
 const NODE_KIND_OPTIONS = [
+  { value: 'surface', label: 'Surface — 总图漫游节点' },
   { value: 'image', label: 'Image — 普通图片节点' },
-  { value: 'region', label: 'Region — 局部子图节点' },
   { value: 'html', label: 'HTML — 独立 HTML 页面' },
 ]
 
@@ -199,6 +199,18 @@ function linesToArray(value: string): string[] {
     .filter(Boolean)
 }
 
+function parseResolutionAspectRatio(value: string | undefined): number | undefined {
+  if (!value) return undefined
+  const match = value.match(/(\d+(?:\.\d+)?)\s*[*xX]\s*(\d+(?:\.\d+)?)/)
+  if (!match) return undefined
+  const width = Number(match[1])
+  const height = Number(match[2])
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return undefined
+  }
+  return width / height
+}
+
 export function NodeModal({
   pkg,
   nodeId,
@@ -232,36 +244,44 @@ export function NodeModal({
   const [hotspotEdgeIdsText, setHotspotEdgeIdsText] = useState((node.hotspotEdgeIds || []).join('\n'))
   const [uploadingHtml, setUploadingHtml] = useState(false)
   const [uploadHtmlMsg, setUploadHtmlMsg] = useState<string | null>(null)
-  const [regionViewportText, setRegionViewportText] = useState(formatJson(node.regionViewport))
-  const [regionOverlayText, setRegionOverlayText] = useState(formatJson(node.regionOverlay))
-  const [showRegionEditor, setShowRegionEditor] = useState(false)
+  const [surfaceConfigText, setSurfaceConfigText] = useState(formatJson(node.surfaceConfig))
+  const [surfaceLayersText, setSurfaceLayersText] = useState(formatJson(node.surfaceLayers))
+  const [showSurfaceEditor, setShowSurfaceEditor] = useState(false)
+  const previewAspectRatio = parseResolutionAspectRatio(pkg?.resolution)
 
   useEffect(() => { setImageUrl(node.imageUrl) }, [node.imageUrl])
-  useEffect(() => { setRegionViewportText(formatJson(node.regionViewport)) }, [node.regionViewport])
-  useEffect(() => { setRegionOverlayText(formatJson(node.regionOverlay)) }, [node.regionOverlay])
+  useEffect(() => { setSurfaceConfigText(formatJson(node.surfaceConfig)) }, [node.surfaceConfig])
+  useEffect(() => { setSurfaceLayersText(formatJson(node.surfaceLayers)) }, [node.surfaceLayers])
 
-  const parsedRegionViewport = parseJsonSafe<any>(regionViewportText)
-  const regionSourceNode = nodeKind === 'region'
-    ? pkg.nodes.find((item: any) => item.id === parsedRegionViewport?.sourceNodeId)
-    : null
-  const regionEditorImageUrl = regionSourceNode?.imageUrl || imageUrl
-
-  function submitNodeSave() {
-    let parsedRegionViewport: any
-    let parsedRegionOverlay: any
+  async function submitNodeSave(): Promise<boolean> {
+    let parsedSurfaceConfig: any
+    let parsedSurfaceLayers: any
     try {
-      parsedRegionViewport = nodeKind === 'region' && regionViewportText.trim()
-        ? JSON.parse(regionViewportText)
+      parsedSurfaceConfig = nodeKind === 'surface' && surfaceConfigText.trim()
+        ? JSON.parse(surfaceConfigText)
         : undefined
-      parsedRegionOverlay = nodeKind === 'region' && regionOverlayText.trim()
-        ? JSON.parse(regionOverlayText)
+      parsedSurfaceLayers = nodeKind === 'surface' && surfaceLayersText.trim()
+        ? JSON.parse(surfaceLayersText)
         : undefined
     } catch (error: any) {
-      window.alert(`Region JSON 配置无效: ${error.message}`)
-      return
+      window.alert(`Surface JSON 配置无效: ${error.message}`)
+      return false
     }
 
-    onSave({
+    if (nodeKind === 'surface') {
+      parsedSurfaceConfig = parsedSurfaceConfig ?? {
+        sourceImageUrl: imageUrl ?? '',
+        coordSpace: 'surface-normalized',
+        initialCamera: { centerX: 0.5, centerY: 0.5, zoom: 1 },
+        bounds: { minZoom: 1, maxZoom: 4 },
+        gesture: { wheelZoom: true, dragPan: true },
+      }
+      if (imageUrl && !parsedSurfaceConfig.sourceImageUrl) {
+        parsedSurfaceConfig.sourceImageUrl = imageUrl
+      }
+    }
+
+    return await onSave({
       title,
       topicType,
       summary,
@@ -276,8 +296,8 @@ export function NodeModal({
       contentType: nodeKind === 'html' ? 'html' : 'image',
       htmlSource: nodeKind === 'html' ? htmlSource : undefined,
       hotspotEdgeIds: nodeKind === 'html' ? linesToArray(hotspotEdgeIdsText) : undefined,
-      regionViewport: nodeKind === 'region' ? parsedRegionViewport : undefined,
-      regionOverlay: nodeKind === 'region' ? parsedRegionOverlay : undefined,
+      surfaceConfig: nodeKind === 'surface' ? parsedSurfaceConfig : undefined,
+      surfaceLayers: nodeKind === 'surface' ? parsedSurfaceLayers : undefined,
     })
   }
 
@@ -336,7 +356,7 @@ export function NodeModal({
             options={NODE_KIND_OPTIONS}
           />
           <Field label="页面摘要" value={summary} onChange={setSummary} multiline rows={3} />
-          {(nodeKind === 'image' || nodeKind === 'region') && (
+          {(nodeKind === 'image' || nodeKind === 'surface') && (
             <>
               {nodeKind === 'image' && (
                 <Field label="视觉意图" value={visualIntent} onChange={setVisualIntent} multiline rows={3} />
@@ -344,24 +364,22 @@ export function NodeModal({
               <SelectField label="图片填充模式" value={imageFitMode} onChange={setImageFitMode} options={IMAGE_FIT_OPTIONS} />
             </>
           )}
-          {nodeKind === 'region' && (
+          {nodeKind === 'surface' && (
             <>
-              <RegionNodeDesigner
-                imageUrl={regionEditorImageUrl}
-                sourceNodeTitle={regionSourceNode?.title}
-                packageResolution={pkg.resolution}
-                imageFitMode={imageFitMode}
-                regionViewportText={regionViewportText}
-                onRegionViewportTextChange={setRegionViewportText}
-                regionOverlayText={regionOverlayText}
-                onRegionOverlayTextChange={setRegionOverlayText}
+              <SurfaceNodeDesigner
+                imageUrl={imageUrl}
+                surfaceConfigText={surfaceConfigText}
+                onSurfaceConfigTextChange={setSurfaceConfigText}
+                surfaceLayersText={surfaceLayersText}
+                onSurfaceLayersTextChange={setSurfaceLayersText}
+                deviceAspectRatio={previewAspectRatio}
                 compact
                 editable={false}
-                onOpenEditor={() => setShowRegionEditor(true)}
+                onOpenEditor={() => setShowSurfaceEditor(true)}
               />
               <Box mb="4" p="3" rounded="md" style={{ border: `1px solid ${BORDER}`, background: '#0a0b0f' }}>
                 <Text fontSize="xs" color="text-secondary" mb="1.5">
-                  节点详情中仅保留预览。请点击上方“打开大画布编辑”进入独立编辑器，调整框选范围和标的信息位置。
+                  节点详情中仅保留预览。请点击上方“打开大画布编辑”进入独立编辑器，调整卡片位置、连线终点和 surface 图层配置。
                 </Text>
                 <Text fontSize="2xs" color="text-tertiary">
                   编辑结果会同步回当前节点详情；完成调整后，点击本弹窗底部“保存”即可持久化。
@@ -517,93 +535,97 @@ export function NodeModal({
           <Field label="热点提示（每行一条）" value={hotspotHintsText} onChange={setHotspotHintsText} multiline rows={4} />
 
           {/* 热点 */}
-          <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
-            热点
-          </Text>
-          <Flex justify="space-between" align="center" mb="3">
-            <Text fontSize="xs" color="text-secondary">
-              共 {node.hotspots?.length ?? 0} 个热点
-            </Text>
-            <Flex gap="2">
-              {onRegenerateHotspots && (
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  color="#3b82f6"
-                  _hover={{ bg: 'rgba(59,130,246,0.12)' }}
-                  loading={hotspotLoading}
-                  onClick={async () => {
-                    setHotspotLoading(true)
-                    setHotspotMsg(null)
-                    try {
-                      await onRegenerateHotspots(node.id)
-                      setHotspotMsg('热点已更新')
-                      setTimeout(() => setHotspotMsg(null), 3000)
-                    } catch (e: any) {
-                      setHotspotMsg(e.message)
-                    } finally {
-                      setHotspotLoading(false)
-                    }
-                  }}
-                >
-                  <RefreshCw size={12} style={{ marginRight: 4 }} />
-                  AI定位
-                </Button>
-              )}
-              <Button
-                size="xs"
-                variant="ghost"
-                color="brand"
-                _hover={{ bg: 'brand-subtle' }}
-                onClick={() => onOpenHotspotEditor(node.id)}
-              >
-                <Crosshair size={12} style={{ marginRight: 4 }} />
-                校准
-              </Button>
-            </Flex>
-          </Flex>
-          {hotspotMsg && (
-            <Text
-              fontSize="xs"
-              color={hotspotMsg.includes('已更新') ? '#22c55e' : '#ef4444'}
-              mb="2"
-              px="1"
-            >
-              {hotspotMsg}
-            </Text>
-          )}
-          {node.hotspots?.map((hs: any, i: number) => (
-            <Flex
-              key={i}
-              justify="space-between"
-              align="center"
-              px="3"
-              py="2"
-              rounded="md"
-              mb="1"
-              style={{ background: '#0a0b0f', border: `1px solid ${BORDER}` }}
-            >
-              <HStack gap="2">
-                <Flex
-                  w="18px" h="18px" rounded="full"
-                  bg="brand" color="white"
-                  align="center" justify="center"
-                  fontSize="2xs" fontWeight="700"
-                  flexShrink={0}
-                >
-                  {i + 1}
-                </Flex>
-                <Text fontSize="xs" fontWeight="500" color="text-primary">{hs.label}</Text>
-              </HStack>
-              <Text fontSize="2xs" color="text-tertiary">
-                ({hs.normalizedX?.toFixed(2)}, {hs.normalizedY?.toFixed(2)}) → {hs.targetNodeId}
+          {nodeKind !== 'surface' && (
+            <>
+              <Text fontSize="2xs" fontWeight="600" color="text-tertiary" textTransform="uppercase" letterSpacing="wider" mb="3" mt="2">
+                热点
               </Text>
-            </Flex>
-          ))}
-          {(!node.hotspots || node.hotspots.length === 0) && (
-            <Text fontSize="xs" color="text-tertiary" textAlign="center" py="3">
-              暂无热点
-            </Text>
+              <Flex justify="space-between" align="center" mb="3">
+                <Text fontSize="xs" color="text-secondary">
+                  共 {node.hotspots?.length ?? 0} 个热点
+                </Text>
+                <Flex gap="2">
+                  {onRegenerateHotspots && (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      color="#3b82f6"
+                      _hover={{ bg: 'rgba(59,130,246,0.12)' }}
+                      loading={hotspotLoading}
+                      onClick={async () => {
+                        setHotspotLoading(true)
+                        setHotspotMsg(null)
+                        try {
+                          await onRegenerateHotspots(node.id)
+                          setHotspotMsg('热点已更新')
+                          setTimeout(() => setHotspotMsg(null), 3000)
+                        } catch (e: any) {
+                          setHotspotMsg(e.message)
+                        } finally {
+                          setHotspotLoading(false)
+                        }
+                      }}
+                    >
+                      <RefreshCw size={12} style={{ marginRight: 4 }} />
+                      AI定位
+                    </Button>
+                  )}
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    color="brand"
+                    _hover={{ bg: 'brand-subtle' }}
+                    onClick={() => onOpenHotspotEditor(node.id)}
+                  >
+                    <Crosshair size={12} style={{ marginRight: 4 }} />
+                    校准
+                  </Button>
+                </Flex>
+              </Flex>
+              {hotspotMsg && (
+                <Text
+                  fontSize="xs"
+                  color={hotspotMsg.includes('已更新') ? '#22c55e' : '#ef4444'}
+                  mb="2"
+                  px="1"
+                >
+                  {hotspotMsg}
+                </Text>
+              )}
+              {node.hotspots?.map((hs: any, i: number) => (
+                <Flex
+                  key={i}
+                  justify="space-between"
+                  align="center"
+                  px="3"
+                  py="2"
+                  rounded="md"
+                  mb="1"
+                  style={{ background: '#0a0b0f', border: `1px solid ${BORDER}` }}
+                >
+                  <HStack gap="2">
+                    <Flex
+                      w="18px" h="18px" rounded="full"
+                      bg="brand" color="white"
+                      align="center" justify="center"
+                      fontSize="2xs" fontWeight="700"
+                      flexShrink={0}
+                    >
+                      {i + 1}
+                    </Flex>
+                    <Text fontSize="xs" fontWeight="500" color="text-primary">{hs.label}</Text>
+                  </HStack>
+                  <Text fontSize="2xs" color="text-tertiary">
+                    ({hs.normalizedX?.toFixed(2)}, {hs.normalizedY?.toFixed(2)}) → {hs.targetNodeId}
+                  </Text>
+                </Flex>
+              ))}
+              {(!node.hotspots || node.hotspots.length === 0) && (
+                <Text fontSize="xs" color="text-tertiary" textAlign="center" py="3">
+                  暂无热点
+                </Text>
+              )}
+            </>
           )}
 
           <SaveButton
@@ -611,7 +633,7 @@ export function NodeModal({
             onClick={submitNodeSave}
           />
 
-          {onRegenerateNode && nodeKind === 'image' && (
+          {onRegenerateNode && nodeKind !== 'html' && (
             <Button
               w="100%"
               mt="3"
@@ -646,20 +668,18 @@ export function NodeModal({
           )}
         </Box>
       </Box>
-      {nodeKind === 'region' && (
-        <RegionNodeEditorModal
-          isOpen={showRegionEditor}
-          onClose={() => setShowRegionEditor(false)}
+      {nodeKind === 'surface' && (
+        <SurfaceNodeEditorModal
+          isOpen={showSurfaceEditor}
+          onClose={() => setShowSurfaceEditor(false)}
           onSaveCurrent={submitNodeSave}
           saving={saving}
-          imageUrl={regionEditorImageUrl}
-          sourceNodeTitle={regionSourceNode?.title}
-          packageResolution={pkg.resolution}
-          imageFitMode={imageFitMode}
-          regionViewportText={regionViewportText}
-          onRegionViewportTextChange={setRegionViewportText}
-          regionOverlayText={regionOverlayText}
-          onRegionOverlayTextChange={setRegionOverlayText}
+          imageUrl={imageUrl}
+          surfaceConfigText={surfaceConfigText}
+          onSurfaceConfigTextChange={setSurfaceConfigText}
+          surfaceLayersText={surfaceLayersText}
+          onSurfaceLayersTextChange={setSurfaceLayersText}
+          deviceAspectRatio={previewAspectRatio}
         />
       )}
     </Flex>

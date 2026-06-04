@@ -11,6 +11,11 @@ import type {
   KnowledgeEdge,
   PublishManifest,
   QuadRange,
+  SurfaceConfig,
+  SurfaceFocusLayer,
+  SurfaceCard,
+  SurfaceHotspot,
+  CameraState,
 } from './types.js'
 import { isPackageResolution, PACKAGE_RESOLUTIONS } from './utils.js'
 
@@ -71,9 +76,8 @@ function validateBuiltinTransitionConfig(
     builtin.focusMode != null
     && builtin.focusMode !== 'center'
     && builtin.focusMode !== 'quad'
-    && builtin.focusMode !== 'target-region-auto'
   ) {
-    errors.push(`${edgeLabel} zoom focusMode must be 'center', 'quad', or 'target-region-auto', got ${String(builtin.focusMode)}`)
+    errors.push(`${edgeLabel} zoom focusMode must be 'center' or 'quad', got ${String(builtin.focusMode)}`)
   }
 
   if (builtin.focusMode === 'quad') {
@@ -98,6 +102,176 @@ function validateQuadRange(range: unknown, label: string, errors: string[]) {
   validateNormalizedPoint(quad.topRight, `${label}.topRight`, errors)
   validateNormalizedPoint(quad.bottomRight, `${label}.bottomRight`, errors)
   validateNormalizedPoint(quad.bottomLeft, `${label}.bottomLeft`, errors)
+}
+
+function validateCameraState(
+  camera: unknown,
+  label: string,
+  errors: string[],
+) {
+  if (!camera || typeof camera !== 'object') {
+    errors.push(`${label} must be an object with centerX/centerY/zoom`)
+    return
+  }
+
+  const { centerX, centerY, zoom } = camera as CameraState
+  if (typeof centerX !== 'number' || centerX < 0 || centerX > 1) {
+    errors.push(`${label}.centerX must be 0~1, got ${String(centerX)}`)
+  }
+  if (typeof centerY !== 'number' || centerY < 0 || centerY > 1) {
+    errors.push(`${label}.centerY must be 0~1, got ${String(centerY)}`)
+  }
+  if (typeof zoom !== 'number' || zoom <= 0) {
+    errors.push(`${label}.zoom must be > 0, got ${String(zoom)}`)
+  }
+}
+
+function validateSurfaceCard(card: SurfaceCard | undefined, label: string, errors: string[]) {
+  if (!card || typeof card !== 'object') {
+    errors.push(`${label} must be an object`)
+    return
+  }
+  if (!card.id || typeof card.id !== 'string') {
+    errors.push(`${label}.id is required`)
+  }
+  if (!card.title || typeof card.title !== 'string') {
+    errors.push(`${label}.title is required`)
+  }
+  validateNormalizedPoint(card.anchor, `${label}.anchor`, errors)
+  if (card.coordSpace !== 'surface-normalized') {
+    errors.push(`${label}.coordSpace must be 'surface-normalized'`)
+  }
+  if (card.callout) {
+    if (!['top', 'right', 'bottom', 'left'].includes(card.callout.fromDock)) {
+      errors.push(`${label}.callout.fromDock must be top/right/bottom/left`)
+    }
+    validateNormalizedPoint(card.callout.target, `${label}.callout.target`, errors)
+  }
+}
+
+function validateSurfaceHotspot(hotspot: SurfaceHotspot | undefined, label: string, errors: string[]) {
+  if (!hotspot || typeof hotspot !== 'object') {
+    errors.push(`${label} must be an object`)
+    return
+  }
+  if (!hotspot.id || typeof hotspot.id !== 'string') {
+    errors.push(`${label}.id is required`)
+  }
+  if (!hotspot.label || typeof hotspot.label !== 'string') {
+    errors.push(`${label}.label is required`)
+  }
+  validateNormalizedPoint(hotspot.anchor, `${label}.anchor`, errors)
+  if (hotspot.coordSpace !== 'surface-normalized') {
+    errors.push(`${label}.coordSpace must be 'surface-normalized'`)
+  }
+  if (!hotspot.target || typeof hotspot.target !== 'object') {
+    errors.push(`${label}.target is required`)
+    return
+  }
+  if (hotspot.target.type === 'camera-preset') {
+    validateCameraState(hotspot.target.camera, `${label}.target.camera`, errors)
+    return
+  }
+  if (hotspot.target.type === 'focus-layer') {
+    if (!hotspot.target.layerId || typeof hotspot.target.layerId !== 'string') {
+      errors.push(`${label}.target.layerId is required`)
+    }
+    return
+  }
+  if (hotspot.target.type === 'edge') {
+    if (!hotspot.target.edgeId || typeof hotspot.target.edgeId !== 'string') {
+      errors.push(`${label}.target.edgeId is required`)
+    }
+    return
+  }
+  errors.push(`${label}.target.type must be 'camera-preset', 'focus-layer', or 'edge'`)
+}
+
+function validateSurfaceLayers(
+  layers: SurfaceFocusLayer[] | undefined,
+  label: string,
+  errors: string[],
+) {
+  if (layers == null) return
+  if (!Array.isArray(layers)) {
+    errors.push(`${label} must be an array`)
+    return
+  }
+  for (const [index, layer] of layers.entries()) {
+    const layerLabel = `${label}[${index}]`
+    if (!layer.id || typeof layer.id !== 'string') {
+      errors.push(`${layerLabel}.id is required`)
+    }
+    if (!layer.title || typeof layer.title !== 'string') {
+      errors.push(`${layerLabel}.title is required`)
+    }
+    if (
+      !layer.visibility
+      || typeof layer.visibility.minZoom !== 'number'
+      || layer.visibility.minZoom <= 0
+    ) {
+      errors.push(`${layerLabel}.visibility.minZoom must be > 0`)
+    }
+    if (
+      layer.visibility?.cardsMinZoom != null
+      && (typeof layer.visibility.cardsMinZoom !== 'number' || layer.visibility.cardsMinZoom <= 0)
+    ) {
+      errors.push(`${layerLabel}.visibility.cardsMinZoom must be > 0 when provided`)
+    }
+    if (
+      layer.visibility?.hotspotsMinZoom != null
+      && (typeof layer.visibility.hotspotsMinZoom !== 'number' || layer.visibility.hotspotsMinZoom <= 0)
+    ) {
+      errors.push(`${layerLabel}.visibility.hotspotsMinZoom must be > 0 when provided`)
+    }
+    if (layer.cameraPreset) {
+      validateCameraState(layer.cameraPreset, `${layerLabel}.cameraPreset`, errors)
+    }
+    if (!Array.isArray(layer.cards)) {
+      errors.push(`${layerLabel}.cards must be an array`)
+    } else {
+      layer.cards.forEach((card, cardIndex) => {
+        validateSurfaceCard(card, `${layerLabel}.cards[${cardIndex}]`, errors)
+      })
+    }
+    if (!Array.isArray(layer.hotspots)) {
+      errors.push(`${layerLabel}.hotspots must be an array`)
+    } else {
+      layer.hotspots.forEach((hotspot, hotspotIndex) => {
+        validateSurfaceHotspot(hotspot, `${layerLabel}.hotspots[${hotspotIndex}]`, errors)
+      })
+    }
+  }
+}
+
+function validateSurfaceConfig(
+  surfaceConfig: SurfaceConfig | undefined,
+  label: string,
+  errors: string[],
+) {
+  if (!surfaceConfig) {
+    errors.push(`${label} surfaceConfig is required`)
+    return
+  }
+  if (!surfaceConfig.sourceImageUrl || typeof surfaceConfig.sourceImageUrl !== 'string') {
+    errors.push(`${label} surfaceConfig.sourceImageUrl is required`)
+  }
+  if (surfaceConfig.coordSpace !== 'surface-normalized') {
+    errors.push(`${label} surfaceConfig.coordSpace must be 'surface-normalized'`)
+  }
+  validateCameraState(surfaceConfig.initialCamera, `${label} surfaceConfig.initialCamera`, errors)
+  if (
+    !surfaceConfig.bounds
+    || typeof surfaceConfig.bounds.minZoom !== 'number'
+    || typeof surfaceConfig.bounds.maxZoom !== 'number'
+  ) {
+    errors.push(`${label} surfaceConfig.bounds.minZoom/maxZoom are required`)
+  } else if (surfaceConfig.bounds.minZoom <= 0 || surfaceConfig.bounds.maxZoom < surfaceConfig.bounds.minZoom) {
+    errors.push(`${label} surfaceConfig bounds are invalid`)
+  }
+  if (!surfaceConfig.gesture || surfaceConfig.gesture.wheelZoom !== true || surfaceConfig.gesture.dragPan !== true) {
+    errors.push(`${label} surfaceConfig.gesture must enable wheelZoom and dragPan`)
+  }
 }
 
 function validateRuntimeConfig(
@@ -211,8 +385,8 @@ function validateNode(
   const contentType = node.contentType ?? 'image'
   const nodeKind = node.nodeKind ?? (contentType === 'html' ? 'html' : 'image')
 
-  if (!['image', 'region', 'html'].includes(nodeKind)) {
-    errors.push(`Node "${node.id}" nodeKind must be 'image', 'region', or 'html', got '${String(node.nodeKind)}'`)
+  if (!['surface', 'image', 'html'].includes(nodeKind)) {
+    errors.push(`Node "${node.id}" nodeKind must be 'surface', 'image', or 'html', got '${String(node.nodeKind)}'`)
   }
 
   // Content type validation
@@ -220,18 +394,9 @@ function validateNode(
     if (!node.htmlSource || typeof node.htmlSource !== 'string' || node.htmlSource.trim() === '') {
       errors.push(`Node "${node.id}" contentType is 'html' but htmlSource is missing or empty`)
     }
-  } else if (nodeKind === 'region') {
-    if (!node.regionViewport) {
-      errors.push(`Node "${node.id}" nodeKind is 'region' but regionViewport is missing`)
-    } else {
-      if (!node.regionViewport.sourceNodeId || typeof node.regionViewport.sourceNodeId !== 'string') {
-        errors.push(`Node "${node.id}" regionViewport.sourceNodeId is required`)
-      }
-      if (node.regionViewport.coordSpace !== 'source-normalized') {
-        errors.push(`Node "${node.id}" regionViewport.coordSpace must be 'source-normalized'`)
-      }
-      validateQuadRange(node.regionViewport.panRange, `Node "${node.id}" regionViewport.panRange`, errors)
-    }
+  } else if (nodeKind === 'surface') {
+    validateSurfaceConfig(node.surfaceConfig, `Node "${node.id}"`, errors)
+    validateSurfaceLayers(node.surfaceLayers, `Node "${node.id}" surfaceLayers`, errors)
   } else {
     if (!node.keyContent || typeof node.keyContent !== 'string' || node.keyContent.trim() === '') {
       errors.push(`Node "${node.id}" keyContent must be a non-empty string`)
@@ -364,17 +529,10 @@ export function validatePublishManifest(manifest: PublishManifest): ValidationRe
     if (nodeKind === 'html' && !node.htmlUrl) {
       errors.push(`HTML Node "${node.id}" must have htmlUrl`)
     }
-    if (nodeKind === 'region') {
-      if (!node.regionViewport) {
-        errors.push(`Region Node "${node.id}" must have regionViewport`)
-      } else {
-        if (!manifest.nodeMap[node.regionViewport.sourceNodeId]) {
-          errors.push(`Region Node "${node.id}" sourceNodeId "${node.regionViewport.sourceNodeId}" not found`)
-        }
-        validateQuadRange(node.regionViewport.panRange, `Node "${node.id}" regionViewport.panRange`, errors)
-      }
+    if (nodeKind === 'surface') {
+      validateSurfaceConfig(node.surfaceConfig, `Node "${node.id}"`, errors)
+      validateSurfaceLayers(node.surfaceLayers, `Node "${node.id}" surfaceLayers`, errors)
     }
-    // Image node (or default) must have imageUrl
     if (nodeKind === 'image' && !node.imageUrl) {
       errors.push(`Image Node "${node.id}" must have imageUrl`)
     }

@@ -20,8 +20,8 @@ export type BuiltinTransitionType = 'pan' | 'flip' | 'zoom'
 export type ImageFitMode = 'fill' | 'fitHeight' | 'fitWidth'
 export type EasingType = 'ease-in-out' | 'ease-in' | 'ease-out' | 'linear'
 export type HtmlIframePreloadStrategy = 'all' | 'current-node' | 'on-demand'
-export type NodeKind = 'image' | 'region' | 'html'
-export type CoordSpace = 'source-normalized'
+export type NodeKind = 'surface' | 'image' | 'html'
+export type CoordSpace = 'surface-normalized'
 
 export interface NormalizedPoint {
   x: number
@@ -37,16 +37,28 @@ export interface ZoomFocusQuad {
 
 export type QuadRange = ZoomFocusQuad
 
-export interface RegionInitialWindowRule {
-  mode: 'derive-from-pan-range-center'
-  fitBy: 'height'
+export interface CameraState {
+  centerX: number
+  centerY: number
+  zoom: number
 }
 
-export interface RegionViewportConfig {
-  sourceNodeId: string
+export interface CameraBounds {
+  minZoom: number
+  maxZoom: number
+}
+
+export interface SurfaceConfig {
+  sourceImageUrl: string
   coordSpace: CoordSpace
-  panRange: QuadRange
-  initialWindowRule: RegionInitialWindowRule
+  initialCamera: CameraState
+  bounds: CameraBounds
+  gesture: {
+    wheelZoom: true
+    dragPan: true
+    pinchZoom?: true
+    inertia?: boolean
+  }
 }
 
 export type RuntimeAction =
@@ -54,26 +66,69 @@ export type RuntimeAction =
   | { type: 'open-route'; route: string; openMode?: 'current-tab' | 'new-tab' }
   | { type: 'open-url'; url: string; target?: '_self' | '_blank' }
 
-export interface RegionOverlayStockItem {
+export interface SurfaceStockItem {
   label: string
   valueText?: string
   action?: RuntimeAction
 }
 
-export interface RegionOverlayCard {
+export interface SurfaceCallout {
+  fromDock: 'top' | 'right' | 'bottom' | 'left'
+  target: NormalizedPoint
+}
+
+export interface SurfaceCard {
   id: string
   title: string
   description?: string
   anchor: NormalizedPoint
   coordSpace: CoordSpace
   tags?: string[]
-  stocks?: RegionOverlayStockItem[]
+  stocks?: SurfaceStockItem[]
+  callout?: SurfaceCallout
 }
 
-export interface RegionOverlayConfig {
-  template: 'stock-info-v1'
-  showWhenActive: true
-  cards: RegionOverlayCard[]
+export interface SurfaceLayerVisibilityRule {
+  minZoom: number
+  cardsMinZoom?: number
+  hotspotsMinZoom?: number
+}
+
+export type SurfaceHotspotTarget =
+  | {
+      type: 'camera-preset'
+      camera: CameraState
+    }
+  | {
+      type: 'focus-layer'
+      layerId: string
+    }
+  | {
+      type: 'edge'
+      edgeId: string
+    }
+
+export interface SurfaceHotspot {
+  id: string
+  label: string
+  anchor: NormalizedPoint
+  coordSpace: CoordSpace
+  style?: string
+  target: SurfaceHotspotTarget
+}
+
+export interface SurfaceFocusLayer {
+  id: string
+  title: string
+  visibility: SurfaceLayerVisibilityRule
+  cameraPreset?: CameraState
+  cards: SurfaceCard[]
+  hotspots: SurfaceHotspot[]
+}
+
+export interface CameraTweenConfig {
+  duration: number
+  easing: EasingType
 }
 
 export interface PanTransitionConfig {
@@ -97,7 +152,7 @@ export interface ZoomTransitionConfig {
   scale?: number
   centerX?: number
   centerY?: number
-  focusMode?: 'center' | 'quad' | 'target-region-auto'
+  focusMode?: 'center' | 'quad'
   focusQuad?: ZoomFocusQuad
   duration: number
   easing: EasingType
@@ -170,12 +225,12 @@ export interface KnowledgeNode {
   hotspotEdgeIds?: string[]
   /** Image fill mode: 'fill' (stretch, default), 'fitHeight' (equal ratio by height, draggable), 'fitWidth' (equal ratio by width, draggable) */
   imageFitMode?: ImageFitMode
-  /** Explicit node render kind. Defaults to contentType/html fallback for legacy nodes. */
+  /** Explicit node render kind. */
   nodeKind?: NodeKind
-  /** Region node viewport configuration. Required when nodeKind === 'region'. */
-  regionViewport?: RegionViewportConfig
-  /** Region node overlay configuration. */
-  regionOverlay?: RegionOverlayConfig
+  /** Surface node camera and input configuration. Required when nodeKind === 'surface'. */
+  surfaceConfig?: SurfaceConfig
+  /** Surface content layers that appear at different zoom levels. */
+  surfaceLayers?: SurfaceFocusLayer[]
 }
 
 export interface KnowledgeEdge {
@@ -344,12 +399,12 @@ export interface PublishNode {
   hotspotEdgeIds?: string[]
   /** Image fill mode: 'fill' (stretch, default), 'fitHeight' (equal ratio by height, draggable), 'fitWidth' (equal ratio by width, draggable) */
   imageFitMode?: ImageFitMode
-  /** Explicit node render kind. Defaults to contentType/html fallback for legacy nodes. */
+  /** Explicit node render kind. */
   nodeKind?: NodeKind
-  /** Region node viewport configuration. Required when nodeKind === 'region'. */
-  regionViewport?: RegionViewportConfig
-  /** Region node overlay configuration. */
-  regionOverlay?: RegionOverlayConfig
+  /** Surface node camera and input configuration. Required when nodeKind === 'surface'. */
+  surfaceConfig?: SurfaceConfig
+  /** Surface content layers that appear at different zoom levels. */
+  surfaceLayers?: SurfaceFocusLayer[]
 }
 
 export interface PublishEdge {

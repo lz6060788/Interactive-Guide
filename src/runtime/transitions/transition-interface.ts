@@ -40,7 +40,7 @@ export interface ZoomTransitionConfig {
   scale?: number           // default 1.5
   centerX?: number        // 0-1, default hotspot x
   centerY?: number        // 0-1, default hotspot y
-  focusMode?: 'center' | 'quad' | 'target-region-auto'
+  focusMode?: 'center' | 'quad'
   focusQuad?: ZoomFocusQuad
   duration: number
   easing: EasingType

@@ -123,10 +123,16 @@ export class RuntimeBundleGenerator {
         }
       }
 
-      if (nodeKind === 'region') {
+      if (nodeKind === 'surface') {
         return {
           ...node,
-          imageUrl: undefined,
+          imageUrl: localImagePath ? `./assets/nodes/${path.basename(localImagePath)}` : node.imageUrl,
+          surfaceConfig: node.surfaceConfig
+            ? {
+                ...node.surfaceConfig,
+                sourceImageUrl: localImagePath ? `./assets/nodes/${path.basename(localImagePath)}` : node.surfaceConfig.sourceImageUrl,
+              }
+            : node.surfaceConfig,
         }
       }
 
@@ -189,8 +195,8 @@ export class RuntimeBundleGenerator {
           imageUrl: hasImage ? `${mediaBase}/nodes/${n.id}.png` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
-          regionViewport: n.regionViewport,
-          regionOverlay: n.regionOverlay,
+          surfaceConfig: n.surfaceConfig,
+          surfaceLayers: n.surfaceLayers,
           hotspots: (n.hotspots ?? []).map(hs => ({
             edgeId: hs.edgeId,
             targetNodeId: hs.targetNodeId,
@@ -207,10 +213,12 @@ export class RuntimeBundleGenerator {
         id: n.id,
         title: n.title,
         nodeKind,
-        imageUrl: nodeKind === 'region' ? undefined : `${mediaBase}/nodes/${n.id}.png`,
+        imageUrl: `${mediaBase}/nodes/${n.id}.png`,
         imageFitMode: n.imageFitMode,
-        regionViewport: n.regionViewport,
-        regionOverlay: n.regionOverlay,
+        surfaceConfig: n.surfaceConfig
+          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${n.id}.png` }
+          : undefined,
+        surfaceLayers: n.surfaceLayers,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
           targetNodeId: hs.targetNodeId,
