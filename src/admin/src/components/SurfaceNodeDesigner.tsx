@@ -283,6 +283,20 @@ function updateSelectedCard(
   })
 }
 
+function ensureCardHasCallout(card: SurfaceCard): SurfaceCard {
+  if (card.callout) return card
+  return {
+    ...card,
+    callout: {
+      fromDock: 'bottom',
+      target: {
+        x: clamp01(card.anchor.x + 0.06),
+        y: clamp01(card.anchor.y + 0.08),
+      },
+    },
+  }
+}
+
 function updateSelectedHotspot(
   layers: SurfaceFocusLayer[],
   selectedLayerId: string | null,
@@ -1384,6 +1398,7 @@ export function SurfaceNodeDesigner({
                     拖拽卡片位置
                   </ActionButton>
                   <ActionButton active={editMode === 'callout'} onClick={() => {
+                    applyLayers(updateSelectedCard(layers, selectedLayer.id, selectedCard.id, ensureCardHasCallout))
                     setPreviewMode('cards')
                     setEditMode(editMode === 'callout' ? null : 'callout')
                     focusLayer(selectedLayer, 'cards')
