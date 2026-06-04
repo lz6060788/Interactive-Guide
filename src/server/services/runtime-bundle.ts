@@ -107,10 +107,11 @@ export class RuntimeBundleGenerator {
     workspaceFallback: boolean = false,
   ): PublishManifest {
     const nodes = manifest.nodes.map(node => {
+      const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
       const localHtmlPath = this.resolveNodeHtmlAssetPath(guide, node, workspaceFallback)
       const localImagePath = this.resolveNodeImageAssetPath(guide, node, workspaceFallback)
 
-      if (node.contentType === 'html') {
+      if (nodeKind === 'html') {
         if (!localHtmlPath || !this.repo.fileExists(localHtmlPath)) {
           throw AppError.validation(`Missing HTML asset for standalone bundle: ${node.id}.html`)
         }
@@ -119,6 +120,13 @@ export class RuntimeBundleGenerator {
           contentType: 'html' as const,
           htmlUrl: `./assets/nodes/${path.basename(localHtmlPath)}`,
           imageUrl: localImagePath ? `./assets/nodes/${path.basename(localImagePath)}` : undefined,
+        }
+      }
+
+      if (nodeKind === 'region') {
+        return {
+          ...node,
+          imageUrl: undefined,
         }
       }
 
@@ -169,16 +177,20 @@ export class RuntimeBundleGenerator {
     const mediaBase = `/api/media/workspace/${guide.id}`
 
     const nodes = guide.nodes.map(n => {
+      const nodeKind = n.nodeKind ?? (n.contentType === 'html' ? 'html' : 'image')
       const hasImage = this.repo.fileExists(`workspace/${guide.id}/nodes/${n.id}.png`)
-      if (n.contentType === 'html') {
+      if (nodeKind === 'html') {
         return {
           id: n.id,
           title: n.title,
+          nodeKind,
           contentType: 'html' as const,
           htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
           imageUrl: hasImage ? `${mediaBase}/nodes/${n.id}.png` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
+          regionViewport: n.regionViewport,
+          regionOverlay: n.regionOverlay,
           hotspots: (n.hotspots ?? []).map(hs => ({
             edgeId: hs.edgeId,
             targetNodeId: hs.targetNodeId,
@@ -194,8 +206,11 @@ export class RuntimeBundleGenerator {
       return {
         id: n.id,
         title: n.title,
-        imageUrl: `${mediaBase}/nodes/${n.id}.png`,
+        nodeKind,
+        imageUrl: nodeKind === 'region' ? undefined : `${mediaBase}/nodes/${n.id}.png`,
         imageFitMode: n.imageFitMode,
+        regionViewport: n.regionViewport,
+        regionOverlay: n.regionOverlay,
         hotspots: (n.hotspots ?? []).map(hs => ({
           edgeId: hs.edgeId,
           targetNodeId: hs.targetNodeId,

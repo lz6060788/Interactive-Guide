@@ -20,6 +20,8 @@ export type BuiltinTransitionType = 'pan' | 'flip' | 'zoom'
 export type ImageFitMode = 'fill' | 'fitHeight' | 'fitWidth'
 export type EasingType = 'ease-in-out' | 'ease-in' | 'ease-out' | 'linear'
 export type HtmlIframePreloadStrategy = 'all' | 'current-node' | 'on-demand'
+export type NodeKind = 'image' | 'region' | 'html'
+export type CoordSpace = 'source-normalized'
 
 export interface NormalizedPoint {
   x: number
@@ -31,6 +33,47 @@ export interface ZoomFocusQuad {
   topRight: NormalizedPoint
   bottomRight: NormalizedPoint
   bottomLeft: NormalizedPoint
+}
+
+export type QuadRange = ZoomFocusQuad
+
+export interface RegionInitialWindowRule {
+  mode: 'derive-from-pan-range-center'
+  fitBy: 'height'
+}
+
+export interface RegionViewportConfig {
+  sourceNodeId: string
+  coordSpace: CoordSpace
+  panRange: QuadRange
+  initialWindowRule: RegionInitialWindowRule
+}
+
+export type RuntimeAction =
+  | { type: 'navigate-edge'; edgeId: string }
+  | { type: 'open-route'; route: string; openMode?: 'current-tab' | 'new-tab' }
+  | { type: 'open-url'; url: string; target?: '_self' | '_blank' }
+
+export interface RegionOverlayStockItem {
+  label: string
+  valueText?: string
+  action?: RuntimeAction
+}
+
+export interface RegionOverlayCard {
+  id: string
+  title: string
+  description?: string
+  anchor: NormalizedPoint
+  coordSpace: CoordSpace
+  tags?: string[]
+  stocks?: RegionOverlayStockItem[]
+}
+
+export interface RegionOverlayConfig {
+  template: 'stock-info-v1'
+  showWhenActive: true
+  cards: RegionOverlayCard[]
 }
 
 export interface PanTransitionConfig {
@@ -51,10 +94,10 @@ export interface FlipTransitionConfig {
 export interface ZoomTransitionConfig {
   type: 'zoom'
   direction: 'in' | 'out'
-  scale: number
-  centerX: number
-  centerY: number
-  focusMode?: 'center' | 'quad'
+  scale?: number
+  centerX?: number
+  centerY?: number
+  focusMode?: 'center' | 'quad' | 'target-region-auto'
   focusQuad?: ZoomFocusQuad
   duration: number
   easing: EasingType
@@ -127,6 +170,12 @@ export interface KnowledgeNode {
   hotspotEdgeIds?: string[]
   /** Image fill mode: 'fill' (stretch, default), 'fitHeight' (equal ratio by height, draggable), 'fitWidth' (equal ratio by width, draggable) */
   imageFitMode?: ImageFitMode
+  /** Explicit node render kind. Defaults to contentType/html fallback for legacy nodes. */
+  nodeKind?: NodeKind
+  /** Region node viewport configuration. Required when nodeKind === 'region'. */
+  regionViewport?: RegionViewportConfig
+  /** Region node overlay configuration. */
+  regionOverlay?: RegionOverlayConfig
 }
 
 export interface KnowledgeEdge {
@@ -295,6 +344,12 @@ export interface PublishNode {
   hotspotEdgeIds?: string[]
   /** Image fill mode: 'fill' (stretch, default), 'fitHeight' (equal ratio by height, draggable), 'fitWidth' (equal ratio by width, draggable) */
   imageFitMode?: ImageFitMode
+  /** Explicit node render kind. Defaults to contentType/html fallback for legacy nodes. */
+  nodeKind?: NodeKind
+  /** Region node viewport configuration. Required when nodeKind === 'region'. */
+  regionViewport?: RegionViewportConfig
+  /** Region node overlay configuration. */
+  regionOverlay?: RegionOverlayConfig
 }
 
 export interface PublishEdge {

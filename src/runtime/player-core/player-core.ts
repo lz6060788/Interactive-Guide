@@ -8,6 +8,7 @@ import type {
 import type { BuiltinTransitionType } from '../../shared/types.js'
 import type { Transition, TransitionPlaybackDirection } from '../transitions/index.js'
 import { createTransition } from '../transitions/index.js'
+import { resolveInitialRegionViewport } from './region-viewport.js'
 import { RuntimeResourcePreloader } from './resource-preloader.js'
 import { TransitionVideoController } from './transition-video-controller.js'
 
@@ -74,6 +75,8 @@ class PlayerCore {
   private pendingVisualCommit: PendingVisualCommit | null = null
   private resourcePreloader = new RuntimeResourcePreloader()
   private videoController: TransitionVideoController
+  private backgroundPreloadTimer: number | null = null
+  private videoPrimeTimer: number | null = null
 
   private listeners = new Map<EventName, Set<Function>>()
 
@@ -166,18 +169,18 @@ class PlayerCore {
   // ─── Actions ───────────────────────────────────────────────
 
   loadManifest(manifest: PublishManifest): void {
+    this.clearBackgroundTasks()
+    this.resourcePreloader.clear()
     this.manifest = manifest
     this.currentNodeId = manifest.rootNodeId
     this.history = []
     this.transitioning = false
-    this.preloading = true
+    this.preloading = false
     this.refs.nodeImage.style.opacity = '1'
     this.emit('stateChange')
-    void this.primeLikelyVideoTransition()
-    void this.resourcePreloader.preloadAllResources(manifest).finally(() => {
-      this.preloading = false
-      this.emit('stateChange')
-    })
+    void this.resourcePreloader.preloadNodeResources(manifest, manifest.rootNodeId)
+    this.scheduleLikelyVideoTransitionPrime()
+    this.scheduleManifestBackgroundPreload(manifest)
   }
 
   handleHotspotClick(hotspot: PublishHotspot): void {
@@ -209,7 +212,7 @@ class PlayerCore {
 
   isHtmlNode(nodeId: string): boolean {
     const node = this.manifest?.nodeMap[nodeId]
-    return node?.contentType === 'html'
+    return this.getNodeKind(node) === 'html'
   }
 
   handleBack(): void {
@@ -243,7 +246,7 @@ class PlayerCore {
 
     this.emit('stateChange')
     if (!options.preserveVisualLayer) {
-      void this.primeLikelyVideoTransition()
+      this.scheduleLikelyVideoTransitionPrime()
     }
   }
 
@@ -272,6 +275,7 @@ class PlayerCore {
   // ─── Lifecycle ─────────────────────────────────────────────
 
   destroy(): void {
+    this.clearBackgroundTasks()
     this.clearPendingVisualCommit('destroy')
     this.abortRunningTransition()
     this.cleanupVideo()
@@ -296,6 +300,12 @@ class PlayerCore {
   private createTransitionVisualFromCurrentImage(borderRadius: string): HTMLElement {
     const wrapper = this.createTransitionVisualShell(borderRadius)
     const clone = this.refs.nodeImage.cloneNode(true) as HTMLImageElement
+    const currentNode = this.getCurrentNode()
+    if (this.getNodeKind(currentNode) === 'region') {
+      clone.draggable = false
+      wrapper.appendChild(clone)
+      return wrapper
+    }
     const containerRect = this.refs.container.getBoundingClientRect()
     const imageRect = this.refs.nodeImage.getBoundingClientRect()
     clone.draggable = false
@@ -319,6 +329,28 @@ class PlayerCore {
     img: HTMLImageElement,
     node: PublishNode,
   ): void {
+    if (this.getNodeKind(node) === 'region') {
+      const layout = this.resolveRegionViewportForNode(node)
+      if (layout) {
+        img.draggable = false
+        img.style.display = 'block'
+        img.style.userSelect = 'none'
+        img.style.opacity = '1'
+        img.style.position = 'absolute'
+        img.style.left = '0'
+        img.style.top = '0'
+        img.style.width = `${layout.scaledImageWidth}px`
+        img.style.height = `${layout.scaledImageHeight}px`
+        img.style.maxWidth = 'none'
+        img.style.maxHeight = 'none'
+        img.style.objectFit = 'fill'
+        img.style.objectPosition = '50% 50%'
+        img.style.transform = `translate(${layout.offsetX}px, ${layout.offsetY}px)`
+        img.style.clipPath = layout.clipPath
+        return
+      }
+    }
+
     const fitMode = node.imageFitMode ?? 'fill'
 
     img.draggable = false
@@ -364,7 +396,10 @@ class PlayerCore {
   ): { visual: HTMLElement, image: HTMLImageElement } {
     const wrapper = this.createTransitionVisualShell(borderRadius)
     const img = document.createElement('img')
-    img.src = node.imageUrl ?? ''
+    const sourceNode = this.getNodeKind(node) === 'region'
+      ? this.getRegionSourceNode(node)
+      : node
+    img.src = sourceNode?.imageUrl ?? node.imageUrl ?? ''
     img.alt = node.title ?? node.id
     this.applyTransitionNodeImageStyle(img, node)
     wrapper.appendChild(img)
@@ -521,6 +556,57 @@ class PlayerCore {
     await this.videoController.prime(nextVideoUrl)
   }
 
+  private scheduleManifestBackgroundPreload(manifest: PublishManifest): void {
+    this.clearBackgroundPreloadTimer()
+    this.backgroundPreloadTimer = window.setTimeout(() => {
+      this.backgroundPreloadTimer = null
+      void this.runWhenIdle(() => this.resourcePreloader.preloadAllResources(manifest, {
+        excludeNodeIds: [manifest.rootNodeId],
+      }))
+    }, 1200)
+  }
+
+  private scheduleLikelyVideoTransitionPrime(): void {
+    this.clearVideoPrimeTimer()
+    this.videoPrimeTimer = window.setTimeout(() => {
+      this.videoPrimeTimer = null
+      void this.runWhenIdle(() => this.primeLikelyVideoTransition())
+    }, 1200)
+  }
+
+  private clearBackgroundTasks(): void {
+    this.clearBackgroundPreloadTimer()
+    this.clearVideoPrimeTimer()
+  }
+
+  private clearBackgroundPreloadTimer(): void {
+    if (this.backgroundPreloadTimer === null) return
+    window.clearTimeout(this.backgroundPreloadTimer)
+    this.backgroundPreloadTimer = null
+  }
+
+  private clearVideoPrimeTimer(): void {
+    if (this.videoPrimeTimer === null) return
+    window.clearTimeout(this.videoPrimeTimer)
+    this.videoPrimeTimer = null
+  }
+
+  private runWhenIdle(task: () => void | Promise<void>): Promise<void> {
+    return new Promise(resolve => {
+      const execute = () => {
+        Promise.resolve(task()).finally(() => resolve())
+      }
+
+      const browserWindow = globalThis as typeof globalThis & Window
+      if (typeof browserWindow.requestIdleCallback === 'function') {
+        browserWindow.requestIdleCallback(() => execute(), { timeout: 1500 })
+        return
+      }
+
+      globalThis.setTimeout(execute, 0)
+    })
+  }
+
   private clearPendingVisualCommit(reason: string): void {
     if (!this.pendingVisualCommit) return
 
@@ -566,7 +652,7 @@ class PlayerCore {
     if (edge.transitionType === 'builtin' && edge.builtinTransition && builtinAllowsHtml) {
       return {
         kind: 'builtin',
-        builtinTransition: this.resolveBuiltinTransitionConfig(edge.builtinTransition, hotspot),
+        builtinTransition: this.resolveBuiltinTransitionConfig(edge.builtinTransition, hotspot, edge.toNodeId),
       }
     }
 
@@ -635,15 +721,85 @@ class PlayerCore {
   private resolveBuiltinTransitionConfig(
     config: BuiltinTransitionConfig,
     hotspot: TransitionHotspot,
+    targetNodeId?: string,
   ): BuiltinTransitionConfig {
     if (config.type !== 'zoom') {
       return { ...config }
+    }
+
+    if (config.focusMode === 'target-region-auto' && targetNodeId) {
+      const targetNode = this.manifest?.nodeMap[targetNodeId]
+      const layout = targetNode ? this.resolveRegionViewportForNode(targetNode) : null
+      if (layout) {
+        return {
+          ...config,
+          focusMode: 'quad',
+          focusQuad: layout.initialWindow,
+          centerX: undefined,
+          centerY: undefined,
+        }
+      }
     }
 
     return {
       ...config,
       centerX: config.centerX ?? hotspot.normalizedX,
       centerY: config.centerY ?? hotspot.normalizedY,
+    }
+  }
+
+  private getNodeKind(node: PublishNode | null | undefined): 'image' | 'region' | 'html' {
+    if (!node) return 'image'
+    return node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
+  }
+
+  private getRegionSourceNode(node: PublishNode): PublishNode | null {
+    if (!this.manifest || this.getNodeKind(node) !== 'region') return null
+    const sourceNodeId = node.regionViewport?.sourceNodeId
+    if (!sourceNodeId) return null
+    return this.manifest.nodeMap[sourceNodeId] ?? null
+  }
+
+  private resolveRegionViewportForNode(node: PublishNode) {
+    if (!this.manifest || this.getNodeKind(node) !== 'region' || !node.regionViewport) {
+      return null
+    }
+    const sourceNode = this.getRegionSourceNode(node)
+    const sourceAspect = this.getSourceNodeAspectRatio(sourceNode)
+    if (!sourceNode?.imageUrl || !sourceAspect) return null
+
+    const rect = this.refs.container.getBoundingClientRect()
+    return resolveInitialRegionViewport({
+      viewportWidth: rect.width,
+      viewportHeight: rect.height,
+      sourceAspect,
+      regionViewport: node.regionViewport,
+      imageFitMode: node.imageFitMode,
+    })
+  }
+
+  getSourceNodeAspectRatio(node: PublishNode | null | undefined): number | null {
+    const imageUrl = node?.imageUrl
+    if (!imageUrl) return null
+
+    const metadata = this.resourcePreloader.getImageMetadata(imageUrl)
+    if (metadata?.naturalWidth && metadata.naturalHeight) {
+      return metadata.naturalWidth / metadata.naturalHeight
+    }
+
+    const currentSrc = this.refs.nodeImage.currentSrc || this.refs.nodeImage.src
+    if (currentSrc && this.resolveAbsoluteUrl(imageUrl) === currentSrc && this.refs.nodeImage.naturalWidth && this.refs.nodeImage.naturalHeight) {
+      return this.refs.nodeImage.naturalWidth / this.refs.nodeImage.naturalHeight
+    }
+
+    return null
+  }
+
+  private resolveAbsoluteUrl(url: string): string {
+    try {
+      return new URL(url, window.location.href).href
+    } catch {
+      return url
     }
   }
 
