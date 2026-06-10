@@ -30,6 +30,15 @@ export function createGeneratesRouter(generateService: GenerateService): Router 
     }
   })
 
+  router.post('/guides/:id/panorama-package', (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const bundle = generateService.packagePanoramaGuide(String(req.params.id))
+      res.json({ data: bundle })
+    } catch (err) {
+      next(err)
+    }
+  })
+
   // ─── Bundle Publish (Upload to OSS) ─────────────────────
 
   router.post('/runtime-bundles/:bundleId/publish', async (req: Request, res: Response, next: NextFunction) => {

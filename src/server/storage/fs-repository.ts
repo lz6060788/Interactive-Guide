@@ -58,7 +58,17 @@ export class FsRepository implements Repository {
       const entries = fs.readdirSync(this.workspaceDir, { withFileTypes: true })
       for (const entry of entries) {
         if (!entry.isDirectory()) continue
+        const guidePath = path.join(this.workspaceDir, entry.name, 'guide.json')
         const manifestPath = path.join(this.workspaceDir, entry.name, 'manifest.json')
+        if (fs.existsSync(guidePath)) {
+          try {
+            const guide: KnowledgePackage = JSON.parse(fs.readFileSync(guidePath, 'utf-8'))
+            this.guides.set(guide.id, guide)
+            continue
+          } catch {
+            console.warn(`[FsRepo] Failed to load workspace guide: ${guidePath}`)
+          }
+        }
         if (!fs.existsSync(manifestPath)) continue
         try {
           const manifest: PublishManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'))
@@ -99,6 +109,10 @@ export class FsRepository implements Repository {
     this.guides.set(guide.id, guide)
     const dir = path.join(this.workspaceDir, guide.id)
     fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'guide.json'),
+      JSON.stringify(guide, null, 2),
+    )
     fs.writeFileSync(
       path.join(dir, 'manifest.json'),
       JSON.stringify(this.guideToManifest(guide), null, 2),

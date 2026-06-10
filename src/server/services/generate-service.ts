@@ -10,6 +10,11 @@ import { BuildPipeline } from './pipeline.js'
 import { PromptBuilder } from './prompt-builder.js'
 import { RuntimeBundleGenerator } from './runtime-bundle.js'
 import { BundleUploader, type BundleUploadResult } from './bundle-uploader.js'
+import {
+  PanoramaRuntimeBundleService,
+  type PanoramaRuntimeBundlePayload,
+} from './panorama-runtime-bundle.js'
+import { AppError } from '../middleware/app-error.js'
 import { isObjectStorageConfigured } from '../storage/object-storage.js'
 
 import type * as vision from '../ai/vision.js'
@@ -20,6 +25,8 @@ import type * as media from '../ai/media.js'
 // ─── GenerateService (Facade) ─────────────────────────────────
 
 export class GenerateService {
+  private readonly panoramaBundleService: PanoramaRuntimeBundleService
+
   constructor(
     private repo: Repository,
     visionModule: typeof vision,
@@ -29,6 +36,7 @@ export class GenerateService {
   ) {
     const promptBuilder = new PromptBuilder()
     const bundleGenerator = new RuntimeBundleGenerator(repo)
+    this.panoramaBundleService = new PanoramaRuntimeBundleService(repo)
     this._pipeline = new BuildPipeline(
       repo,
       visionModule,
@@ -84,6 +92,14 @@ export class GenerateService {
     }
 
     return bundle
+  }
+
+  packagePanoramaGuide(guideId: string): PanoramaRuntimeBundlePayload {
+    const guide = this.repo.loadAllGuides().get(guideId)
+    if (!guide) {
+      throw AppError.notFound(`Guide "${guideId}" not found`)
+    }
+    return this.panoramaBundleService.buildRuntimeBundle(guide)
   }
 
   async publishBundle(bundleId: string): Promise<BundleUploadResult> {
