@@ -32,6 +32,12 @@ interface ProjectedFocusRect {
   maskOpacity: number
 }
 
+interface PanoramaListItemRefs {
+  cardEl: HTMLDivElement
+  dividerEl: HTMLDivElement
+  titleEl: HTMLDivElement
+}
+
 export class PanoramaPlayerHost {
   private product: PanoramaHtmlProduct | null = null
   private state: PanoramaRuntimeState | null = null
@@ -54,13 +60,14 @@ export class PanoramaPlayerHost {
   private readonly blurMaskBackgroundEl: SVGRectElement
   private readonly blurMaskHoleEl: SVGRectElement
   private readonly blurMaskId: string
-  private readonly itemElements = new Map<string, HTMLDivElement>()
+  private readonly itemElements = new Map<string, PanoramaListItemRefs>()
   private readonly markerElements = new Map<string, HTMLButtonElement>()
   private currentMarkerGroupId: string | null = null
   private readonly resizeObserver: ResizeObserver | null
   private focusAnimationFrame: number | null = null
   private displayedFocusRect: ProjectedFocusRect | null = null
   private lastSceneSignature: string | null = null
+  private activeItemId: string | null = null
   private scrollSyncLocked = false
   private scrollSyncTimer: number | null = null
 
@@ -255,11 +262,12 @@ export class PanoramaPlayerHost {
     const { product, section, group, item, state } = model
     const zoom = Math.max(state.activeViewport.zoom, 0.1)
     const backgroundImageUrl = product.globalPanoramaAsset?.imageUrl ?? group.panoramaAsset.imageUrl ?? ''
+    this.activeItemId = item.id
 
     this.renderSectionTabs(product.sections, section)
     this.renderGroupTabs(section, group)
-    this.renderViewport(group, item, zoom, backgroundImageUrl)
     this.renderList(group, item)
+    this.renderViewport(group, item, zoom, backgroundImageUrl)
     this.hintTextEl.textContent = product.hintText
 
     if (state.interactionMode !== 'scroll-sync') {
@@ -487,6 +495,20 @@ export class PanoramaPlayerHost {
     context.strokeStyle = 'rgba(255, 255, 255, 0.92)'
     context.stroke()
     context.restore()
+
+    const connector = this.resolveConnectorLine(rect)
+    if (!connector) return
+
+    context.save()
+    context.beginPath()
+    context.setLineDash([4, 4])
+    context.lineWidth = 1.25
+    context.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+    context.lineCap = 'round'
+    context.moveTo(connector.startX, connector.startY)
+    context.lineTo(connector.endX, connector.endY)
+    context.stroke()
+    context.restore()
   }
 
   private clearFocusOverlay(): void {
@@ -507,6 +529,43 @@ export class PanoramaPlayerHost {
     context.lineTo(rect.x, rect.y + radius)
     context.quadraticCurveTo(rect.x, rect.y, rect.x + radius, rect.y)
     context.closePath()
+  }
+
+  private resolveConnectorLine(rect: ProjectedFocusRect): {
+    startX: number
+    startY: number
+    endX: number
+    endY: number
+  } | null {
+    if (!this.activeItemId) return null
+    const itemRefs = this.itemElements.get(this.activeItemId)
+    if (!itemRefs) return null
+
+    const viewportBounds = this.viewportEl.getBoundingClientRect()
+    const dividerBounds = itemRefs.dividerEl.getBoundingClientRect()
+    if (dividerBounds.width <= 0 && dividerBounds.height <= 0) return null
+
+    const radius = Math.max(Math.min(rect.radius, rect.width / 2, rect.height / 2), 0)
+    const connectorPadding = 1.5
+    const cornerRatio = Math.SQRT1_2
+    const cornerBaseX = radius > 0
+      ? rect.x + rect.width - radius + radius * cornerRatio
+      : rect.x + rect.width
+    const cornerBaseY = radius > 0
+      ? rect.y + radius - radius * cornerRatio
+      : rect.y
+
+    const startX = cornerBaseX + connectorPadding
+    const startY = cornerBaseY - connectorPadding
+    const endX = dividerBounds.left - viewportBounds.left - 2
+    const endY = dividerBounds.top - viewportBounds.top + dividerBounds.height / 2
+
+    return {
+      startX,
+      startY,
+      endX,
+      endY,
+    }
   }
 
   private renderMarkers(group: PanoramaGroup, activeItem: PanoramaItem): void {
@@ -552,6 +611,10 @@ export class PanoramaPlayerHost {
       cardEl.className = `panorama-list-item ${entry.id === activeItem.id ? 'is-active' : ''}`
       cardEl.addEventListener('click', () => this.selectItem(group, entry))
 
+      const dividerEl = document.createElement('div')
+      dividerEl.className = 'panorama-list-divider'
+      cardEl.appendChild(dividerEl)
+
       const titleEl = document.createElement('div')
       titleEl.className = 'panorama-list-title'
       titleEl.textContent = entry.title
@@ -565,11 +628,11 @@ export class PanoramaPlayerHost {
         cardEl.appendChild(bodyEl)
       }
 
-      const dividerEl = document.createElement('div')
-      dividerEl.className = 'panorama-list-divider'
-      cardEl.appendChild(dividerEl)
-
-      this.itemElements.set(entry.id, cardEl)
+      this.itemElements.set(entry.id, {
+        cardEl,
+        dividerEl,
+        titleEl,
+      })
       return cardEl
     })
 
@@ -578,7 +641,7 @@ export class PanoramaPlayerHost {
 
   private scrollItemIntoView(itemId: string): void {
     window.requestAnimationFrame(() => {
-      this.itemElements.get(itemId)?.scrollIntoView({
+      this.itemElements.get(itemId)?.cardEl.scrollIntoView({
         block: 'center',
         behavior: 'smooth',
       })
@@ -608,7 +671,7 @@ export class PanoramaPlayerHost {
     for (const entry of model.group.items) {
       const element = this.itemElements.get(entry.id)
       if (!element) continue
-      const rect = element.getBoundingClientRect()
+      const rect = element.cardEl.getBoundingClientRect()
       const center = rect.top + rect.height / 2
       const distance = Math.abs(center - containerCenter)
       if (distance < closestDistance) {
@@ -824,6 +887,7 @@ const hostStyles = `
   margin-bottom: 10px;
 }
 .panorama-list-title {
+  margin-top: 10px;
   color: rgba(255,255,255,0.6);
   font-size: 14px;
   line-height: 20px;
@@ -844,7 +908,8 @@ const hostStyles = `
   text-shadow: 0 1px 6px rgba(0,0,0,0.4);
 }
 .panorama-list-divider {
-  margin-top: 10px;
+  margin-top: 0;
+  margin-bottom: 10px;
   width: 100%;
   height: 1px;
   background: rgba(255,255,255,0.84);
