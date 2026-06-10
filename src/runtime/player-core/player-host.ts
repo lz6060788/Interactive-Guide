@@ -382,6 +382,9 @@ export class PlayerHost {
   }
 
   private handleNodeImageLoad = (): void => {
+    // #region debug-point F:node-image-load
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'F', location: 'player-host.ts:384', msg: '[DEBUG] node image load event fired', data: { currentSrc: this.refs.nodeImage.currentSrc || this.refs.nodeImage.src, complete: this.refs.nodeImage.complete, naturalWidth: this.refs.nodeImage.naturalWidth, naturalHeight: this.refs.nodeImage.naturalHeight }, ts: Date.now() }) }).catch(() => {})
+    // #endregion
     this.updateHotspotViewport()
     requestAnimationFrame(() => {
       this.confirmHostVisualCommitIfReady('node-image:onLoad:next-frame')
@@ -1299,6 +1302,10 @@ export class PlayerHost {
       this.renderImageNode(currentNode, transitioning)
     }
 
+    // #region debug-point F:render-state
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'F', location: 'player-host.ts:1282', msg: '[DEBUG] host render state snapshot', data: { nodeId: currentNode.id, nodeKind, transitioning, enginePreloading: this.engine.isPreloading(), hostLoading: this.isLoading(), waitingForActiveImage: this.getNodeKind(currentNode) !== 'html' && !this.isActiveNodeImageReady(currentNode), expectedSrc: this.getNodeKind(currentNode) === 'html' ? null : this.toAbsoluteUrl(this.getNodeImageSource(currentNode) ?? ''), actualSrc: this.refs.nodeImage.currentSrc || this.refs.nodeImage.src, imageComplete: this.refs.nodeImage.complete, naturalWidth: this.refs.nodeImage.naturalWidth }, ts: Date.now() }) }).catch(() => {})
+    // #endregion
+
     requestAnimationFrame(() => {
       this.confirmHostVisualCommitIfReady('render:next-frame')
     })
@@ -1647,6 +1654,9 @@ export class PlayerHost {
     this.refs.nodeImage.src = currentNode.surfaceConfig.sourceImageUrl
     this.refs.nodeImage.alt = currentNode.title ?? currentNode.id
     this.refs.nodeImage.style.opacity = transitioning ? '0' : '1'
+    // #region debug-point F:surface-src-assigned
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'F', location: 'player-host.ts:1645', msg: '[DEBUG] surface node image src assigned', data: { nodeId: currentNode.id, assignedSrc: currentNode.surfaceConfig.sourceImageUrl, actualSrcAfterAssign: this.refs.nodeImage.currentSrc || this.refs.nodeImage.src, completeAfterAssign: this.refs.nodeImage.complete }, ts: Date.now() }) }).catch(() => {})
+    // #endregion
     this.applySurfaceImageLayout(currentNode)
     this.renderAnnotations(currentNode, transitioning)
 

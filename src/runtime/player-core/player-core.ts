@@ -187,6 +187,9 @@ class PlayerCore {
     this.transitioning = false
     this.preloading = true
     this.refs.nodeImage.style.opacity = '1'
+    // #region debug-point D:load-manifest
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'D', location: 'player-core.ts:180', msg: '[DEBUG] loadManifest entered', data: { loadRequestId, rootNodeId: manifest.rootNodeId, nodeCount: manifest.nodes.length, edgeCount: manifest.edges.length, preloading: this.preloading }, ts: Date.now() }) }).catch(() => {})
+    // #endregion
     this.emit('stateChange')
     void this.preloadManifestResources(manifest, loadRequestId)
   }
@@ -552,16 +555,25 @@ class PlayerCore {
     manifest: PublishManifest,
     loadRequestId: number,
   ): Promise<void> {
+    // #region debug-point D:preload-start
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'D', location: 'player-core.ts:551', msg: '[DEBUG] preloadManifestResources start', data: { loadRequestId, rootNodeId: manifest.rootNodeId, rootNodeKind: manifest.nodeMap[manifest.rootNodeId]?.nodeKind ?? manifest.nodeMap[manifest.rootNodeId]?.contentType ?? 'image', rootImageUrl: manifest.nodeMap[manifest.rootNodeId]?.surfaceConfig?.sourceImageUrl ?? manifest.nodeMap[manifest.rootNodeId]?.imageUrl ?? null }, ts: Date.now() }) }).catch(() => {})
+    // #endregion
     await this.resourcePreloader.preloadNodeResourcesWithOptions(manifest, manifest.rootNodeId, {
       includeHtml: false,
       includeOutgoingVideo: false,
     })
 
     if (this.manifest !== manifest || this.manifestLoadRequestId !== loadRequestId) {
+      // #region debug-point D:preload-stale
+      fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'D', location: 'player-core.ts:560', msg: '[DEBUG] preloadManifestResources aborted as stale request', data: { loadRequestId, activeLoadRequestId: this.manifestLoadRequestId, manifestStillSame: this.manifest === manifest }, ts: Date.now() }) }).catch(() => {})
+      // #endregion
       return
     }
 
     this.preloading = false
+    // #region debug-point D:preload-finished
+    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'D', location: 'player-core.ts:564', msg: '[DEBUG] preloadManifestResources finished', data: { loadRequestId, preloading: this.preloading, currentNodeId: this.currentNodeId }, ts: Date.now() }) }).catch(() => {})
+    // #endregion
     this.emit('stateChange')
     this.scheduleLikelyVideoTransitionPrime()
     this.scheduleManifestBackgroundPreload(manifest)
