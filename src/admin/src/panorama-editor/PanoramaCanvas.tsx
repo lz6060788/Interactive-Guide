@@ -14,6 +14,13 @@ interface PanoramaCanvasProps {
   onViewportChange: (viewport: PanoramaViewport) => void
 }
 
+interface ImageGeometry {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
 }
@@ -51,31 +58,105 @@ export function PanoramaCanvas({
 }: PanoramaCanvasProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
+  const [canvasSize, setCanvasSize] = useState({ width: 1, height: 1 })
+  const [imageAspectRatio, setImageAspectRatio] = useState(1)
   const backgroundImage = useMemo(() => {
     const imageUrl = backgroundImageUrl.trim()
     return imageUrl ? `url("${imageUrl}")` : undefined
   }, [backgroundImageUrl])
 
-  const viewportEstimate = useMemo(() => {
-    if (!viewport) return null
-    const width = clampMinMax(1 / viewport.zoom, 0.08, 1)
-    const height = width
+  useEffect(() => {
+    const imageUrl = backgroundImageUrl.trim()
+    if (!imageUrl) {
+      setImageAspectRatio(1)
+      return
+    }
+
+    let disposed = false
+    const image = new Image()
+    image.onload = () => {
+      if (disposed) return
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        setImageAspectRatio(image.naturalWidth / image.naturalHeight)
+      }
+    }
+    image.src = imageUrl
+
+    return () => {
+      disposed = true
+    }
+  }, [backgroundImageUrl])
+
+  useEffect(() => {
+    const node = canvasRef.current
+    if (!node) return
+
+    const syncSize = () => {
+      const rect = node.getBoundingClientRect()
+      setCanvasSize({
+        width: Math.max(rect.width, 1),
+        height: Math.max(rect.height, 1),
+      })
+    }
+
+    syncSize()
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', syncSize)
+      return () => window.removeEventListener('resize', syncSize)
+    }
+
+    const observer = new ResizeObserver(syncSize)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
+  const imageGeometry = useMemo<ImageGeometry>(() => {
+    const canvasWidth = Math.max(canvasSize.width, 1)
+    const canvasHeight = Math.max(canvasSize.height, 1)
+    const canvasAspectRatio = canvasWidth / canvasHeight
+
+    if (imageAspectRatio >= canvasAspectRatio) {
+      const height = canvasHeight
+      const width = height * imageAspectRatio
+      return {
+        left: (canvasWidth - width) / 2,
+        top: 0,
+        width,
+        height,
+      }
+    }
+
+    const width = canvasWidth
+    const height = width / imageAspectRatio
     return {
-      x: clampMinMax(viewport.centerX - width / 2, 0, 1 - width),
-      y: clampMinMax(viewport.centerY - height / 2, 0, 1 - height),
+      left: 0,
+      top: (canvasHeight - height) / 2,
       width,
       height,
     }
-  }, [viewport])
+  }, [canvasSize.height, canvasSize.width, imageAspectRatio])
+
+  const viewportEstimate = useMemo(() => {
+    if (!viewport) return null
+    const squareSize = Math.min(imageGeometry.height / Math.max(viewport.zoom, 0.1), imageGeometry.width, imageGeometry.height)
+    const centerX = imageGeometry.left + viewport.centerX * imageGeometry.width
+    const centerY = imageGeometry.top + viewport.centerY * imageGeometry.height
+    return {
+      left: clampMinMax(centerX - squareSize / 2, imageGeometry.left, imageGeometry.left + imageGeometry.width - squareSize),
+      top: clampMinMax(centerY - squareSize / 2, imageGeometry.top, imageGeometry.top + imageGeometry.height - squareSize),
+      size: squareSize,
+    }
+  }, [imageGeometry.height, imageGeometry.left, imageGeometry.top, imageGeometry.width, viewport])
 
   const resolveNormalizedPoint = (clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return null
     return {
-      x: clamp01((clientX - rect.left) / rect.width),
-      y: clamp01((clientY - rect.top) / rect.height),
-      width: rect.width,
-      height: rect.height,
+      x: clamp01((clientX - rect.left - imageGeometry.left) / imageGeometry.width),
+      y: clamp01((clientY - rect.top - imageGeometry.top) / imageGeometry.height),
+      width: imageGeometry.width,
+      height: imageGeometry.height,
     }
   }
 
@@ -169,10 +250,10 @@ export function PanoramaCanvas({
         {focusRect ? (
           <Box
             position="absolute"
-            left={`${focusRect.x * 100}%`}
-            top={`${focusRect.y * 100}%`}
-            width={`${focusRect.width * 100}%`}
-            height={`${focusRect.height * 100}%`}
+            left={`${imageGeometry.left + focusRect.x * imageGeometry.width}px`}
+            top={`${imageGeometry.top + focusRect.y * imageGeometry.height}px`}
+            width={`${focusRect.width * imageGeometry.width}px`}
+            height={`${focusRect.height * imageGeometry.height}px`}
             border="2px solid"
             borderColor="rgba(130, 143, 163, 0.92)"
             borderRadius={`${focusRect.radius ?? 12}px`}
@@ -218,10 +299,10 @@ export function PanoramaCanvas({
             {viewportEstimate ? (
               <Box
                 position="absolute"
-                left={`${viewportEstimate.x * 100}%`}
-                top={`${viewportEstimate.y * 100}%`}
-                width={`${viewportEstimate.width * 100}%`}
-                height={`${viewportEstimate.height * 100}%`}
+                left={`${viewportEstimate.left}px`}
+                top={`${viewportEstimate.top}px`}
+                width={`${viewportEstimate.size}px`}
+                height={`${viewportEstimate.size}px`}
                 border="1.5px dashed"
                 borderColor="rgba(34, 211, 238, 0.88)"
                 bg="rgba(34, 211, 238, 0.06)"
@@ -233,8 +314,8 @@ export function PanoramaCanvas({
             ) : null}
             <Box
               position="absolute"
-              left={`calc(${viewport.centerX * 100}% - 10px)`}
-              top={`calc(${viewport.centerY * 100}% - 10px)`}
+              left={`${imageGeometry.left + viewport.centerX * imageGeometry.width - 10}px`}
+              top={`${imageGeometry.top + viewport.centerY * imageGeometry.height - 10}px`}
               width="20px"
               height="20px"
               borderRadius="999px"
@@ -256,8 +337,8 @@ export function PanoramaCanvas({
         {marker ? (
           <Box
             position="absolute"
-            left={`calc(${marker.x * 100}% - 10px)`}
-            top={`calc(${marker.y * 100}% - 10px)`}
+            left={`${imageGeometry.left + marker.x * imageGeometry.width - 10}px`}
+            top={`${imageGeometry.top + marker.y * imageGeometry.height - 10}px`}
             width="20px"
             height="20px"
             borderRadius="999px"

@@ -46,9 +46,22 @@ export function PanoramaRuntimePreviewModal({
           </Button>
         </Flex>
 
-        <Box px="6" py="5" flex="1" minH="0">
-          <PanoramaRuntimeHostView product={document.product} />
-        </Box>
+        <Flex px="6" py="5" flex="1" minH="0" align="center" justify="center">
+          <Box
+            w="min(calc(100vw - 160px), calc(100vh - 220px), 760px)"
+            h="min(calc(100vw - 160px), calc(100vh - 220px), 760px)"
+            maxW="100%"
+            maxH="100%"
+            borderRadius="xl"
+            overflow="hidden"
+            border="1px solid"
+            borderColor="border-default"
+            bg="rgba(5, 8, 15, 0.92)"
+            boxShadow="inset 0 0 0 1px rgba(255,255,255,0.02)"
+          >
+            <PanoramaRuntimeHostView product={document.product} />
+          </Box>
+        </Flex>
       </Flex>
     </Flex>
   )
