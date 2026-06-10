@@ -72,6 +72,7 @@ interface NavigationHistoryEntry {
 
 class PlayerCore {
   private manifest: PublishManifest | null = null
+  private manifestLoadRequestId = 0
   private currentNodeId = 'root'
   private history: NavigationHistoryEntry[] = []
   private transitioning = false
@@ -180,15 +181,14 @@ class PlayerCore {
     this.clearBackgroundTasks()
     this.resourcePreloader.clear()
     this.manifest = manifest
+    const loadRequestId = ++this.manifestLoadRequestId
     this.currentNodeId = manifest.rootNodeId
     this.history = []
     this.transitioning = false
-    this.preloading = false
+    this.preloading = true
     this.refs.nodeImage.style.opacity = '1'
     this.emit('stateChange')
-    void this.resourcePreloader.preloadNodeResources(manifest, manifest.rootNodeId)
-    this.scheduleLikelyVideoTransitionPrime()
-    this.scheduleManifestBackgroundPreload(manifest)
+    void this.preloadManifestResources(manifest, loadRequestId)
   }
 
   handleHotspotClick(hotspot: PublishHotspot): void {
@@ -283,6 +283,7 @@ class PlayerCore {
   // ─── Lifecycle ─────────────────────────────────────────────
 
   destroy(): void {
+    this.manifestLoadRequestId += 1
     this.clearBackgroundTasks()
     this.clearPendingVisualCommit('destroy')
     this.abortRunningTransition()
@@ -547,6 +548,25 @@ class PlayerCore {
     return edge?.videoUrl ?? null
   }
 
+  private async preloadManifestResources(
+    manifest: PublishManifest,
+    loadRequestId: number,
+  ): Promise<void> {
+    await this.resourcePreloader.preloadNodeResourcesWithOptions(manifest, manifest.rootNodeId, {
+      includeHtml: false,
+      includeOutgoingVideo: false,
+    })
+
+    if (this.manifest !== manifest || this.manifestLoadRequestId !== loadRequestId) {
+      return
+    }
+
+    this.preloading = false
+    this.emit('stateChange')
+    this.scheduleLikelyVideoTransitionPrime()
+    this.scheduleManifestBackgroundPreload(manifest)
+  }
+
   private async primeLikelyVideoTransition(): Promise<void> {
     if (!this.manifest || this.transitioning) return
 
@@ -560,6 +580,7 @@ class PlayerCore {
       this.backgroundPreloadTimer = null
       void this.runWhenIdle(() => this.resourcePreloader.preloadAllResources(manifest, {
         excludeNodeIds: [manifest.rootNodeId],
+        includeHtml: false,
       }))
     }, 1200)
   }

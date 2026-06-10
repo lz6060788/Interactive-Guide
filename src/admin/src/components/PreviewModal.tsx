@@ -139,6 +139,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
     })
     hostRef.current = host
     host.loadManifest(m)
+    setRuntimeState(host.getState())
 
     return () => {
       host.destroy()
@@ -178,7 +179,7 @@ export function PreviewModal({ packageId, onClose }: Props) {
   const modalW = `min(${maxWVw}vw, ${maxHVh}vh * ${ar})`
   const modalH = `min(${maxHVh}vh, ${maxWVw}vw / ${ar})`
   const preloading = runtimeState?.preloading ?? false
-  const showRuntimeLoading = status === 'ready' && !!manifest && (!runtimeState || preloading)
+  const showRuntimeLoading = status === 'ready' && !!manifest && preloading
 
   return (
     <Flex position="fixed" inset="0" zIndex={200} align="center" justify="center">

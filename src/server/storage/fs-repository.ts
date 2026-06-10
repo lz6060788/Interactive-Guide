@@ -240,6 +240,7 @@ export class FsRepository implements Repository {
       transitionStyle: manifest.transitionStyle,
       style: manifest.style,
       runtimeConfig: manifest.runtimeConfig,
+      infoOverlay: manifest.infoOverlay,
       nodes: manifest.nodes.map(node => ({
         id: node.id,
         title: node.title,
@@ -374,6 +375,7 @@ export class FsRepository implements Repository {
       transitionStyle: guide.transitionStyle,
       style: guide.style,
       runtimeConfig: guide.runtimeConfig,
+      infoOverlay: guide.infoOverlay,
       nodes,
       edges,
       nodeMap,

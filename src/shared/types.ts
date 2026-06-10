@@ -119,6 +119,7 @@ export interface SurfaceHotspot {
 
 export interface SurfaceFocusLayer {
   id: string
+  primaryCategory?: string
   title: string
   visibility: SurfaceLayerVisibilityRule
   cameraPreset?: CameraState
@@ -269,6 +270,16 @@ export interface RuntimeConfig {
   htmlIframePreloadStrategy?: HtmlIframePreloadStrategy
 }
 
+export interface InfoOverlaySection {
+  heading: string
+  body: string
+}
+
+export interface InfoOverlayConfig {
+  title?: string
+  sections: InfoOverlaySection[]
+}
+
 export interface KnowledgePackage {
   id: string
   title: string
@@ -281,6 +292,7 @@ export interface KnowledgePackage {
   /** Infographic style key (e.g. 'morandi-journal', 'pop-laboratory') */
   style?: string
   runtimeConfig?: RuntimeConfig
+  infoOverlay?: InfoOverlayConfig
   nodes: KnowledgeNode[]
   edges: KnowledgeEdge[]
   metadata?: PackageMetadata
@@ -440,6 +452,7 @@ export interface PublishManifest {
   transitionStyle?: string
   style?: string
   runtimeConfig?: RuntimeConfig
+  infoOverlay?: InfoOverlayConfig
   nodes: PublishNode[]
   edges: PublishEdge[]
   nodeMap: Record<string, PublishNode>

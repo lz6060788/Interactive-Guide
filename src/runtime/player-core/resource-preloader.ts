@@ -7,6 +7,8 @@ type PreloadEntry = {
 
 interface ManifestPreloadOptions {
   excludeNodeIds?: Iterable<string>
+  includeHtml?: boolean
+  includeVideo?: boolean
 }
 
 export interface PreloadedImageMetadata {
@@ -17,6 +19,7 @@ export interface PreloadedImageMetadata {
 export class RuntimeResourcePreloader {
   private imageEntries = new Map<string, PreloadEntry>()
   private htmlEntries = new Map<string, PreloadEntry>()
+  private videoEntries = new Map<string, PreloadEntry>()
   private imageMetadata = new Map<string, PreloadedImageMetadata>()
   private fullPreloadPromise: Promise<void> | null = null
 
@@ -91,11 +94,72 @@ export class RuntimeResourcePreloader {
     return promise
   }
 
+  preloadVideo(url?: string): Promise<void> {
+    if (!url) return Promise.resolve()
+    const existing = this.videoEntries.get(url)
+    if (existing) return existing.promise
+
+    const promise = new Promise<void>((resolve) => {
+      const video = document.createElement('video')
+      let settled = false
+
+      const cleanup = () => {
+        video.removeEventListener('loadeddata', handleReady)
+        video.removeEventListener('canplay', handleReady)
+        video.removeEventListener('error', handleError)
+      }
+
+      const settle = (status: PreloadEntry['status']) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        const entry = this.videoEntries.get(url)
+        if (entry) entry.status = status
+        try {
+          video.pause()
+          video.removeAttribute('src')
+          video.load()
+        } catch {
+          // Ignore detach errors from browsers with stricter media lifecycles.
+        }
+        resolve()
+      }
+
+      const handleReady = () => settle('fulfilled')
+      const handleError = () => settle('rejected')
+
+      video.preload = 'auto'
+      video.muted = true
+      video.playsInline = true
+      video.setAttribute('playsinline', '')
+      video.setAttribute('webkit-playsinline', 'true')
+      video.addEventListener('loadeddata', handleReady)
+      video.addEventListener('canplay', handleReady)
+      video.addEventListener('error', handleError)
+      video.src = url
+      video.load()
+    })
+
+    this.videoEntries.set(url, { status: 'pending', promise })
+    return promise
+  }
+
   preloadNodeResources(manifest: PublishManifest, nodeId: string): Promise<void> {
+    return this.preloadNodeResourcesWithOptions(manifest, nodeId)
+  }
+
+  preloadNodeResourcesWithOptions(
+    manifest: PublishManifest,
+    nodeId: string,
+    options: { includeHtml?: boolean, includeOutgoingVideo?: boolean } = {},
+  ): Promise<void> {
     const node = manifest.nodeMap[nodeId]
     if (!node) return Promise.resolve()
 
-    const jobs = this.createNodePreloadJobs(manifest, node)
+    const jobs = [
+      ...this.createNodePreloadJobs(manifest, node, { includeHtml: options.includeHtml }),
+      ...(options.includeOutgoingVideo === false ? [] : this.createOutgoingEdgePreloadJobs(manifest, node.id)),
+    ]
     return Promise.allSettled(jobs.map(job => job())).then(() => undefined)
   }
 
@@ -106,9 +170,12 @@ export class RuntimeResourcePreloader {
     if (this.fullPreloadPromise) return this.fullPreloadPromise
 
     const excludedNodeIds = new Set(options.excludeNodeIds ?? [])
+    const includeHtml = options.includeHtml ?? false
+    const includeVideo = options.includeVideo ?? true
     const jobs = manifest.nodes
       .filter(node => !excludedNodeIds.has(node.id))
-      .flatMap(node => this.createNodePreloadJobs(manifest, node))
+      .flatMap(node => this.createNodePreloadJobs(manifest, node, { includeHtml }))
+      .concat(includeVideo ? this.createEdgePreloadJobs(manifest) : [])
 
     this.fullPreloadPromise = this.runJobsInBackground(jobs).finally(() => {
       this.fullPreloadPromise = null
@@ -121,6 +188,7 @@ export class RuntimeResourcePreloader {
     this.fullPreloadPromise = null
     this.imageEntries.clear()
     this.htmlEntries.clear()
+    this.videoEntries.clear()
     this.imageMetadata.clear()
   }
 
@@ -132,9 +200,11 @@ export class RuntimeResourcePreloader {
   private createNodePreloadJobs(
     manifest: PublishManifest,
     node: PublishManifest['nodes'][number],
+    options: { includeHtml?: boolean } = {},
   ): Array<() => Promise<void>> {
     const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
     if (nodeKind === 'html') {
+      if (options.includeHtml === false) return []
       return [() => this.preloadHtml(node.htmlUrl)]
     }
 
@@ -143,6 +213,21 @@ export class RuntimeResourcePreloader {
     }
 
     return [() => this.preloadImage(node.imageUrl)]
+  }
+
+  private createOutgoingEdgePreloadJobs(
+    manifest: PublishManifest,
+    nodeId: string,
+  ): Array<() => Promise<void>> {
+    return manifest.edges
+      .filter(edge => edge.fromNodeId === nodeId && !!edge.videoUrl)
+      .map(edge => () => this.preloadVideo(edge.videoUrl))
+  }
+
+  private createEdgePreloadJobs(manifest: PublishManifest): Array<() => Promise<void>> {
+    return manifest.edges
+      .filter(edge => !!edge.videoUrl)
+      .map(edge => () => this.preloadVideo(edge.videoUrl))
   }
 
 
