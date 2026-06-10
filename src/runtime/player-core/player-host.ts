@@ -961,9 +961,11 @@ export class PlayerHost {
       background: 'linear-gradient(360deg, #F5F5F5 0%, rgba(255, 255, 255, 0.64) 100%)',
       backdropFilter: 'blur(6px)',
       boxShadow: '0 -10px 36px rgba(15, 23, 42, 0.12)',
-      pointerEvents: 'auto',
+      pointerEvents: 'none',
       opacity: '0',
-      transition: 'opacity 220ms ease',
+      transform: 'translateY(calc(100% + 20px))',
+      transition: 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease',
+      willChange: 'transform, opacity',
       zIndex: '2',
     })
     Object.assign(this.bottomSheetHeaderEl.style, {
@@ -1009,7 +1011,7 @@ export class PlayerHost {
       cursor: 'pointer',
       pointerEvents: 'none',
       opacity: '0',
-      transition: 'opacity 220ms ease',
+      transition: 'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease',
       zIndex: '3',
     })
     const sheetBackIcon = this.bottomSheetResetButtonEl.querySelector('svg')
@@ -1231,7 +1233,12 @@ export class PlayerHost {
       stageLeft = (viewportSize.width - stageWidth) / 2
       stageTop = (viewportSize.height - stageHeight) / 2
     } else if (viewportAspect > designAspect) {
-      stageTop = viewportSize.height - stageHeight
+      // On wider screens, keep the stage aligned to the full content area.
+      // The scene itself handles horizontal overflow through image/surface panning.
+      stageWidth = viewportSize.width
+      stageHeight = viewportSize.height
+      stageLeft = 0
+      stageTop = 0
     } else {
       stageTop = (viewportSize.height - stageHeight) / 2
     }
@@ -1346,13 +1353,16 @@ export class PlayerHost {
 
   private renderBottomSheet(currentNode: PublishNode | null, chromeVisible: boolean): void {
     const layer = this.getActiveSurfaceLayer(currentNode)
-    const shouldShow = !!layer && chromeVisible && this.surfaceSheetOpen && !this.infoSheetOpen
-    this.bottomSheetEl.style.display = shouldShow ? 'flex' : 'none'
-    this.bottomSheetEl.style.opacity = shouldShow ? '1' : '0'
-    this.bottomSheetResetButtonEl.style.display = shouldShow ? 'flex' : 'none'
-    this.bottomSheetResetButtonEl.style.opacity = shouldShow ? '1' : '0'
-    this.bottomSheetResetButtonEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
-    if (!shouldShow || !layer) {
+    const shouldMount = !!layer && chromeVisible && !this.infoSheetOpen
+    const shouldShow = shouldMount && this.surfaceSheetOpen
+    this.bottomSheetEl.style.display = shouldMount ? 'flex' : 'none'
+    this.bottomSheetEl.style.opacity = shouldMount ? '1' : '0'
+    this.bottomSheetEl.style.transform = shouldShow ? 'translateY(0)' : 'translateY(calc(100% + 20px))'
+    this.bottomSheetEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
+    this.bottomSheetResetButtonEl.style.display = shouldMount ? 'flex' : 'none'
+    this.bottomSheetResetButtonEl.style.opacity = shouldMount ? '1' : '0'
+    this.bottomSheetResetButtonEl.style.pointerEvents = shouldMount ? 'auto' : 'none'
+    if (!shouldMount || !layer) {
       this.bottomSheetBreadcrumbEl.replaceChildren()
       this.bottomSheetCardsEl.replaceChildren()
       return
@@ -1448,7 +1458,9 @@ export class PlayerHost {
       })
       this.bottomSheetCardsEl.appendChild(cardEl)
     }
-    this.bottomSheetResetButtonEl.style.bottom = `${this.bottomSheetEl.offsetHeight + 16}px`
+    this.bottomSheetResetButtonEl.style.bottom = shouldShow
+      ? `${this.bottomSheetEl.offsetHeight + 16}px`
+      : '16px'
     this.scrollActiveSheetCardIntoView()
   }
 
@@ -1814,9 +1826,15 @@ export class PlayerHost {
     const style = document.createElement('style')
     style.id = styleId
     style.textContent = `
-      @keyframes hotspot-pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
+      @keyframes annotation-marker-breathe {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 0.96;
+        }
+        50% {
+          transform: scale(1.06);
+          opacity: 1;
+        }
       }
     `
     document.head.appendChild(style)
@@ -1836,7 +1854,6 @@ export class PlayerHost {
     button.type = 'button'
     button.title = hotspot.label
     this.applyAnnotationChipStyles(button, false)
-    button.style.animation = 'hotspot-pulse 2.5s ease-in-out infinite'
 
     label.textContent = hotspot.label
     label.style.display = 'block'
@@ -1880,12 +1897,16 @@ export class PlayerHost {
     this.applyAnnotationChipStyles(button, selected)
     button.type = 'button'
     button.style.minWidth = '88px'
-    button.style.maxWidth = '180px'
+    button.style.maxWidth = '240px'
+    button.style.height = '36px'
+    button.style.minHeight = '36px'
+    button.style.whiteSpace = 'nowrap'
     button.style.contain = 'layout paint style'
     button.style.willChange = 'left,top'
 
     label.textContent = card.title
     label.style.display = 'block'
+    label.style.maxWidth = '100%'
     label.style.overflow = 'hidden'
     label.style.textOverflow = 'ellipsis'
     label.style.fontFamily = '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif'
@@ -1895,6 +1916,7 @@ export class PlayerHost {
     label.style.lineHeight = '20px'
     label.style.textAlign = 'center'
     label.style.color = 'inherit'
+    label.style.whiteSpace = 'nowrap'
     button.appendChild(label)
 
     this.appendMarkerAndButton(root, button, this.createAnnotationMarker(selected), {
@@ -2299,7 +2321,7 @@ export class PlayerHost {
       const layer = currentNode.surfaceLayers?.find(item => item.id === layerId)
       this.activeSurfaceLayerId = layerId
       this.activeSurfaceCardId = null
-      this.surfaceSheetOpen = true
+      this.surfaceSheetOpen = false
       if (layer?.cameraPreset) {
         this.setSurfaceCamera({
           ...layer.cameraPreset,
@@ -2351,6 +2373,8 @@ export class PlayerHost {
     marker.style.width = '21px'
     marker.style.height = '21px'
     marker.style.pointerEvents = 'none'
+    marker.style.willChange = 'transform, opacity'
+    marker.style.animation = 'annotation-marker-breathe 2.8s ease-in-out infinite'
     marker.innerHTML = selected ? SURFACE_MARKER_SELECTED_SVG : SURFACE_MARKER_SVG
     return marker
   }
@@ -2415,8 +2439,12 @@ export class PlayerHost {
     const cardContext = this.findSurfaceCardContext(currentNode, cardId)
     if (!cardContext) return
     this.activeSurfaceLayerId = cardContext.layer.id
-    this.surfaceSheetOpen = true
-    this.setActiveSurfaceCard(cardId)
+    const shouldAnimateOpen = !this.surfaceSheetOpen
+    this.surfaceSheetOpen = false
+    this.activeSurfaceCardId = cardId
+    if (this.getNodeKind(currentNode) === 'surface') {
+      this.render()
+    }
     if (moveCamera && this.currentSurfaceCamera) {
       this.setSurfaceCamera({
         centerX: cardContext.card.anchor.x,
@@ -2425,6 +2453,15 @@ export class PlayerHost {
       }, true)
     } else {
       this.scrollActiveSheetCardIntoView()
+    }
+    if (shouldAnimateOpen) {
+      requestAnimationFrame(() => {
+        this.surfaceSheetOpen = true
+        this.renderChrome(this.getState())
+      })
+    } else {
+      this.surfaceSheetOpen = true
+      this.renderChrome(this.getState())
     }
   }
 
