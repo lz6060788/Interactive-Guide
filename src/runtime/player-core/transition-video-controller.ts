@@ -45,38 +45,55 @@ export class TransitionVideoController {
 
     const requestId = ++this.preloadRequestId
     this.clearPreloadState()
+    await new Promise<void>(resolve => {
+      let settled = false
+      let timeoutId = 0
 
-    const settle = (ready: boolean) => {
-      if (requestId !== this.preloadRequestId) return
-      this.clearPreloadState()
-      this.preloadedVideoUrl = ready ? resolvedUrl : null
-    }
+      const settle = (ready: boolean) => {
+        if (settled) return
+        settled = true
+        if (requestId === this.preloadRequestId) {
+          this.clearPreloadState()
+          this.preloadedVideoUrl = ready ? resolvedUrl : null
+        }
+        resolve()
+      }
 
-    const handleReady = () => settle(true)
-    const handleError = () => settle(false)
-    this.video.addEventListener('loadeddata', handleReady)
-    this.video.addEventListener('canplay', handleReady)
-    this.video.addEventListener('error', handleError)
+      const handleReady = () => settle(true)
+      const handleError = () => settle(false)
+      this.video.addEventListener('loadeddata', handleReady)
+      this.video.addEventListener('canplay', handleReady)
+      this.video.addEventListener('error', handleError)
 
-    this.preloadCleanup = () => {
-      this.video.removeEventListener('loadeddata', handleReady)
-      this.video.removeEventListener('canplay', handleReady)
-      this.video.removeEventListener('error', handleError)
-    }
+      this.preloadCleanup = () => {
+        window.clearTimeout(timeoutId)
+        this.video.removeEventListener('loadeddata', handleReady)
+        this.video.removeEventListener('canplay', handleReady)
+        this.video.removeEventListener('error', handleError)
+      }
 
-    if (!this.isVideoBoundToUrl(resolvedUrl)) {
-      this.video.pause()
-      this.video.style.opacity = '0'
-      this.video.src = url
-      this.boundVideoUrl = resolvedUrl
-      this.video.load()
-      return
-    }
+      timeoutId = window.setTimeout(() => {
+        settle(this.isVideoReadyForUrl(resolvedUrl))
+      }, 12000)
 
-    if (this.video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
-      && this.video.networkState === HTMLMediaElement.NETWORK_EMPTY) {
-      this.video.load()
-    }
+      if (!this.isVideoBoundToUrl(resolvedUrl)) {
+        this.video.pause()
+        this.video.style.opacity = '0'
+        this.video.src = url
+        this.boundVideoUrl = resolvedUrl
+        this.video.load()
+        return
+      }
+
+      if (this.isVideoReadyForUrl(resolvedUrl)) {
+        settle(true)
+        return
+      }
+
+      if (this.video.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+        this.video.load()
+      }
+    })
   }
 
   play(url: string, callbacks: VideoTransitionPlaybackCallbacks): void {

@@ -8,6 +8,7 @@ import type {
   SurfaceConfig,
   SurfaceFocusLayer,
   SurfaceHotspot,
+  InfoOverlayConfig,
   RuntimeAction,
   RuntimeConfig,
 } from '../../shared/types.js'
@@ -86,13 +87,61 @@ type HtmlIframeEntry = {
   cleanup: () => void
 }
 
+type TouchPinchState = {
+  active: boolean
+  startDistance: number
+  startCamera: CameraState | null
+  anchorNormX: number
+  anchorNormY: number
+  baseWidth: number
+  baseHeight: number
+}
+
 const HOTSPOT_SIZE = 28
 const BACK_ICON_SVG = `
-<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M512 78.769231c240.246154 0 433.230769 192.984615 433.230769 433.230769s-192.984615 433.230769-433.230769 433.230769S78.769231 752.246154 78.769231 512 271.753846 78.769231 512 78.769231m0-78.769231C228.430769 0 0 228.430769 0 512s228.430769 512 512 512 512-228.430769 512-512S795.569231 0 512 0z" fill="#2c2c2c"></path>
-  <path d="M315.076923 468.676923h433.230769v78.769231H315.076923z" fill="#2c2c2c"></path>
-  <path d="M236.859077 501.051077l275.692308-275.692308 55.72923 55.650462-275.692307 275.692307z" fill="#2c2c2c"></path>
-  <path d="M294.203077 444.297846l275.731692 275.692308-55.689846 55.729231-275.692308-275.692308z" fill="#2c2c2c"></path>
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <path d="M15.25 5.5L8.75 12L15.25 18.5" stroke="#231815" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+`
+const SHEET_BACK_ICON_SVG = `
+<svg width="16" height="13" viewBox="0 0 16 13" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <path d="M10.5065 2.13333H7.11988V0L2.50655 3.46339L7.11988 6.33333V4.2H10.4799C12.7999 4.2 13.5 4.35339 13.6665 7.38667C13.6665 9.70667 12.7999 10.5733 10.4799 10.5733H0.826546C0.533213 10.5733 0 10.5733 0 11.3534C0 12.8534 0.5 12.64 0.826546 12.64H10.5065C13.4132 12.64 15.7599 10.8534 15.7599 7.38667C15.7599 3.35339 13.3865 2.13333 10.5065 2.13333Z" fill="black" fill-opacity="0.84"/>
+</svg>
+`
+const INFO_ICON_SVG = `
+<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <path d="M7.00977 0.00878906C10.5322 0.187363 13.333 3.10017 13.333 6.66699L13.3242 7.00977C13.1456 10.5321 10.2337 13.3328 6.66699 13.333L6.32324 13.3242C2.91459 13.1512 0.181596 10.4185 0.00878906 7.00977L0 6.66699C0 2.98509 2.98509 0 6.66699 0L7.00977 0.00878906ZM6.66699 1C3.53738 1 1 3.53738 1 6.66699C1.00018 9.79646 3.53749 12.333 6.66699 12.333C9.79635 12.3328 12.3328 9.79635 12.333 6.66699C12.333 3.53749 9.79646 1.00018 6.66699 1ZM7.16699 5.33301V10H6.16699V5.33301H7.16699ZM6.66699 3.33301C7.03503 3.33318 7.33301 3.63192 7.33301 4C7.33301 4.36808 7.03503 4.66682 6.66699 4.66699C6.2988 4.66699 6 4.36819 6 4C6 3.63181 6.2988 3.33301 6.66699 3.33301Z" fill="black" fill-opacity="0.4"/>
+</svg>
+`
+const INFO_SHEET_DEFAULT_TITLE = '说明'
+const INFO_SHEET_FALLBACK_CONFIG: InfoOverlayConfig = {
+  title: INFO_SHEET_DEFAULT_TITLE,
+  sections: [
+    {
+      heading: '资料来源',
+      body: '本产业链图谱基于民生证券、华泰证券、国信证券等公开研报，以及行业公开资料、网络公开信息整理。节点分类、层级关系、说明文案及部分可视化形式由 AI 辅助归纳、生成和编辑，可能存在遗漏、简化或不准确之处。',
+    },
+    {
+      heading: '免责声明',
+      body: '相关内容仅用于产业链结构理解和产品功能展示，不构成投资建议、采购建议、技术选型建议或商业决策依据。如需用于正式研究或决策，请以权威机构、企业公告、原始研报及人工核验结果为准。页面中的场景图、设备图和空间关系为 AI 生成示意图，不代表真实基地、设备比例或企业布局。',
+    },
+  ],
+}
+const SHARE_ICON_SVG = `
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <path d="M18.332 21.2057H5.39898C3.97063 21.2057 2.81152 20.0466 2.81152 18.6183V5.6844C2.81152 4.25605 4.01466 2.79468 5.44301 2.79468H12.6737V4.11042H5.44301C4.72756 4.11042 4.12726 4.71072 4.12726 5.42616L4.1061 18.6183C4.1061 19.3337 4.68607 19.9112 5.39898 19.9112L18.5928 19.89C19.3057 19.89 19.906 19.2897 19.906 18.5743V11.3436H21.2217V18.5743C21.2226 20.0043 19.7629 21.2057 18.332 21.2057ZM20.5656 8.71213C20.1922 8.71382 19.9068 8.41156 19.9068 8.0551L19.8882 4.91307L9.8813 14.456C9.61883 14.7066 9.19295 14.7066 8.93048 14.456C8.6697 14.2054 8.6697 13.799 8.93048 13.5492L18.8519 4.08925L15.9622 4.11042C15.5888 4.11042 15.3051 3.80815 15.3051 3.4534C15.3051 3.09694 15.5888 2.79637 15.9622 2.79468H20.5512C20.9246 2.79468 21.2226 3.08001 21.2226 3.43646V8.0551C21.2226 8.41156 20.9364 8.71213 20.5656 8.71213Z" fill="#231815"/>
+</svg>
+`
+const SURFACE_MARKER_SVG = `
+<svg width="21" height="21" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <circle cx="10.5" cy="10.5" r="10.25" fill="white" fill-opacity="0.1" stroke="white" stroke-width="0.5"/>
+  <circle cx="10.5" cy="10.5" r="4.5" fill="white"/>
+</svg>
+`
+const SURFACE_MARKER_SELECTED_SVG = `
+<svg width="21" height="21" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <circle cx="10.5" cy="10.5" r="10.25" fill="#FF2436" fill-opacity="0.1" stroke="#FF2436" stroke-width="0.5"/>
+  <circle cx="10.5" cy="10.5" r="5.5" fill="#FF2436" stroke="white"/>
 </svg>
 `
 export class PlayerHost {
@@ -114,20 +163,50 @@ export class PlayerHost {
   private chromeRoot = document.createElement('div')
   private backControlEl = document.createElement('div')
   private backButtonEl = document.createElement('button')
-  private backLabelEl = document.createElement('div')
+  private headerCenterEl = document.createElement('div')
+  private packageTitleEl = document.createElement('div')
+  private infoButtonEl = document.createElement('button')
+  private shareButtonEl = document.createElement('button')
+  private bottomSheetEl = document.createElement('div')
+  private bottomSheetHeaderEl = document.createElement('div')
+  private bottomSheetBreadcrumbEl = document.createElement('div')
+  private bottomSheetActionsEl = document.createElement('div')
+  private bottomSheetResetButtonEl = document.createElement('button')
+  private bottomSheetCloseButtonEl = document.createElement('button')
+  private bottomSheetCardsEl = document.createElement('div')
+  private infoSheetBackdropEl = document.createElement('div')
+  private infoSheetEl = document.createElement('div')
+  private infoSheetHeaderEl = document.createElement('div')
+  private infoSheetTitleEl = document.createElement('div')
+  private infoSheetCloseButtonEl = document.createElement('button')
+  private infoSheetContentEl = document.createElement('div')
   private dragHintEl = document.createElement('div')
   private activeContentType: 'image' | 'html' = 'image'
   private activeSurfaceLayout: SurfaceCameraLayout | null = null
   private activeSurfaceNodeId: string | null = null
+  private activeSurfaceLayerId: string | null = null
+  private activeSurfaceCardId: string | null = null
+  private surfaceSheetOpen = false
+  private infoSheetOpen = false
   private currentSurfaceCamera: CameraState | null = null
   private surfaceAnimationFrameId: number | null = null
   private htmlIframeLayer = document.createElement('div')
   private htmlIframeEntries = new Map<string, HtmlIframeEntry>()
   private htmlIframePreloading = false
   private htmlIframePreloadedScopes = new Set<string>()
+  private htmlIframeWarmupQueue: Promise<void> = Promise.resolve()
   private activeHtmlIframeUrl = ''
   private viewportPointerDownTarget: EventTarget | null = null
   private hotspotViewportFrameId: number | null = null
+  private pinchState: TouchPinchState = {
+    active: false,
+    startDistance: 0,
+    startCamera: null,
+    anchorNormX: 0.5,
+    anchorNormY: 0.5,
+    baseWidth: 1,
+    baseHeight: 1,
+  }
 
   constructor(
     private refs: PlayerHostRefs,
@@ -157,6 +236,7 @@ export class PlayerHost {
     this.engine.loadManifest(manifest)
     this.htmlIframePreloading = false
     this.htmlIframePreloadedScopes.clear()
+    this.htmlIframeWarmupQueue = Promise.resolve()
     this.updateLayout()
     this.render()
   }
@@ -270,6 +350,10 @@ export class PlayerHost {
     this.refs.viewport.addEventListener('pointerdown', this.handleViewportPointerDown)
     this.refs.viewport.addEventListener('click', this.handleViewportClick)
     this.refs.viewport.addEventListener('wheel', this.handleViewportWheel, { passive: false })
+    this.refs.viewport.addEventListener('touchstart', this.handleViewportTouchStart, { passive: false })
+    this.refs.viewport.addEventListener('touchmove', this.handleViewportTouchMove, { passive: false })
+    this.refs.viewport.addEventListener('touchend', this.handleViewportTouchEnd)
+    this.refs.viewport.addEventListener('touchcancel', this.handleViewportTouchEnd)
 
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('load', this.handleNodeImageLoad))
     this.destroyers.push(() => this.refs.nodeImage.removeEventListener('pointerdown', this.handleNodeImagePointerDown))
@@ -277,10 +361,15 @@ export class PlayerHost {
     this.destroyers.push(() => this.refs.viewport.removeEventListener('pointerdown', this.handleViewportPointerDown))
     this.destroyers.push(() => this.refs.viewport.removeEventListener('click', this.handleViewportClick))
     this.destroyers.push(() => this.refs.viewport.removeEventListener('wheel', this.handleViewportWheel))
+    this.destroyers.push(() => this.refs.viewport.removeEventListener('touchstart', this.handleViewportTouchStart))
+    this.destroyers.push(() => this.refs.viewport.removeEventListener('touchmove', this.handleViewportTouchMove))
+    this.destroyers.push(() => this.refs.viewport.removeEventListener('touchend', this.handleViewportTouchEnd))
+    this.destroyers.push(() => this.refs.viewport.removeEventListener('touchcancel', this.handleViewportTouchEnd))
     this.destroyers.push(() => this.detachDragListeners())
   }
 
   private handleEngineStateChange = (): void => {
+    this.infoSheetOpen = false
     this.maybeStartHtmlIframePreload()
     this.render()
     requestAnimationFrame(() => {
@@ -321,6 +410,9 @@ export class PlayerHost {
     if (this.isInteractiveSurfaceTarget(pointerDownTarget) || this.isInteractiveSurfaceTarget(event.target)) {
       return
     }
+    if (this.activeSurfaceCardId) {
+      this.setActiveSurfaceCard(null)
+    }
   }
 
   private handleViewportWheel = (event: WheelEvent): void => {
@@ -353,6 +445,60 @@ export class PlayerHost {
     )
 
     this.setSurfaceCamera(nextCamera, false)
+  }
+
+  private handleViewportTouchStart = (event: TouchEvent): void => {
+    if (event.touches.length < 2) return
+    if (!this.canHandleSurfacePinch()) return
+    event.preventDefault()
+    this.beginSurfacePinch(event.touches)
+  }
+
+  private handleViewportTouchMove = (event: TouchEvent): void => {
+    if (event.touches.length < 2) return
+    const currentNode = this.engine.getCurrentNode()
+    if (!currentNode || this.getNodeKind(currentNode) !== 'surface' || !currentNode.surfaceConfig) return
+    if (!this.canHandleSurfacePinch()) return
+
+    if (!this.pinchState.active) {
+      this.beginSurfacePinch(event.touches)
+    }
+    if (!this.pinchState.active || !this.pinchState.startCamera) return
+
+    event.preventDefault()
+    const first = event.touches[0]
+    const second = event.touches[1]
+    const distance = Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)
+    const nextZoom = this.pinchState.startCamera.zoom * (distance / Math.max(this.pinchState.startDistance, 1))
+    const rect = this.refs.container.getBoundingClientRect()
+    const midpointX = (first.clientX + second.clientX) / 2 - rect.left
+    const midpointY = (first.clientY + second.clientY) / 2 - rect.top
+    const nextCamera = clampSurfaceCamera(
+      {
+        centerX: this.pinchState.anchorNormX - (midpointX - rect.width / 2) / Math.max(this.pinchState.baseWidth * nextZoom, 1),
+        centerY: this.pinchState.anchorNormY - (midpointY - rect.height / 2) / Math.max(this.pinchState.baseHeight * nextZoom, 1),
+        zoom: nextZoom,
+      },
+      rect.width,
+      rect.height,
+      this.getNodeAspectRatio(currentNode) ?? 1,
+      currentNode.surfaceConfig.bounds,
+    )
+
+    this.dragState.moved = true
+    this.setSurfaceCamera(nextCamera, false)
+  }
+
+  private handleViewportTouchEnd = (event: TouchEvent): void => {
+    if (!this.pinchState.active) return
+    if (event.touches.length >= 2) {
+      this.beginSurfacePinch(event.touches)
+      return
+    }
+    this.pinchState.active = false
+    if (this.getNodeKind(this.engine.getCurrentNode()) === 'surface') {
+      this.refs.nodeImage.style.cursor = 'grab'
+    }
   }
 
   private handleHtmlNodeBackRequest = (
@@ -407,6 +553,7 @@ export class PlayerHost {
     if (!currentNode) return
 
     if (this.getNodeKind(currentNode) === 'surface') {
+      if (this.pinchState.active) return
       if (!event.isPrimary || !this.currentSurfaceCamera) return
       event.preventDefault()
       this.dragState = {
@@ -461,6 +608,7 @@ export class PlayerHost {
   }
 
   private handleDragMove = (event: PointerEvent): void => {
+    if (this.pinchState.active) return
     if (!this.dragState.active) return
     if (this.dragState.pointerId !== null && event.pointerId !== this.dragState.pointerId) return
 
@@ -533,6 +681,53 @@ export class PlayerHost {
     this.refs.nodeImage.style.cursor = fitMode === 'fill' ? 'default' : 'grab'
   }
 
+  private canHandleSurfacePinch(): boolean {
+    const currentNode = this.engine.getCurrentNode()
+    return !!currentNode
+      && this.getNodeKind(currentNode) === 'surface'
+      && !!currentNode.surfaceConfig
+      && !!this.currentSurfaceCamera
+      && !!this.activeSurfaceLayout
+      && !this.engine.isTransitioning()
+  }
+
+  private beginSurfacePinch(touches: TouchList): void {
+    if (touches.length < 2 || !this.currentSurfaceCamera || !this.activeSurfaceLayout) return
+    const currentNode = this.engine.getCurrentNode()
+    if (!currentNode || this.getNodeKind(currentNode) !== 'surface') return
+
+    const first = touches[0]
+    const second = touches[1]
+    const rect = this.refs.container.getBoundingClientRect()
+    const midpointX = (first.clientX + second.clientX) / 2 - rect.left
+    const midpointY = (first.clientY + second.clientY) / 2 - rect.top
+    const layout = this.activeSurfaceLayout
+
+    this.cancelSurfacePointerDrag()
+    this.pinchState = {
+      active: true,
+      startDistance: Math.max(Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY), 1),
+      startCamera: { ...this.currentSurfaceCamera },
+      anchorNormX: (midpointX - layout.originX - layout.translateX) / Math.max(layout.scaledWidth, 1),
+      anchorNormY: (midpointY - layout.originY - layout.translateY) / Math.max(layout.scaledHeight, 1),
+      baseWidth: layout.baseWidth,
+      baseHeight: layout.baseHeight,
+    }
+    this.dragState.moved = true
+    this.refs.nodeImage.style.cursor = 'grabbing'
+  }
+
+  private cancelSurfacePointerDrag(): void {
+    if (!this.dragState.active) return
+    const pointerId = this.dragState.pointerId
+    this.dragState.active = false
+    this.dragState.pointerId = null
+    this.detachDragListeners()
+    if (pointerId !== null && this.refs.nodeImage.hasPointerCapture?.(pointerId)) {
+      this.refs.nodeImage.releasePointerCapture(pointerId)
+    }
+  }
+
   private emitState(): void {
     this.options.onStateChange?.(this.getState())
   }
@@ -546,9 +741,72 @@ export class PlayerHost {
     this.backButtonEl.innerHTML = BACK_ICON_SVG
     this.backButtonEl.addEventListener('click', () => this.handleBackAction())
 
+    this.infoButtonEl.type = 'button'
+    this.infoButtonEl.setAttribute('aria-label', '提示信息')
+    this.infoButtonEl.innerHTML = INFO_ICON_SVG
+    this.infoButtonEl.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.toggleInfoSheet()
+    })
+
+    this.shareButtonEl.type = 'button'
+    this.shareButtonEl.setAttribute('aria-label', '分享')
+    this.shareButtonEl.innerHTML = SHARE_ICON_SVG
+    this.shareButtonEl.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      void this.handleShareAction()
+    })
+    this.bottomSheetResetButtonEl.type = 'button'
+    this.bottomSheetResetButtonEl.setAttribute('aria-label', '返回总图')
+    this.bottomSheetResetButtonEl.innerHTML = SHEET_BACK_ICON_SVG
+    this.bottomSheetResetButtonEl.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.handleBackAction()
+    })
+    this.bottomSheetCloseButtonEl.type = 'button'
+    this.bottomSheetCloseButtonEl.setAttribute('aria-label', '关闭底部浮层')
+    this.bottomSheetCloseButtonEl.textContent = '×'
+    this.bottomSheetCloseButtonEl.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.closeSurfaceSheet()
+    })
+    this.infoSheetCloseButtonEl.type = 'button'
+    this.infoSheetCloseButtonEl.setAttribute('aria-label', '关闭说明弹窗')
+    this.infoSheetCloseButtonEl.textContent = '×'
+    this.infoSheetCloseButtonEl.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.closeInfoSheet()
+    })
+    this.infoSheetBackdropEl.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.closeInfoSheet()
+    })
+
     this.backControlEl.appendChild(this.backButtonEl)
-    this.backControlEl.appendChild(this.backLabelEl)
+    this.headerCenterEl.appendChild(this.packageTitleEl)
+    this.headerCenterEl.appendChild(this.infoButtonEl)
+    this.bottomSheetActionsEl.appendChild(this.bottomSheetCloseButtonEl)
+    this.bottomSheetHeaderEl.appendChild(this.bottomSheetBreadcrumbEl)
+    this.bottomSheetHeaderEl.appendChild(this.bottomSheetActionsEl)
+    this.bottomSheetEl.appendChild(this.bottomSheetHeaderEl)
+    this.bottomSheetEl.appendChild(this.bottomSheetCardsEl)
+    this.infoSheetHeaderEl.appendChild(this.infoSheetTitleEl)
+    this.infoSheetHeaderEl.appendChild(this.infoSheetCloseButtonEl)
+    this.infoSheetEl.appendChild(this.infoSheetHeaderEl)
+    this.infoSheetEl.appendChild(this.infoSheetContentEl)
     this.chromeRoot.appendChild(this.backControlEl)
+    this.chromeRoot.appendChild(this.headerCenterEl)
+    this.chromeRoot.appendChild(this.shareButtonEl)
+    this.chromeRoot.appendChild(this.bottomSheetResetButtonEl)
+    this.chromeRoot.appendChild(this.bottomSheetEl)
+    this.chromeRoot.appendChild(this.infoSheetBackdropEl)
+    this.chromeRoot.appendChild(this.infoSheetEl)
     this.chromeRoot.appendChild(this.dragHintEl)
   }
 
@@ -590,21 +848,22 @@ export class PlayerHost {
 
     Object.assign(this.backControlEl.style, {
       position: 'absolute',
-      left: '20px',
-      top: '20px',
+      left: '16px',
+      top: '14px',
       display: 'none',
-      flexDirection: 'column',
-      alignItems: 'flex-start',
-      gap: '10px',
-      pointerEvents: 'none',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '32px',
+      height: '32px',
+      pointerEvents: 'auto',
       opacity: '0',
       transition: 'opacity 220ms ease',
     })
 
     Object.assign(this.backButtonEl.style, {
-      width: '24px',
-      height: '24px',
-      minWidth: '24px',
+      width: '32px',
+      height: '32px',
+      minWidth: '32px',
       borderRadius: '0',
       border: 'none',
       background: 'transparent',
@@ -617,29 +876,246 @@ export class PlayerHost {
     })
     const backIcon = this.backButtonEl.querySelector('svg')
     if (backIcon) {
-      ;(backIcon as SVGElement).style.width = '18px'
-      ;(backIcon as SVGElement).style.height = '18px'
+      ;(backIcon as SVGElement).style.width = '24px'
+      ;(backIcon as SVGElement).style.height = '24px'
       ;(backIcon as SVGElement).style.display = 'block'
     }
 
-    Object.assign(this.backLabelEl.style, {
+    Object.assign(this.headerCenterEl.style, {
+      position: 'absolute',
+      left: '50%',
+      top: '14px',
+      transform: 'translateX(-50%)',
+      display: 'none',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '4px',
+      maxWidth: 'calc(100% - 120px)',
+      pointerEvents: 'auto',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+    })
+
+    Object.assign(this.packageTitleEl.style, {
       minHeight: '24px',
-      maxWidth: '240px',
+      maxWidth: '220px',
       fontStyle: 'normal',
       fontWeight: '700',
-      fontSize: '16px',
+      fontSize: '17px',
       lineHeight: '24px',
       color: 'rgba(0, 0, 0, 0.84)',
       whiteSpace: 'nowrap',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
-      textShadow: [
-        '0 1px 0 rgba(255, 255, 255, 0.72)',
-        '0 -1px 0 rgba(255, 255, 255, 0.72)',
-        '1px 0 0 rgba(255, 255, 255, 0.72)',
-        '-1px 0 0 rgba(255, 255, 255, 0.72)',
-      ].join(', '),
       pointerEvents: 'none',
+    })
+
+    const topIconButtonStyle = {
+      width: '24px',
+      height: '24px',
+      minWidth: '24px',
+      borderRadius: '0',
+      border: 'none',
+      background: 'transparent',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '0',
+      cursor: 'pointer',
+      pointerEvents: 'auto',
+    } as const
+    Object.assign(this.infoButtonEl.style, topIconButtonStyle)
+    Object.assign(this.shareButtonEl.style, {
+      ...topIconButtonStyle,
+      position: 'absolute',
+      right: '16px',
+      top: '14px',
+      display: 'none',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+    })
+    for (const iconButton of [this.infoButtonEl, this.shareButtonEl]) {
+      const svg = iconButton.querySelector('svg')
+      if (svg) {
+        ;(svg as SVGElement).style.width = iconButton === this.shareButtonEl ? '24px' : '14px'
+        ;(svg as SVGElement).style.height = iconButton === this.shareButtonEl ? '24px' : '14px'
+        ;(svg as SVGElement).style.display = 'block'
+      }
+    }
+    Object.assign(this.bottomSheetEl.style, {
+      position: 'absolute',
+      left: '0',
+      right: '0',
+      bottom: '0',
+      display: 'none',
+      flexDirection: 'column',
+      gap: '14px',
+      padding: '14px 16px 18px',
+      borderTopLeftRadius: '8px',
+      borderTopRightRadius: '8px',
+      borderBottomLeftRadius: '0',
+      borderBottomRightRadius: '0',
+      background: 'linear-gradient(360deg, #F5F5F5 0%, rgba(255, 255, 255, 0.64) 100%)',
+      backdropFilter: 'blur(6px)',
+      boxShadow: '0 -10px 36px rgba(15, 23, 42, 0.12)',
+      pointerEvents: 'auto',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+      zIndex: '2',
+    })
+    Object.assign(this.bottomSheetHeaderEl.style, {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '12px',
+    })
+    Object.assign(this.bottomSheetBreadcrumbEl.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+      flex: '1',
+      minWidth: '0',
+      fontSize: '14px',
+      lineHeight: '18px',
+      fontWeight: '400',
+      color: 'rgba(0, 0, 0, 0.6)',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    })
+    Object.assign(this.bottomSheetActionsEl.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '6px',
+      flexShrink: '0',
+    })
+    Object.assign(this.bottomSheetResetButtonEl.style, {
+      position: 'absolute',
+      right: '16px',
+      bottom: '210px',
+      width: '32px',
+      height: '32px',
+      minWidth: '32px',
+      border: 'none',
+      borderRadius: '6.85714px',
+      background: 'rgba(255, 255, 255, 0.8)',
+      display: 'none',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '0',
+      cursor: 'pointer',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+      zIndex: '3',
+    })
+    const sheetBackIcon = this.bottomSheetResetButtonEl.querySelector('svg')
+    if (sheetBackIcon) {
+      ;(sheetBackIcon as SVGElement).style.width = '16px'
+      ;(sheetBackIcon as SVGElement).style.height = '13px'
+      ;(sheetBackIcon as SVGElement).style.display = 'block'
+    }
+    Object.assign(this.bottomSheetCloseButtonEl.style, {
+      width: '28px',
+      height: '28px',
+      minWidth: '28px',
+      border: 'none',
+      borderRadius: '999px',
+      background: 'transparent',
+      color: 'rgba(0, 0, 0, 0.72)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '0',
+      fontSize: '26px',
+      lineHeight: '1',
+      cursor: 'pointer',
+    })
+    Object.assign(this.bottomSheetCardsEl.style, {
+      display: 'flex',
+      flexDirection: 'row',
+      gap: '12px',
+      overflowX: 'auto',
+      overflowY: 'hidden',
+      scrollSnapType: 'x proximity',
+      paddingBottom: '4px',
+      scrollbarWidth: 'none',
+    })
+    Object.assign(this.infoSheetBackdropEl.style, {
+      position: 'absolute',
+      inset: '0',
+      display: 'none',
+      background: 'rgba(0, 0, 0, 0.8)',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+      pointerEvents: 'none',
+      zIndex: '2',
+    })
+    Object.assign(this.infoSheetEl.style, {
+      position: 'absolute',
+      left: '0',
+      right: '0',
+      bottom: '0',
+      display: 'none',
+      flexDirection: 'column',
+      gap: '16px',
+      padding: '18px 22px 24px',
+      borderTopLeftRadius: '8px',
+      borderTopRightRadius: '8px',
+      background: '#FFFFFF',
+      boxShadow: '0 -10px 36px rgba(15, 23, 42, 0.12)',
+      pointerEvents: 'auto',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+      maxHeight: '50vh',
+      overflow: 'hidden',
+      boxSizing: 'border-box',
+      zIndex: '3',
+    })
+    Object.assign(this.infoSheetHeaderEl.style, {
+      position: 'relative',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '28px',
+      flexShrink: '0',
+    })
+    Object.assign(this.infoSheetTitleEl.style, {
+      fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+      fontStyle: 'normal',
+      fontWeight: '600',
+      fontSize: '16px',
+      lineHeight: '22px',
+      color: 'rgba(0, 0, 0, 0.84)',
+      textAlign: 'center',
+    })
+    Object.assign(this.infoSheetCloseButtonEl.style, {
+      position: 'absolute',
+      right: '0',
+      top: '50%',
+      transform: 'translateY(-50%)',
+      width: '28px',
+      height: '28px',
+      minWidth: '28px',
+      border: 'none',
+      borderRadius: '999px',
+      background: 'transparent',
+      color: 'rgba(0, 0, 0, 0.36)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '0',
+      cursor: 'pointer',
+      fontSize: '24px',
+      lineHeight: '1',
+    })
+    Object.assign(this.infoSheetContentEl.style, {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '18px',
+      overflowY: 'auto',
+      minHeight: '0',
+      paddingRight: '2px',
     })
 
     Object.assign(this.dragHintEl.style, {
@@ -659,8 +1135,13 @@ export class PlayerHost {
       pointerEvents: 'none',
       opacity: '0',
       transition: 'opacity 220ms ease',
+      zIndex: '1',
     })
-    this.dragHintEl.textContent = '左右滑动查看完整场景'
+    this.dragHintEl.innerHTML = [
+      '<span style="color:rgba(255,255,255,0.45)">&lt;</span>',
+      '<span style="color:#FFFFFF">&lt;&lt;&nbsp;&nbsp;左右滑动查看完整场景&nbsp;&nbsp;&gt;&gt;</span>',
+      '<span style="color:rgba(255,255,255,0.45)">&gt;</span>',
+    ].join('')
 
     container.style.position = 'relative'
     container.style.width = '100%'
@@ -828,25 +1309,249 @@ export class PlayerHost {
 
   private renderChrome(state: PlayerHostState): void {
     const currentNode = state.currentNode
-    const hasBack = state.history.length > 0 || this.canResetSurfaceCamera(currentNode)
+    const manifestTitle = state.manifest?.title ?? ''
+    const hasBack = state.history.length > 0 || this.hasActiveSurfaceFocus(currentNode)
     const nodeKind = this.getNodeKind(currentNode)
     const showHorizontalDragHint = nodeKind === 'surface'
       ? true
       : currentNode?.imageFitMode === 'fitHeight'
     const chromeVisible = !!currentNode && !state.transitioning && !state.preloading
+    const canShare = chromeVisible && this.canUseNativeShare()
+    const canShowInfo = chromeVisible && !!this.getInfoOverlayConfig(state.manifest)
 
     this.backControlEl.style.display = hasBack ? 'flex' : 'none'
     this.backControlEl.style.opacity = hasBack && chromeVisible ? '1' : '0'
     this.backControlEl.style.pointerEvents = hasBack && chromeVisible ? 'auto' : 'none'
-    this.backLabelEl.textContent = currentNode?.title ?? currentNode?.id ?? ''
+    this.headerCenterEl.style.display = chromeVisible ? 'flex' : 'none'
+    this.headerCenterEl.style.opacity = chromeVisible ? '1' : '0'
+    this.infoButtonEl.style.display = canShowInfo ? 'flex' : 'none'
+    this.infoButtonEl.style.pointerEvents = canShowInfo ? 'auto' : 'none'
+    this.shareButtonEl.style.display = canShare ? 'flex' : 'none'
+    this.shareButtonEl.style.opacity = canShare ? '1' : '0'
+    this.shareButtonEl.style.pointerEvents = canShare ? 'auto' : 'none'
+    this.packageTitleEl.textContent = manifestTitle
+    this.renderBottomSheet(currentNode, chromeVisible)
+    this.renderInfoSheet(state.manifest, chromeVisible)
 
     this.dragHintEl.style.display = showHorizontalDragHint ? 'block' : 'none'
     this.dragHintEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
   }
 
+  private renderBottomSheet(currentNode: PublishNode | null, chromeVisible: boolean): void {
+    const layer = this.getActiveSurfaceLayer(currentNode)
+    const shouldShow = !!layer && chromeVisible && this.surfaceSheetOpen && !this.infoSheetOpen
+    this.bottomSheetEl.style.display = shouldShow ? 'flex' : 'none'
+    this.bottomSheetEl.style.opacity = shouldShow ? '1' : '0'
+    this.bottomSheetResetButtonEl.style.display = shouldShow ? 'flex' : 'none'
+    this.bottomSheetResetButtonEl.style.opacity = shouldShow ? '1' : '0'
+    this.bottomSheetResetButtonEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
+    if (!shouldShow || !layer) {
+      this.bottomSheetBreadcrumbEl.replaceChildren()
+      this.bottomSheetCardsEl.replaceChildren()
+      return
+    }
+
+    this.bottomSheetBreadcrumbEl.replaceChildren()
+    if (layer.primaryCategory?.trim()) {
+      const primaryEl = document.createElement('span')
+      primaryEl.textContent = layer.primaryCategory
+      Object.assign(primaryEl.style, {
+        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+        fontStyle: 'normal',
+        fontWeight: '600',
+        fontSize: '14px',
+        lineHeight: '18px',
+        color: 'rgba(0, 0, 0, 0.84)',
+        flexShrink: '0',
+      })
+      const separatorEl = document.createElement('span')
+      separatorEl.textContent = '>'
+      Object.assign(separatorEl.style, {
+        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+        fontStyle: 'normal',
+        fontWeight: '600',
+        fontSize: '14px',
+        lineHeight: '18px',
+        color: 'rgba(0, 0, 0, 0.84)',
+        flexShrink: '0',
+      })
+      this.bottomSheetBreadcrumbEl.appendChild(primaryEl)
+      this.bottomSheetBreadcrumbEl.appendChild(separatorEl)
+    }
+    const titleEl = document.createElement('span')
+    titleEl.textContent = layer.title
+    Object.assign(titleEl.style, {
+      minWidth: '0',
+      fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+      fontStyle: 'normal',
+      fontWeight: '400',
+      fontSize: '14px',
+      lineHeight: '18px',
+      color: 'rgba(0, 0, 0, 0.6)',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    })
+    this.bottomSheetBreadcrumbEl.appendChild(titleEl)
+    this.bottomSheetCardsEl.replaceChildren()
+
+    for (const card of layer.cards) {
+      const cardEl = document.createElement('button')
+      const titleEl = document.createElement('div')
+      const descEl = document.createElement('div')
+      const selected = card.id === this.activeSurfaceCardId
+      cardEl.type = 'button'
+      cardEl.dataset.surfaceSheetCardId = card.id
+      Object.assign(cardEl.style, {
+        flex: '0 0 260px',
+        minHeight: '108px',
+        padding: '14px 16px',
+        borderRadius: '12px',
+        border: selected ? '2px solid #3366FF' : '1px solid rgba(15, 23, 42, 0.08)',
+        background: selected ? 'rgba(51, 102, 255, 0.10)' : '#FFFFFF',
+        boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        justifyContent: 'flex-start',
+        gap: '8px',
+        textAlign: 'left',
+        cursor: 'pointer',
+        scrollSnapAlign: 'start',
+      })
+      Object.assign(titleEl.style, {
+        fontSize: '16px',
+        lineHeight: '22px',
+        fontWeight: '700',
+        color: 'rgba(0, 0, 0, 0.88)',
+      })
+      titleEl.textContent = card.title
+      Object.assign(descEl.style, {
+        fontSize: '14px',
+        lineHeight: '22px',
+        color: 'rgba(0, 0, 0, 0.72)',
+      })
+      descEl.textContent = card.description ?? ''
+      cardEl.appendChild(titleEl)
+      cardEl.appendChild(descEl)
+      cardEl.addEventListener('click', event => {
+        event.preventDefault()
+        event.stopPropagation()
+        this.focusSurfaceCard(card.id, true)
+      })
+      this.bottomSheetCardsEl.appendChild(cardEl)
+    }
+    this.bottomSheetResetButtonEl.style.bottom = `${this.bottomSheetEl.offsetHeight + 16}px`
+    this.scrollActiveSheetCardIntoView()
+  }
+
+  private renderInfoSheet(manifest: PublishManifest | null, chromeVisible: boolean): void {
+    const infoOverlay = this.getInfoOverlayConfig(manifest)
+    const shouldShow = !!infoOverlay && chromeVisible && this.infoSheetOpen
+    this.infoSheetBackdropEl.style.display = shouldShow ? 'block' : 'none'
+    this.infoSheetBackdropEl.style.opacity = shouldShow ? '1' : '0'
+    this.infoSheetBackdropEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
+    this.infoSheetEl.style.display = shouldShow ? 'flex' : 'none'
+    this.infoSheetEl.style.opacity = shouldShow ? '1' : '0'
+    this.infoSheetEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
+    if (!shouldShow || !infoOverlay) {
+      this.infoSheetContentEl.replaceChildren()
+      return
+    }
+
+    this.infoSheetTitleEl.textContent = infoOverlay.title?.trim() || INFO_SHEET_DEFAULT_TITLE
+    this.infoSheetContentEl.replaceChildren()
+
+    for (const section of infoOverlay.sections) {
+      const sectionEl = document.createElement('section')
+      const headingEl = document.createElement('div')
+      const bodyEl = document.createElement('div')
+      headingEl.textContent = section.heading
+      bodyEl.textContent = section.body
+      Object.assign(sectionEl.style, {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+      })
+      Object.assign(headingEl.style, {
+        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+        fontStyle: 'normal',
+        fontWeight: '600',
+        fontSize: '16px',
+        lineHeight: '22px',
+        color: 'rgba(0, 0, 0, 0.84)',
+      })
+      Object.assign(bodyEl.style, {
+        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+        fontStyle: 'normal',
+        fontWeight: '400',
+        fontSize: '14px',
+        lineHeight: '20px',
+        color: 'rgba(0, 0, 0, 0.6)',
+        whiteSpace: 'pre-wrap',
+      })
+      sectionEl.appendChild(headingEl)
+      sectionEl.appendChild(bodyEl)
+      this.infoSheetContentEl.appendChild(sectionEl)
+    }
+  }
+
+  private getInfoOverlayConfig(manifest: PublishManifest | null | undefined): InfoOverlayConfig | null {
+    const title = manifest?.infoOverlay?.title
+    const sections = manifest?.infoOverlay?.sections?.filter(section => {
+      return typeof section?.heading === 'string' && section.heading.trim()
+        && typeof section?.body === 'string' && section.body.trim()
+    }) ?? []
+    if (sections.length === 0) {
+      return INFO_SHEET_FALLBACK_CONFIG
+    }
+    return {
+      title: typeof title === 'string' ? title : undefined,
+      sections,
+    }
+  }
+
+  private toggleInfoSheet(): void {
+    if (this.infoSheetOpen) {
+      this.closeInfoSheet()
+      return
+    }
+    const manifest = this.engine.getManifest()
+    if (!this.getInfoOverlayConfig(manifest)) return
+    this.surfaceSheetOpen = false
+    this.activeSurfaceCardId = null
+    this.infoSheetOpen = true
+    this.renderChrome(this.getState())
+  }
+
+  private closeInfoSheet(): void {
+    if (!this.infoSheetOpen) return
+    this.infoSheetOpen = false
+    this.renderChrome(this.getState())
+  }
+
+  private async handleShareAction(): Promise<void> {
+    const browserNavigator = globalThis.navigator as Navigator & {
+      share?: (data: { title?: string, text?: string, url?: string }) => Promise<void>
+    }
+    if (typeof browserNavigator.share !== 'function') return
+    try {
+      await browserNavigator.share({
+        title: this.engine.getManifest()?.title ?? '',
+        url: window.location.href,
+      })
+    } catch {
+      // Ignore abort and unsupported platform share failures.
+    }
+  }
+
   private renderHtmlNode(currentNode: PublishNode, transitioning: boolean): void {
+    this.pinchState.active = false
     this.activeSurfaceLayout = null
     this.activeSurfaceNodeId = null
+    this.activeSurfaceLayerId = null
+    this.activeSurfaceCardId = null
+    this.surfaceSheetOpen = false
     this.currentSurfaceCamera = null
     this.activeContentType = 'html'
     const htmlUrl = currentNode.htmlUrl ?? ''
@@ -882,8 +1587,12 @@ export class PlayerHost {
 
   private renderImageNode(currentNode: PublishNode, transitioning: boolean): void {
     const fitMode = currentNode.imageFitMode ?? 'fill'
+    this.pinchState.active = false
     this.activeSurfaceLayout = null
     this.activeSurfaceNodeId = null
+    this.activeSurfaceLayerId = null
+    this.activeSurfaceCardId = null
+    this.surfaceSheetOpen = false
     this.currentSurfaceCamera = null
     this.activeContentType = 'image'
     this.activeHtmlIframeUrl = ''
@@ -926,6 +1635,11 @@ export class PlayerHost {
     this.activeSurfaceNodeId = currentNode.id
     if (!this.currentSurfaceCamera || previousSurfaceNodeId !== currentNode.id) {
       this.currentSurfaceCamera = currentNode.surfaceConfig.initialCamera
+    }
+    if (previousSurfaceNodeId !== currentNode.id) {
+      this.activeSurfaceLayerId = null
+      this.activeSurfaceCardId = null
+      this.surfaceSheetOpen = false
     }
 
     this.refs.nodeImage.style.visibility = 'visible'
@@ -1102,46 +1816,27 @@ export class PlayerHost {
     hotspot: PublishHotspot,
     _node?: PublishNode | null,
     onClick?: () => void,
-  ): HTMLButtonElement {
+  ): HTMLElement {
     this.ensureHotspotAnimationStyle()
 
+    const root = this.createAnchoredAnnotationRoot(hotspot.normalizedX, hotspot.normalizedY)
     const button = document.createElement('button')
     const label = document.createElement('span')
 
     button.type = 'button'
     button.title = hotspot.label
-    button.style.position = 'absolute'
-    button.style.left = `${hotspot.normalizedX * 100}%`
-    button.style.top = `${hotspot.normalizedY * 100}%`
-    button.style.transform = 'translate(-50%, -50%)'
-    button.style.display = 'flex'
-    button.style.flexDirection = 'row'
-    button.style.alignItems = 'center'
-    button.style.justifyContent = 'center'
-    button.style.minWidth = '80px'
-    button.style.height = '28px'
-    button.style.padding = '5px 10px'
-    button.style.borderRadius = '6px'
-    button.style.border = '1px solid #000000'
-    button.style.background = 'rgba(255, 255, 255, 0.9)'
-    button.style.color = 'rgba(0, 0, 0, 0.84)'
-    button.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.16)'
-    button.style.cursor = 'pointer'
-    button.style.pointerEvents = 'auto'
-    button.style.whiteSpace = 'nowrap'
-    button.style.zIndex = '1'
-    button.style.maxWidth = '180px'
+    this.applyAnnotationChipStyles(button, false)
     button.style.animation = 'hotspot-pulse 2.5s ease-in-out infinite'
 
     label.textContent = hotspot.label
     label.style.display = 'block'
     label.style.overflow = 'hidden'
     label.style.textOverflow = 'ellipsis'
-    label.style.fontFamily = '"Noto Sans SC", "Noto Sans S Chinese", "PingFang SC", "Microsoft YaHei", sans-serif'
+    label.style.fontFamily = '"PingFang SC", "Noto Sans SC", "Noto Sans S Chinese", "Microsoft YaHei", sans-serif'
     label.style.fontStyle = 'normal'
-    label.style.fontWeight = '400'
-    label.style.fontSize = '12px'
-    label.style.lineHeight = '18px'
+    label.style.fontWeight = '600'
+    label.style.fontSize = '16px'
+    label.style.lineHeight = '20px'
     label.style.textAlign = 'center'
     label.style.color = 'inherit'
     button.appendChild(label)
@@ -1149,6 +1844,9 @@ export class PlayerHost {
     if (hotspot.style?.trim()) {
       button.style.cssText += `;${hotspot.style}`
     }
+
+    const markerConfig = this.resolveMarkerConfig(hotspot.style)
+    this.appendMarkerAndButton(root, button, this.createAnnotationMarker(false), markerConfig)
 
     button.addEventListener('click', () => {
       if (onClick) {
@@ -1158,159 +1856,53 @@ export class PlayerHost {
       }
     })
 
-    return button
-  }
-
-  private createSurfaceCard(card: SurfaceCard): HTMLDivElement {
-    const root = document.createElement('div')
-    const outer = document.createElement('div')
-    const inner = document.createElement('div')
-    const title = document.createElement('div')
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-
-    root.style.position = 'absolute'
-    root.style.inset = '0'
-    root.style.pointerEvents = 'none'
-    root.style.zIndex = '2'
-    root.dataset.surfaceCard = 'true'
-    root.dataset.anchorX = String(card.anchor.x)
-    root.dataset.anchorY = String(card.anchor.y)
-
-    outer.style.boxSizing = 'border-box'
-    outer.style.background = 'rgba(255, 255, 255, 0.92)'
-    outer.style.border = '1px solid #000'
-    outer.style.borderRadius = '6px'
-    outer.style.padding = '8px 12px'
-    outer.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.16)'
-    outer.style.position = 'absolute'
-    outer.style.transform = 'translate(-50%, -50%)'
-    outer.style.pointerEvents = 'auto'
-    outer.style.minWidth = '84px'
-    outer.style.maxWidth = '220px'
-    outer.style.width = 'max-content'
-    outer.style.contain = 'layout paint style'
-    outer.style.willChange = 'left,top'
-
-    inner.style.display = 'flex'
-    inner.style.flexDirection = 'column'
-    inner.style.alignItems = 'stretch'
-    inner.style.justifyContent = 'center'
-    inner.style.gap = '4px'
-
-    title.textContent = card.title
-    title.style.fontFamily = '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif'
-    title.style.fontSize = '12px'
-    title.style.fontWeight = '500'
-    title.style.lineHeight = '18px'
-    title.style.color = 'rgba(0, 0, 0, 0.84)'
-    title.style.textAlign = 'center'
-    title.style.whiteSpace = 'normal'
-    title.style.wordBreak = 'break-word'
-    inner.appendChild(title)
-
-    const distinctTags = (card.tags ?? []).filter(tagText =>
-      !(card.stocks ?? []).some(stock => stock.label === tagText))
-
-    if (distinctTags.length) {
-      const tagRow = document.createElement('div')
-      tagRow.style.display = 'flex'
-      tagRow.style.flexDirection = 'row'
-      tagRow.style.alignItems = 'center'
-      tagRow.style.justifyContent = 'center'
-      tagRow.style.gap = '4px'
-      tagRow.style.flexWrap = 'wrap'
-      for (const tagText of distinctTags) {
-        const tag = document.createElement('span')
-        tag.textContent = tagText
-        Object.assign(tag.style, {
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '3px 10px',
-          borderRadius: '8px',
-          background: '#FF2436',
-          fontFamily: '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
-          fontSize: '10px',
-          fontWeight: '500',
-          lineHeight: '15px',
-          color: '#fff',
-          whiteSpace: 'nowrap',
-        })
-        tagRow.appendChild(tag)
-      }
-      inner.appendChild(tagRow)
-    }
-
-    if (card.stocks?.length) {
-      const stockRow = document.createElement('div')
-      stockRow.style.display = 'flex'
-      stockRow.style.flexDirection = 'row'
-      stockRow.style.alignItems = 'center'
-      stockRow.style.justifyContent = 'center'
-      stockRow.style.gap = '4px'
-      stockRow.style.flexWrap = 'wrap'
-      for (const stock of card.stocks) {
-        const stockBtn = document.createElement(stock.action ? 'button' : 'span')
-        stockBtn.textContent = stock.label
-        ;(stockBtn as HTMLElement).dataset.surfaceStock = 'true'
-        Object.assign(stockBtn.style, {
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '3px 10px',
-          borderRadius: '8px',
-          background: '#FF2436',
-          fontFamily: '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
-          fontSize: '10px',
-          fontWeight: '500',
-          lineHeight: '15px',
-          color: '#fff',
-          whiteSpace: 'nowrap',
-          border: 'none',
-        })
-        if (stock.action) {
-          ;(stockBtn as HTMLButtonElement).type = 'button'
-          stockBtn.style.cursor = 'pointer'
-          stockBtn.addEventListener('click', event => {
-            event.preventDefault()
-            event.stopPropagation()
-            this.executeRuntimeAction(stock.action as RuntimeAction)
-          })
-        }
-        stockRow.appendChild(stockBtn)
-      }
-      inner.appendChild(stockRow)
-    }
-
-    outer.appendChild(inner)
-    root.appendChild(outer)
-    if (card.callout) {
-      root.dataset.calloutDock = card.callout.fromDock
-      root.dataset.calloutTargetX = String(card.callout.target.x)
-      root.dataset.calloutTargetY = String(card.callout.target.y)
-      Object.assign(svg.style, {
-        position: 'absolute',
-        inset: '0',
-        width: '100%',
-        height: '100%',
-        overflow: 'visible',
-        pointerEvents: 'none',
-      })
-      line.setAttribute('stroke', 'rgba(255,255,255,0.95)')
-      line.setAttribute('stroke-width', '2')
-      line.setAttribute('stroke-linecap', 'round')
-      line.setAttribute('x1', '0')
-      line.setAttribute('y1', '0')
-      line.setAttribute('x2', '0')
-      line.setAttribute('y2', '0')
-      svg.appendChild(line)
-      root.appendChild(svg)
-    }
     return root
   }
 
-  private createSurfaceHotspotButton(hotspot: SurfaceHotspot, currentNode: PublishNode): HTMLButtonElement {
+  private createSurfaceCard(card: SurfaceCard): HTMLDivElement {
+    const root = this.createAnchoredAnnotationRoot(card.anchor.x, card.anchor.y)
+    const button = document.createElement('button')
+    const label = document.createElement('span')
+    const selected = this.activeSurfaceCardId === card.id
+
+    root.dataset.surfaceCard = 'true'
+
+    this.applyAnnotationChipStyles(button, selected)
+    button.type = 'button'
+    button.style.minWidth = '88px'
+    button.style.maxWidth = '180px'
+    button.style.contain = 'layout paint style'
+    button.style.willChange = 'left,top'
+
+    label.textContent = card.title
+    label.style.display = 'block'
+    label.style.overflow = 'hidden'
+    label.style.textOverflow = 'ellipsis'
+    label.style.fontFamily = '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif'
+    label.style.fontStyle = 'normal'
+    label.style.fontWeight = '600'
+    label.style.fontSize = '16px'
+    label.style.lineHeight = '20px'
+    label.style.textAlign = 'center'
+    label.style.color = 'inherit'
+    button.appendChild(label)
+
+    this.appendMarkerAndButton(root, button, this.createAnnotationMarker(selected), {
+      visible: true,
+      position: 'top',
+      gapPx: 6,
+    })
+    root.style.zIndex = selected ? '3' : '2'
+
+    button.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.focusSurfaceCard(card.id, false)
+    })
+    return root
+  }
+
+  private createSurfaceHotspotButton(hotspot: SurfaceHotspot, currentNode: PublishNode): HTMLElement {
     const button = this.createHotspotButton({
       edgeId: hotspot.target.type === 'edge' ? hotspot.target.edgeId : hotspot.id,
       targetNodeId: hotspot.target.type === 'edge'
@@ -1323,8 +1915,8 @@ export class PlayerHost {
       markerType: 'dot',
       style: hotspot.style,
     }, currentNode, () => this.handleSurfaceHotspotNavigation(hotspot, currentNode))
-    button.dataset.surfaceAnchorX = String(hotspot.anchor.x)
-    button.dataset.surfaceAnchorY = String(hotspot.anchor.y)
+    ;(button as HTMLElement).dataset.surfaceAnchorX = String(hotspot.anchor.x)
+    ;(button as HTMLElement).dataset.surfaceAnchorY = String(hotspot.anchor.y)
     return button
   }
 
@@ -1481,21 +2073,26 @@ export class PlayerHost {
 
   private isLoading(): boolean {
     const currentNode = this.engine.getCurrentNode()
-    const waitingForActiveHtml = this.getNodeKind(currentNode) === 'html' && !this.isActiveHtmlIframeReady()
-    return waitingForActiveHtml
+    const waitingForEnginePreload = this.engine.isPreloading()
+    const waitingForActiveImage = this.getNodeKind(currentNode) !== 'html' && !this.isActiveNodeImageReady(currentNode)
+    return waitingForEnginePreload || waitingForActiveImage
+  }
+
+  private isActiveNodeImageReady(node: PublishNode | null | undefined): boolean {
+    const imageUrl = this.getNodeImageSource(node)
+    if (!imageUrl) return true
+    const expectedSrc = this.toAbsoluteUrl(imageUrl)
+    const actualSrc = this.refs.nodeImage.currentSrc || this.refs.nodeImage.src
+    return this.refs.nodeImage.complete && actualSrc === expectedSrc && this.refs.nodeImage.naturalWidth > 0
   }
 
   private async preloadHtmlIframes(urls: string[]): Promise<void> {
     const htmlUrls = Array.from(new Set(urls.map(url => this.toAbsoluteUrl(url))))
     if (htmlUrls.length === 0) return
 
-    this.htmlIframePreloading = true
-
-    try {
-      await Promise.allSettled(htmlUrls.map(url => this.ensureHtmlIframe(url).readyPromise))
-    } finally {
-      this.htmlIframePreloading = false
-      this.maybeStartHtmlIframePreload()
+    for (const url of htmlUrls) {
+      await this.runHtmlWarmupWhenIdle(() => this.ensureHtmlIframe(url).readyPromise)
+      await this.yieldToBrowser()
     }
   }
 
@@ -1512,13 +2109,18 @@ export class PlayerHost {
     if (this.htmlIframePreloadedScopes.has(scope.key)) return
 
     this.htmlIframePreloadedScopes.add(scope.key)
-    void this.preloadHtmlIframes(scope.urls)
+    this.htmlIframePreloading = true
+    this.htmlIframeWarmupQueue = this.htmlIframeWarmupQueue
+      .then(() => this.preloadHtmlIframes(scope.urls))
+      .finally(() => {
+        this.htmlIframePreloading = false
+      })
   }
 
   private resolveHtmlIframePreloadStrategy(manifest: PublishManifest): HtmlIframePreloadStrategy {
     return this.options.runtimeConfig?.htmlIframePreloadStrategy
       ?? manifest.runtimeConfig?.htmlIframePreloadStrategy
-      ?? 'on-demand'
+      ?? 'current-node'
   }
 
   private getHtmlIframePreloadScope(
@@ -1562,13 +2164,36 @@ export class PlayerHost {
     void this.ensureHtmlIframe(node.htmlUrl).readyPromise
   }
 
-  private handleBackAction(): void {
-    const currentNode = this.engine.getCurrentNode()
-    if (this.canResetSurfaceCamera(currentNode)) {
-      const surfaceConfig = currentNode?.surfaceConfig
-      if (surfaceConfig) {
-        this.setSurfaceCamera(surfaceConfig.initialCamera, true)
+  private runHtmlWarmupWhenIdle(task: () => Promise<void>): Promise<void> {
+    return new Promise(resolve => {
+      const execute = () => {
+        task().finally(resolve)
       }
+
+      const browserWindow = globalThis as typeof globalThis & Window
+      if (typeof browserWindow.requestIdleCallback === 'function') {
+        browserWindow.requestIdleCallback(() => execute(), { timeout: 1200 })
+        return
+      }
+
+      window.setTimeout(execute, 0)
+    })
+  }
+
+  private yieldToBrowser(): Promise<void> {
+    return new Promise(resolve => {
+      window.setTimeout(resolve, 0)
+    })
+  }
+
+  private handleBackAction(): void {
+    if (this.infoSheetOpen) {
+      this.closeInfoSheet()
+      return
+    }
+    const currentNode = this.engine.getCurrentNode()
+    if (this.hasActiveSurfaceFocus(currentNode)) {
+      this.resetSurfaceFocus(true)
       return
     }
     this.engine.handleBack()
@@ -1584,6 +2209,27 @@ export class PlayerHost {
       || Math.abs(this.currentSurfaceCamera.centerY - initial.centerY) > 0.0001
       || Math.abs(this.currentSurfaceCamera.zoom - initial.zoom) > 0.0001
     )
+  }
+
+  private hasActiveSurfaceFocus(node: PublishNode | null | undefined): boolean {
+    if (!node || this.getNodeKind(node) !== 'surface' || !node.surfaceConfig) {
+      return false
+    }
+    return this.surfaceSheetOpen
+      || !!this.activeSurfaceLayerId
+      || !!this.activeSurfaceCardId
+      || this.canResetSurfaceCamera(node)
+  }
+
+  private resetSurfaceFocus(animated: boolean): void {
+    const currentNode = this.engine.getCurrentNode()
+    if (!currentNode || this.getNodeKind(currentNode) !== 'surface' || !currentNode.surfaceConfig) {
+      return
+    }
+    this.surfaceSheetOpen = false
+    this.activeSurfaceLayerId = null
+    this.activeSurfaceCardId = null
+    this.setSurfaceCamera(currentNode.surfaceConfig.initialCamera, animated)
   }
 
   private setSurfaceCamera(camera: CameraState, animated: boolean): void {
@@ -1641,11 +2287,16 @@ export class PlayerHost {
     if (hotspot.target.type === 'focus-layer') {
       const { layerId } = hotspot.target
       const layer = currentNode.surfaceLayers?.find(item => item.id === layerId)
+      this.activeSurfaceLayerId = layerId
+      this.activeSurfaceCardId = null
+      this.surfaceSheetOpen = true
       if (layer?.cameraPreset) {
         this.setSurfaceCamera({
           ...layer.cameraPreset,
           zoom: layer.visibility.minZoom,
         }, true)
+      } else {
+        this.render()
       }
     }
   }
@@ -1662,37 +2313,148 @@ export class PlayerHost {
       el.style.top = `${point.y}px`
       el.style.transform = 'translate(-50%, -50%)'
     })
+  }
 
-    hotspots.querySelectorAll<HTMLDivElement>('[data-surface-card="true"]').forEach(cardRoot => {
-      const anchorX = Number(cardRoot.dataset.anchorX ?? '0')
-      const anchorY = Number(cardRoot.dataset.anchorY ?? '0')
-      const point = projectSurfacePoint({ x: anchorX, y: anchorY }, layout)
-      const outer = cardRoot.firstElementChild as HTMLElement | null
-      if (outer) {
-        outer.style.left = `${point.x}px`
-        outer.style.top = `${point.y}px`
-      }
-      const dock = cardRoot.dataset.calloutDock
-      const targetX = cardRoot.dataset.calloutTargetX
-      const targetY = cardRoot.dataset.calloutTargetY
-      const svg = cardRoot.querySelector('svg')
-      const line = cardRoot.querySelector('line')
-      if (!svg || !line || !outer || !dock || !targetX || !targetY) return
+  private createAnchoredAnnotationRoot(normalizedX: number, normalizedY: number): HTMLDivElement {
+    const root = document.createElement('div')
+    root.style.position = 'absolute'
+    root.style.left = `${normalizedX * 100}%`
+    root.style.top = `${normalizedY * 100}%`
+    root.style.transform = 'translate(-50%, -50%)'
+    root.style.display = 'flex'
+    root.style.flexDirection = 'column'
+    root.style.alignItems = 'center'
+    root.style.justifyContent = 'center'
+    root.style.gap = '6px'
+    root.style.pointerEvents = 'none'
+    root.style.zIndex = '2'
+    root.dataset.surfaceAnchorX = String(normalizedX)
+    root.dataset.surfaceAnchorY = String(normalizedY)
+    return root
+  }
 
-      const outerRect = outer.getBoundingClientRect()
-      const rootRect = hotspots.getBoundingClientRect()
-      const targetPoint = projectSurfacePoint({ x: Number(targetX), y: Number(targetY) }, layout)
-      let startX = outerRect.left - rootRect.left + outerRect.width / 2
-      let startY = outerRect.top - rootRect.top + outerRect.height / 2
-      if (dock === 'top') startY = outerRect.top - rootRect.top
-      if (dock === 'bottom') startY = outerRect.bottom - rootRect.top
-      if (dock === 'left') startX = outerRect.left - rootRect.left
-      if (dock === 'right') startX = outerRect.right - rootRect.left
+  private createAnnotationMarker(selected: boolean): HTMLSpanElement {
+    const marker = document.createElement('span')
+    marker.style.display = 'inline-flex'
+    marker.style.alignItems = 'center'
+    marker.style.justifyContent = 'center'
+    marker.style.width = '21px'
+    marker.style.height = '21px'
+    marker.style.pointerEvents = 'none'
+    marker.innerHTML = selected ? SURFACE_MARKER_SELECTED_SVG : SURFACE_MARKER_SVG
+    return marker
+  }
 
-      line.setAttribute('x1', String(startX))
-      line.setAttribute('y1', String(startY))
-      line.setAttribute('x2', String(targetPoint.x))
-      line.setAttribute('y2', String(targetPoint.y))
+  private appendMarkerAndButton(
+    root: HTMLDivElement,
+    button: HTMLButtonElement,
+    marker: HTMLSpanElement,
+    config: { visible: boolean, position: 'top' | 'bottom', gapPx: number },
+  ): void {
+    root.style.gap = `${config.gapPx}px`
+    if (config.visible && config.position === 'top') {
+      root.appendChild(marker)
+    }
+    root.appendChild(button)
+    if (config.visible && config.position === 'bottom') {
+      root.appendChild(marker)
+    }
+  }
+
+  private applyAnnotationChipStyles(button: HTMLButtonElement, selected: boolean): void {
+    button.style.display = 'flex'
+    button.style.flexDirection = 'row'
+    button.style.alignItems = 'center'
+    button.style.justifyContent = 'center'
+    button.style.minWidth = '80px'
+    button.style.height = '36px'
+    button.style.padding = '8px 12px'
+    button.style.borderRadius = '30px'
+    button.style.border = selected ? 'none' : '1px solid rgba(255, 255, 255, 0.36)'
+    button.style.background = selected ? '#3366FF' : 'rgba(255, 255, 255, 0.8)'
+    button.style.color = selected ? '#FFFFFF' : 'rgba(0, 0, 0, 0.84)'
+    button.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.08)'
+    button.style.cursor = 'pointer'
+    button.style.pointerEvents = 'auto'
+    button.style.whiteSpace = 'nowrap'
+    button.style.zIndex = '1'
+  }
+
+  private resolveMarkerConfig(styleText?: string): { visible: boolean, position: 'top' | 'bottom', gapPx: number } {
+    const markerDisplay = styleText?.match(/--hotspot-marker-display\s*:\s*([^;]+)/i)?.[1]?.trim().toLowerCase()
+    const markerPosition = styleText?.match(/--hotspot-marker-position\s*:\s*([^;]+)/i)?.[1]?.trim().toLowerCase()
+    const markerGapRaw = styleText?.match(/--hotspot-marker-gap\s*:\s*([^;]+)/i)?.[1]?.trim().toLowerCase() ?? ''
+    const markerGapParsed = Number.parseFloat(markerGapRaw.replace(/px$/i, '').trim())
+    return {
+      visible: markerDisplay !== 'none',
+      position: markerPosition === 'bottom' ? 'bottom' : 'top',
+      gapPx: Number.isFinite(markerGapParsed) ? Math.max(markerGapParsed, 0) : 6,
+    }
+  }
+
+  private setActiveSurfaceCard(cardId: string | null): void {
+    if (this.activeSurfaceCardId === cardId) return
+    this.activeSurfaceCardId = cardId
+    if (this.getNodeKind(this.engine.getCurrentNode()) === 'surface') {
+      this.render()
+    }
+  }
+
+  private focusSurfaceCard(cardId: string, moveCamera: boolean): void {
+    const currentNode = this.engine.getCurrentNode()
+    const cardContext = this.findSurfaceCardContext(currentNode, cardId)
+    if (!cardContext) return
+    this.activeSurfaceLayerId = cardContext.layer.id
+    this.surfaceSheetOpen = true
+    this.setActiveSurfaceCard(cardId)
+    if (moveCamera && this.currentSurfaceCamera) {
+      this.setSurfaceCamera({
+        centerX: cardContext.card.anchor.x,
+        centerY: cardContext.card.anchor.y,
+        zoom: this.currentSurfaceCamera.zoom,
+      }, true)
+    } else {
+      this.scrollActiveSheetCardIntoView()
+    }
+  }
+
+  private closeSurfaceSheet(): void {
+    this.surfaceSheetOpen = false
+    this.activeSurfaceCardId = null
+    if (this.getNodeKind(this.engine.getCurrentNode()) === 'surface') {
+      this.render()
+    }
+  }
+
+  private getActiveSurfaceLayer(node: PublishNode | null | undefined): SurfaceFocusLayer | null {
+    if (!node || this.getNodeKind(node) !== 'surface' || !this.activeSurfaceLayerId) return null
+    return node.surfaceLayers?.find(layer => layer.id === this.activeSurfaceLayerId) ?? null
+  }
+
+  private canUseNativeShare(): boolean {
+    const browserNavigator = globalThis.navigator as Navigator & {
+      share?: (data: { title?: string, text?: string, url?: string }) => Promise<void>
+    }
+    return typeof browserNavigator.share === 'function'
+  }
+
+  private findSurfaceCardContext(
+    node: PublishNode | null | undefined,
+    cardId: string,
+  ): { layer: SurfaceFocusLayer, card: SurfaceCard } | null {
+    if (!node || this.getNodeKind(node) !== 'surface') return null
+    for (const layer of node.surfaceLayers ?? []) {
+      const card = layer.cards.find(item => item.id === cardId)
+      if (card) return { layer, card }
+    }
+    return null
+  }
+
+  private scrollActiveSheetCardIntoView(): void {
+    if (!this.activeSurfaceCardId) return
+    requestAnimationFrame(() => {
+      const activeCard = this.bottomSheetCardsEl.querySelector<HTMLElement>(`[data-surface-sheet-card-id="${this.activeSurfaceCardId}"]`)
+      activeCard?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
     })
   }
 

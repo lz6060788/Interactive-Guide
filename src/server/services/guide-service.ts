@@ -162,13 +162,37 @@ export class GuideService {
     this.repo.saveGuide(updated)
 
     // Keep preview manifest aligned for runtime-related top-level fields.
-    if (updates.resolution || updates.runtimeConfig) {
+    if (updates.resolution || updates.runtimeConfig || updates.infoOverlay !== undefined || updates.title || updates.description || updates.visualStyle || updates.transitionStyle || updates.style || updates.locale || updates.version) {
       this.patchWorkspaceManifest(id, manifest => {
         if (updates.resolution) {
           manifest.resolution = updates.resolution as any
         }
+        if (updates.title !== undefined) {
+          manifest.title = updates.title
+        }
+        if (updates.description !== undefined) {
+          manifest.description = updates.description
+        }
+        if (updates.visualStyle !== undefined) {
+          manifest.visualStyle = updates.visualStyle
+        }
+        if (updates.transitionStyle !== undefined) {
+          manifest.transitionStyle = updates.transitionStyle
+        }
+        if (updates.style !== undefined) {
+          manifest.style = updates.style
+        }
+        if (updates.locale !== undefined) {
+          manifest.locale = updates.locale
+        }
+        if (updates.version !== undefined) {
+          manifest.version = updates.version
+        }
         if (updates.runtimeConfig !== undefined) {
           manifest.runtimeConfig = updates.runtimeConfig
+        }
+        if (updates.infoOverlay !== undefined) {
+          manifest.infoOverlay = updates.infoOverlay
         }
       })
     }

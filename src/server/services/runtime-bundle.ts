@@ -189,6 +189,7 @@ export class RuntimeBundleGenerator {
         return {
           id: n.id,
           title: n.title,
+          extensions: n.extensions,
           nodeKind,
           contentType: 'html' as const,
           htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
@@ -212,6 +213,7 @@ export class RuntimeBundleGenerator {
       return {
         id: n.id,
         title: n.title,
+        extensions: n.extensions,
         nodeKind,
         imageUrl: `${mediaBase}/nodes/${n.id}.png`,
         imageFitMode: n.imageFitMode,
@@ -253,6 +255,7 @@ export class RuntimeBundleGenerator {
       rootNodeId: 'root',
       resolution: guide.resolution,
       runtimeConfig: guide.runtimeConfig,
+      infoOverlay: guide.infoOverlay,
       nodes,
       edges,
       nodeMap,

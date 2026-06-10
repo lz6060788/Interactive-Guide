@@ -1,4 +1,4 @@
-﻿﻿import {
+﻿﻿﻿﻿﻿﻿﻿﻿import {
   useEffect,
   useMemo,
   useRef,
@@ -22,8 +22,8 @@ const DEFAULT_SOURCE_ASPECT = 375 / 808
 const ZOOM_STEP = 1.12
 
 type PreviewMode = 'browse' | 'cards' | 'hotspots'
-type EditMode = 'card-anchor' | 'callout' | 'hotspot-anchor' | null
-type PreviewDragKind = 'pan' | 'card-anchor' | 'callout' | 'hotspot-anchor'
+type EditMode = 'card-anchor' | 'hotspot-anchor' | null
+type PreviewDragKind = 'pan' | 'card-anchor' | 'hotspot-anchor'
 
 interface SurfaceNodeDesignerProps {
   imageUrl?: string
@@ -283,20 +283,6 @@ function updateSelectedCard(
   })
 }
 
-function ensureCardHasCallout(card: SurfaceCard): SurfaceCard {
-  if (card.callout) return card
-  return {
-    ...card,
-    callout: {
-      fromDock: 'bottom',
-      target: {
-        x: clamp01(card.anchor.x + 0.06),
-        y: clamp01(card.anchor.y + 0.08),
-      },
-    },
-  }
-}
-
 function updateSelectedHotspot(
   layers: SurfaceFocusLayer[],
   selectedLayerId: string | null,
@@ -418,68 +404,260 @@ function ControlField({
   )
 }
 
-function renderCardPreview(card: SurfaceCard, selected: boolean) {
-  const distinctTags = (card.tags ?? []).filter(tagText =>
-    !(card.stocks ?? []).some(stock => stock.label === tagText))
+function TextAreaField({
+  label,
+  value,
+  onChange,
+  rows = 4,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  rows?: number
+}) {
+  return (
+    <Box mb="2.5">
+      <Text fontSize="xs" color="#8ea0c4" mb="1">{label}</Text>
+      <textarea
+        value={value}
+        rows={rows}
+        onChange={event => onChange(event.target.value)}
+        style={{
+          width: '100%',
+          background: '#090b10',
+          border: `1px solid ${BORDER}`,
+          borderRadius: 6,
+          color: '#e4e4e7',
+          fontSize: 12,
+          padding: '8px 10px',
+          boxSizing: 'border-box',
+          outline: 'none',
+          resize: 'vertical',
+        }}
+      />
+    </Box>
+  )
+}
 
+type HotspotMarkerPosition = 'top' | 'bottom'
+
+function parseInlineStyleMap(styleText?: string): Map<string, string> {
+  const entries = new Map<string, string>()
+  for (const part of (styleText ?? '').split(';')) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const separatorIndex = trimmed.indexOf(':')
+    if (separatorIndex <= 0) continue
+    const property = trimmed.slice(0, separatorIndex).trim()
+    const value = trimmed.slice(separatorIndex + 1).trim()
+    if (!property || !value) continue
+    entries.set(property, value)
+  }
+  return entries
+}
+
+function stringifyInlineStyleMap(entries: Map<string, string>): string {
+  return Array.from(entries.entries())
+    .map(([property, value]) => `${property}:${value}`)
+    .join('; ')
+}
+
+function parseHotspotPreviewStyle(styleText?: string): React.CSSProperties {
+  if (!styleText?.trim() || typeof document === 'undefined') return {}
+  const probe = document.createElement('div')
+  probe.setAttribute('style', styleText)
+  const parsed: React.CSSProperties = {}
+  const ignoredKeys = new Set([
+    'position',
+    'left',
+    'top',
+    'right',
+    'bottom',
+    'transform',
+    'pointer-events',
+    'z-index',
+    '--hotspot-marker-display',
+    '--hotspot-marker-position',
+    '--hotspot-marker-gap',
+  ])
+  for (let i = 0; i < probe.style.length; i += 1) {
+    const propertyName = probe.style[i]
+    if (!propertyName || ignoredKeys.has(propertyName)) continue
+    const value = probe.style.getPropertyValue(propertyName).trim()
+    if (!value) continue
+    const reactKey = propertyName.startsWith('--')
+      ? propertyName
+      : propertyName.replace(/-([a-z])/g, (_, char: string) => char.toUpperCase())
+    ;(parsed as Record<string, string>)[reactKey] = value
+  }
+  return parsed
+}
+
+function setInlineStyleProperty(styleText: string | undefined, property: string, value?: string | null): string {
+  const entries = parseInlineStyleMap(styleText)
+  if (!value?.trim()) {
+    entries.delete(property)
+  } else {
+    entries.set(property, value.trim())
+  }
+  return stringifyInlineStyleMap(entries)
+}
+
+function getHotspotMarkerConfig(styleText?: string): {
+  visible: boolean
+  position: HotspotMarkerPosition
+  gapPx: number
+} {
+  const entries = parseInlineStyleMap(styleText)
+  const display = entries.get('--hotspot-marker-display')?.trim().toLowerCase()
+  const position = entries.get('--hotspot-marker-position')?.trim().toLowerCase()
+  const gapValue = entries.get('--hotspot-marker-gap')?.trim().toLowerCase() ?? ''
+  const parsedGap = Number.parseFloat(gapValue.replace(/px$/i, '').trim())
+  return {
+    visible: display !== 'none',
+    position: position === 'bottom' ? 'bottom' : 'top',
+    gapPx: Number.isFinite(parsedGap) ? Math.max(parsedGap, 0) : 6,
+  }
+}
+
+function updateHotspotMarkerStyle(
+  styleText: string | undefined,
+  patch: Partial<{ visible: boolean, position: HotspotMarkerPosition, gapPx: number }>,
+): string {
+  const current = getHotspotMarkerConfig(styleText)
+  const next = {
+    ...current,
+    ...patch,
+  }
+  let result = styleText ?? ''
+  result = setInlineStyleProperty(result, '--hotspot-marker-display', next.visible ? null : 'none')
+  result = setInlineStyleProperty(result, '--hotspot-marker-position', next.position)
+  result = setInlineStyleProperty(result, '--hotspot-marker-gap', `${Math.max(next.gapPx, 0)}px`)
+  return result
+}
+
+function MarkerPreview({ selected = false }: { selected?: boolean }) {
+  return (
+    <Box position="relative" w="21px" h="21px" flexShrink={0}>
+      <Box
+        position="absolute"
+        inset="0"
+        rounded="full"
+        bg={selected ? 'rgba(255, 36, 54, 0.1)' : 'rgba(255,255,255,0.1)'}
+        border={selected ? '0.5px solid #FF2436' : '0.5px solid rgba(255,255,255,0.9)'}
+      />
+      <Box
+        position="absolute"
+        left="50%"
+        top="50%"
+        transform="translate(-50%, -50%)"
+        w={selected ? '11px' : '9px'}
+        h={selected ? '11px' : '9px'}
+        rounded="full"
+        bg={selected ? '#FF2436' : '#FFFFFF'}
+        border={selected ? '1px solid #FFFFFF' : 'none'}
+      />
+    </Box>
+  )
+}
+
+function renderTertiaryButtonPreview(card: SurfaceCard, selected: boolean) {
   return (
     <Box
-      display="inline-flex"
+      display="flex"
       flexDir="column"
       alignItems="center"
-      px="3"
-      py="2"
-      rounded="md"
-      bg="rgba(255,255,255,0.94)"
-      color="#111"
-      border={selected ? '2px solid #f59e0b' : '1px solid rgba(0,0,0,0.14)'}
-      boxShadow="0 8px 24px rgba(0, 0, 0, 0.16)"
-      textAlign="center"
-      maxW="220px"
-      width="fit-content"
-      minW="84px"
+      gap="6px"
     >
-      <Text fontSize="12px" fontWeight="600" lineHeight="18px" wordBreak="break-word">
-        {card.title}
-      </Text>
-      {distinctTags.length > 0 && (
-        <Flex mt="2" gap="1" wrap="wrap" justify="center">
-          {distinctTags.map(tag => (
-            <Box
-              key={tag}
-              px="2.5"
-              py="0.5"
-              rounded="full"
-              bg="#FF2436"
-              color="white"
-              fontSize="10px"
-              fontWeight="500"
-              lineHeight="15px"
-            >
-              {tag}
-            </Box>
-          ))}
+      <MarkerPreview selected={selected} />
+      <Box
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        minW="80px"
+        h="36px"
+        px="3"
+        py="2"
+        rounded="30px"
+        bg={selected ? '#3366FF' : 'rgba(255,255,255,0.8)'}
+        color={selected ? '#FFFFFF' : 'rgba(0,0,0,0.84)'}
+        border={selected ? 'none' : '1px solid rgba(255,255,255,0.36)'}
+        boxShadow="0 8px 24px rgba(0, 0, 0, 0.08)"
+        textAlign="center"
+        maxW="180px"
+      >
+        <Text fontSize="16px" fontWeight="600" lineHeight="20px" wordBreak="break-word" noOfLines={1}>
+          {card.title}
+        </Text>
+      </Box>
+    </Box>
+  )
+}
+
+function renderBottomSheetPreview(layer: SurfaceFocusLayer, selectedCardId: string | null) {
+  return (
+    <Box
+      position="absolute"
+      left="0"
+      right="0"
+      bottom="0"
+      display="flex"
+      flexDir="column"
+      gap="14px"
+      px="4"
+      pt="3.5"
+      pb="4"
+      borderTopLeftRadius="20px"
+      borderTopRightRadius="20px"
+      bg="rgba(250, 250, 250, 0.94)"
+      boxShadow="0 -10px 36px rgba(15, 23, 42, 0.12)"
+      backdropFilter="blur(18px)"
+      pointerEvents="none"
+    >
+      <Flex align="center" justify="space-between" gap="3">
+        <Text
+          flex="1"
+          minW="0"
+          fontSize="15px"
+          lineHeight="22px"
+          fontWeight="600"
+          color="rgba(0, 0, 0, 0.84)"
+          whiteSpace="nowrap"
+          overflow="hidden"
+          textOverflow="ellipsis"
+        >
+          {`${layer.primaryCategory ?? ''} > ${layer.title}`.trim()}
+        </Text>
+        <Flex align="center" gap="1.5">
+          <Box w="28px" h="28px" rounded="full" bg="#FFFFFF" boxShadow="0 4px 14px rgba(15, 23, 42, 0.10)" />
+          <Box w="28px" h="28px" rounded="full" bg="transparent" />
         </Flex>
-      )}
-      {card.stocks?.length ? (
-        <Flex mt="2" gap="1" wrap="wrap" justify="center">
-          {card.stocks.map(stock => (
+      </Flex>
+      <Flex gap="3" overflowX="hidden">
+        {layer.cards.map(card => {
+          const selected = card.id === selectedCardId
+          return (
             <Box
-              key={stock.label}
-              px="2.5"
-              py="0.5"
-              rounded="full"
-              bg="#FF2436"
-              color="white"
-              fontSize="10px"
-              fontWeight="500"
-              lineHeight="15px"
+              key={card.id}
+              flex="0 0 260px"
+              minH="108px"
+              px="4"
+              py="3.5"
+              borderRadius="12px"
+              border={selected ? '2px solid #3366FF' : '1px solid rgba(15, 23, 42, 0.08)'}
+              bg={selected ? 'rgba(51, 102, 255, 0.10)' : '#FFFFFF'}
+              boxShadow="0 8px 24px rgba(15, 23, 42, 0.06)"
             >
-              {stock.label}
+              <Text fontSize="16px" lineHeight="22px" fontWeight="700" color="rgba(0, 0, 0, 0.88)">
+                {card.title}
+              </Text>
+              <Text mt="2" fontSize="14px" lineHeight="22px" color="rgba(0, 0, 0, 0.72)" noOfLines={3}>
+                {card.description ?? '请填写三级按钮说明文案'}
+              </Text>
             </Box>
-          ))}
-        </Flex>
-      ) : null}
+          )
+        })}
+      </Flex>
     </Box>
   )
 }
@@ -835,39 +1013,12 @@ function SurfacePreview({
       )}
 
       <Box position="absolute" inset="0" pointerEvents="none">
-        <svg
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            overflow: 'visible',
-            pointerEvents: 'none',
-          }}
-        >
-          {previewCards.map(card => {
-            if (!card.callout) return null
-            const from = projectPoint(card.anchor, layout)
-            const to = projectPoint(card.callout.target, layout)
-            return (
-              <line
-                key={`${card.id}-callout`}
-                x1={from.x}
-                y1={from.y}
-                x2={to.x}
-                y2={to.y}
-                stroke={selectedCardId === card.id ? '#f59e0b' : 'rgba(255,255,255,0.95)'}
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            )
-          })}
-        </svg>
-
         {previewHotspots.map(hotspot => {
           const point = projectPoint(hotspot.anchor, layout)
           const selected = hotspot.id === selectedHotspotId
           const draggable = selected && editMode === 'hotspot-anchor'
+          const markerConfig = getHotspotMarkerConfig(hotspot.style)
+          const previewStyle = parseHotspotPreviewStyle(hotspot.style)
           return (
             <Box
               key={hotspot.id}
@@ -875,22 +1026,39 @@ function SurfacePreview({
               left={`${point.x}px`}
               top={`${point.y}px`}
               transform="translate(-50%, -50%)"
-              px="3"
-              py="1.5"
-              rounded="md"
-              bg="rgba(255,255,255,0.96)"
-              color="#111"
-              border={selected ? '2px solid #f59e0b' : '1px solid rgba(0,0,0,0.14)'}
-              boxShadow="0 8px 24px rgba(0,0,0,0.16)"
-              fontSize="12px"
-              lineHeight="18px"
-              maxW="180px"
-              textAlign="center"
-              pointerEvents={draggable ? 'auto' : 'none'}
-              cursor={draggable ? 'move' : 'default'}
-              data-preview-drag-kind={draggable ? 'hotspot-anchor' : undefined}
+              display="flex"
+              flexDir="column"
+              alignItems="center"
+              gap={`${markerConfig.gapPx}px`}
+              pointerEvents="none"
             >
-              {hotspot.label}
+              {markerConfig.visible && markerConfig.position === 'top' && <MarkerPreview />}
+              <Box
+                px="3"
+                py="2"
+                minW="88px"
+                h="36px"
+                rounded="30px"
+                display="flex"
+                alignItems="center"
+                justifyContent="center"
+                bg="rgba(255,255,255,0.96)"
+                color="#111"
+                border={selected ? '2px solid #f59e0b' : '1px solid rgba(0,0,0,0.14)'}
+                boxShadow="0 8px 24px rgba(0,0,0,0.16)"
+                fontSize="16px"
+                fontWeight="600"
+                lineHeight="20px"
+                maxW="180px"
+                textAlign="center"
+                pointerEvents={draggable ? 'auto' : 'none'}
+                cursor={draggable ? 'move' : 'default'}
+                data-preview-drag-kind={draggable ? 'hotspot-anchor' : undefined}
+                style={previewStyle}
+              >
+                {hotspot.label}
+              </Box>
+              {markerConfig.visible && markerConfig.position === 'bottom' && <MarkerPreview />}
             </Box>
           )
         })}
@@ -909,48 +1077,26 @@ function SurfacePreview({
               cursor={draggable ? 'move' : 'default'}
               data-preview-drag-kind={draggable ? 'card-anchor' : undefined}
             >
-              {renderCardPreview(card, card.id === selectedCardId)}
+              {renderTertiaryButtonPreview(card, card.id === selectedCardId)}
             </Box>
           )
         })}
-
-        {selectedCard?.callout && editMode === 'callout' && (() => {
-          const targetPoint = projectPoint(selectedCard.callout.target, layout)
-          return (
-            <Box
-              position="absolute"
-              left={`${targetPoint.x}px`}
-              top={`${targetPoint.y}px`}
-              transform="translate(-50%, -50%)"
-              w="14px"
-              h="14px"
-              rounded="full"
-              bg="#f59e0b"
-              border="2px solid white"
-              boxShadow="0 8px 20px rgba(0,0,0,0.24)"
-              pointerEvents="auto"
-              cursor="move"
-              data-preview-drag-kind="callout"
-            />
-          )
-        })()}
       </Box>
 
+      {selectedLayer && previewMode !== 'browse' && renderBottomSheetPreview(selectedLayer, selectedCardId)}
+
       <Box position="absolute" top="3" right="3" px="3" py="2" bg="rgba(10,11,15,0.88)" rounded="md">
-        <Text fontSize="xs" color="white">预览模式：{previewMode === 'browse' ? '浏览态' : previewMode === 'cards' ? '标的卡片' : 'Hotspots'}</Text>
+        <Text fontSize="xs" color="white">预览模式：{previewMode === 'browse' ? '运行时预览' : previewMode === 'cards' ? '三级按钮编辑' : '二级热点编辑'}</Text>
         <Text fontSize="xs" color="rgba(255,255,255,0.72)">Zoom {layout.camera.zoom.toFixed(2)}</Text>
       </Box>
 
       <Box position="absolute" left="3" bottom="3" px="3" py="2" bg="rgba(10,11,15,0.88)" rounded="md" maxW="min(520px, calc(100% - 24px))">
         <Text fontSize="xs" color="white">{panHint}</Text>
         {editMode === 'card-anchor' && selectedCard && (
-          <Text mt="1" fontSize="xs" color="rgba(255,255,255,0.72)">{`直接拖拽卡片 "${selectedCard.title}" 调整位置`}</Text>
-        )}
-        {editMode === 'callout' && selectedCard && (
-          <Text mt="1" fontSize="xs" color="rgba(255,255,255,0.72)">{`拖拽橙色控制点调整卡片 "${selectedCard.title}" 的连线终点`}</Text>
+          <Text mt="1" fontSize="xs" color="rgba(255,255,255,0.72)">{`直接拖拽三级按钮 "${selectedCard.title}" 调整位置`}</Text>
         )}
         {editMode === 'hotspot-anchor' && selectedHotspot && (
-          <Text mt="1" fontSize="xs" color="rgba(255,255,255,0.72)">{`直接拖拽热点 "${selectedHotspot.label}" 调整位置`}</Text>
+          <Text mt="1" fontSize="xs" color="rgba(255,255,255,0.72)">{`直接拖拽二级热点 "${selectedHotspot.label}" 调整位置`}</Text>
         )}
       </Box>
     </Box>
@@ -1095,15 +1241,11 @@ export function SurfaceNodeDesigner({
               ...layer.cards,
               {
                 id: `card_${Date.now()}`,
-                title: `卡片 ${layer.cards.length + 1}`,
+                title: `三级按钮 ${layer.cards.length + 1}`,
                 anchor: { x: 0.5, y: 0.5 },
                 coordSpace: 'surface-normalized',
                 tags: [],
                 stocks: [],
-                callout: {
-                  fromDock: 'bottom',
-                  target: { x: 0.58, y: 0.62 },
-                },
               },
             ],
           }
@@ -1236,14 +1378,14 @@ export function SurfaceNodeDesigner({
             setEditMode(null)
             focusLayer(selectedLayer, 'cards')
           }} disabled={!selectedLayer}>
-            只看标的
+            只看三级按钮
           </ActionButton>
           <ActionButton active={previewMode === 'hotspots'} onClick={() => {
             setPreviewMode('hotspots')
             setEditMode(null)
             focusLayer(selectedLayer, 'hotspots')
           }} disabled={!selectedLayer}>
-            只看 Hotspots
+            只看二级热点
           </ActionButton>
           <ActionButton onClick={() => setPreviewCamera(surfaceConfig.initialCamera)}>
             重置视角
@@ -1252,8 +1394,8 @@ export function SurfaceNodeDesigner({
             缩放到阈值
           </ActionButton>
           <ActionButton onClick={addLayer}>新增图层</ActionButton>
-          <ActionButton onClick={addCard} disabled={!layers.length}>新增卡片</ActionButton>
-          <ActionButton onClick={addHotspot} disabled={!layers.length}>新增 Hotspot</ActionButton>
+          <ActionButton onClick={addCard} disabled={!layers.length}>新增三级按钮</ActionButton>
+          <ActionButton onClick={addHotspot} disabled={!layers.length}>新增二级热点</ActionButton>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#dbe7ff', fontSize: 12, padding: '0 4px' }}>
             <input
               type="checkbox"
@@ -1266,7 +1408,7 @@ export function SurfaceNodeDesigner({
       </Box>
 
       <Box w="360px" minW="360px" h="100%" overflow="auto" pr="1">
-        <Heading size="xs" mb="2" color="#dbe7ff">Surface 图层</Heading>
+        <Heading size="xs" mb="2" color="#dbe7ff">二级图层</Heading>
         <Box mb="3" p="3" border={`1px solid ${BORDER}`} rounded="md" bg={PANEL_BG}>
           {layers.map(layer => (
             <Box key={layer.id} mb="2">
@@ -1279,7 +1421,7 @@ export function SurfaceNodeDesigner({
                   focusLayer(layer, previewMode)
                 }}
               >
-                {layer.title}
+                {layer.primaryCategory ? `${layer.primaryCategory} / ${layer.title}` : layer.title}
               </ActionButton>
             </Box>
           ))}
@@ -1290,14 +1432,19 @@ export function SurfaceNodeDesigner({
 
         {selectedLayer && (
           <Box mb="3" p="3" border={`1px solid ${BORDER}`} rounded="md" bg={PANEL_BG}>
-            <Heading size="xs" mb="2" color="#dbe7ff">当前图层</Heading>
+            <Heading size="xs" mb="2" color="#dbe7ff">当前二级图层</Heading>
             <ControlField
-              label="图层标题"
+              label="一级分类"
+              value={selectedLayer.primaryCategory ?? ''}
+              onChange={value => applyLayers(updateSelectedLayer(layers, selectedLayer.id, layer => ({ ...layer, primaryCategory: value || undefined })))}
+            />
+            <ControlField
+              label="二级标题"
               value={selectedLayer.title}
               onChange={value => applyLayers(updateSelectedLayer(layers, selectedLayer.id, layer => ({ ...layer, title: value })))}
             />
             <ControlField
-              label="全图显示阈值"
+              label="统一显示阈值"
               type="number"
               step="0.1"
               min="0.1"
@@ -1327,7 +1474,7 @@ export function SurfaceNodeDesigner({
 
         {selectedLayer && (
           <Box mb="3" p="3" border={`1px solid ${BORDER}`} rounded="md" bg={PANEL_BG}>
-            <Heading size="xs" mb="2" color="#dbe7ff">标的卡片</Heading>
+            <Heading size="xs" mb="2" color="#dbe7ff">三级按钮</Heading>
             <Flex gap="2" wrap="wrap" mb="3">
               {selectedLayer.cards.map(card => (
                 <ActionButton
@@ -1350,7 +1497,7 @@ export function SurfaceNodeDesigner({
             {selectedCard && (
               <>
                 <ControlField
-                  label="卡片标题"
+                  label="三级按钮名称"
                   value={selectedCard.title}
                   onChange={value => {
                     applyLayers(updateSelectedCard(layers, selectedLayer.id, selectedCard.id, card => ({
@@ -1359,51 +1506,24 @@ export function SurfaceNodeDesigner({
                     })))
                   }}
                 />
-                <Text fontSize="xs" color="#8ea0c4" mb="1">连线方向</Text>
-                <select
-                  value={selectedCard.callout?.fromDock ?? 'bottom'}
-                  onChange={event => {
+                <TextAreaField
+                  label="浮层说明文案"
+                  value={selectedCard.description ?? ''}
+                  rows={4}
+                  onChange={value => {
                     applyLayers(updateSelectedCard(layers, selectedLayer.id, selectedCard.id, card => ({
                       ...card,
-                      callout: {
-                        fromDock: event.target.value as 'top' | 'right' | 'bottom' | 'left',
-                        target: card.callout?.target ?? { x: 0.58, y: 0.62 },
-                      },
+                      description: value || undefined,
                     })))
                   }}
-                  style={{
-                    width: '100%',
-                    background: '#090b10',
-                    border: `1px solid ${BORDER}`,
-                    borderRadius: 6,
-                    color: '#e4e4e7',
-                    fontSize: 12,
-                    padding: '8px 10px',
-                    boxSizing: 'border-box',
-                    outline: 'none',
-                    marginBottom: 10,
-                  }}
-                >
-                  <option value="top">top</option>
-                  <option value="right">right</option>
-                  <option value="bottom">bottom</option>
-                  <option value="left">left</option>
-                </select>
+                />
                 <Flex gap="2" wrap="wrap">
                   <ActionButton active={editMode === 'card-anchor'} onClick={() => {
                     setPreviewMode('cards')
                     setEditMode(editMode === 'card-anchor' ? null : 'card-anchor')
                     focusLayer(selectedLayer, 'cards')
                   }}>
-                    拖拽卡片位置
-                  </ActionButton>
-                  <ActionButton active={editMode === 'callout'} onClick={() => {
-                    applyLayers(updateSelectedCard(layers, selectedLayer.id, selectedCard.id, ensureCardHasCallout))
-                    setPreviewMode('cards')
-                    setEditMode(editMode === 'callout' ? null : 'callout')
-                    focusLayer(selectedLayer, 'cards')
-                  }}>
-                    拖拽连线终点
+                    拖拽三级按钮位置
                   </ActionButton>
                 </Flex>
               </>
@@ -1413,7 +1533,7 @@ export function SurfaceNodeDesigner({
 
         {selectedLayer && (
           <Box mb="3" p="3" border={`1px solid ${BORDER}`} rounded="md" bg={PANEL_BG}>
-            <Heading size="xs" mb="2" color="#dbe7ff">Hotspots</Heading>
+            <Heading size="xs" mb="2" color="#dbe7ff">二级热点</Heading>
             <Flex gap="2" wrap="wrap" mb="3">
               {selectedLayer.hotspots.map(hotspot => (
                 <ActionButton
@@ -1429,14 +1549,90 @@ export function SurfaceNodeDesigner({
                 </ActionButton>
               ))}
               {!selectedLayer.hotspots.length && (
-                <Text fontSize="xs" color="#8ea0c4">当前图层暂无 Hotspot</Text>
+                <Text fontSize="xs" color="#8ea0c4">当前图层暂无二级热点</Text>
               )}
             </Flex>
 
             {selectedHotspot && (
               <>
+                {(() => {
+                  const markerConfig = getHotspotMarkerConfig(selectedHotspot.style)
+                  return (
+                    <>
+                      <Text fontSize="xs" color="#8ea0c4" mb="1">图标显示</Text>
+                      <select
+                        value={markerConfig.visible ? 'show' : 'none'}
+                        onChange={event => {
+                          const visible = event.target.value !== 'none'
+                          applyLayers(updateSelectedHotspot(layers, selectedLayer.id, selectedHotspot.id, hotspot => ({
+                            ...hotspot,
+                            style: updateHotspotMarkerStyle(hotspot.style, { visible }),
+                          })))
+                        }}
+                        style={{
+                          width: '100%',
+                          background: '#090b10',
+                          border: `1px solid ${BORDER}`,
+                          borderRadius: 6,
+                          color: '#e4e4e7',
+                          fontSize: 12,
+                          padding: '8px 10px',
+                          boxSizing: 'border-box',
+                          outline: 'none',
+                          marginBottom: 10,
+                        }}
+                      >
+                        <option value="show">显示</option>
+                        <option value="none">隐藏</option>
+                      </select>
+                      <Text fontSize="xs" color="#8ea0c4" mb="1">图标位置</Text>
+                      <select
+                        value={markerConfig.position}
+                        disabled={!markerConfig.visible}
+                        onChange={event => {
+                          const position = event.target.value === 'bottom' ? 'bottom' : 'top'
+                          applyLayers(updateSelectedHotspot(layers, selectedLayer.id, selectedHotspot.id, hotspot => ({
+                            ...hotspot,
+                            style: updateHotspotMarkerStyle(hotspot.style, { position }),
+                          })))
+                        }}
+                        style={{
+                          width: '100%',
+                          background: '#090b10',
+                          border: `1px solid ${BORDER}`,
+                          borderRadius: 6,
+                          color: markerConfig.visible ? '#e4e4e7' : '#6b7280',
+                          fontSize: 12,
+                          padding: '8px 10px',
+                          boxSizing: 'border-box',
+                          outline: 'none',
+                          marginBottom: 10,
+                        }}
+                      >
+                        <option value="top">上方</option>
+                        <option value="bottom">下方</option>
+                      </select>
+                      <ControlField
+                        label="图标间距(px)"
+                        value={String(markerConfig.gapPx)}
+                        type="number"
+                        min="0"
+                        step="1"
+                        onChange={value => {
+                          const gapPx = Number.parseFloat(value)
+                          applyLayers(updateSelectedHotspot(layers, selectedLayer.id, selectedHotspot.id, hotspot => ({
+                            ...hotspot,
+                            style: updateHotspotMarkerStyle(hotspot.style, {
+                              gapPx: Number.isFinite(gapPx) ? gapPx : 0,
+                            }),
+                          })))
+                        }}
+                      />
+                    </>
+                  )
+                })()}
                 <ControlField
-                  label="Hotspot 标题"
+                  label="二级热点标题"
                   value={selectedHotspot.label}
                   onChange={value => {
                     applyLayers(updateSelectedHotspot(layers, selectedLayer.id, selectedHotspot.id, hotspot => ({
@@ -1562,7 +1758,7 @@ export function SurfaceNodeDesigner({
                   setEditMode(editMode === 'hotspot-anchor' ? null : 'hotspot-anchor')
                   focusLayer(selectedLayer, 'hotspots')
                 }}>
-                  拖拽 Hotspot 位置
+                  拖拽二级热点位置
                 </ActionButton>
               </>
             )}
