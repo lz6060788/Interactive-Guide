@@ -458,6 +458,16 @@ export function WorkbenchPage() {
             style={{ border: '1px solid #2a2d3a' }}
             color="text-secondary"
             _hover={{ bg: 'surface-raised' }}
+            onClick={() => navigate(`/guides/${guideId}/panorama-editor`)}
+          >
+            全景编辑器
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            style={{ border: '1px solid #2a2d3a' }}
+            color="text-secondary"
+            _hover={{ bg: 'surface-raised' }}
             onClick={handleBuild}
             loading={building}
           >

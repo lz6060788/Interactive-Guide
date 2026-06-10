@@ -10,6 +10,7 @@
     "build:admin": "cd src/admin && vite build",
     "build:pipeline": "tsx src/server/build-pipeline.ts",
     "build:player-host": "cd src/runtime/player-core && npx vite build",
+    "build:panorama-player-host": "cd src/panorama-runtime/player-core && npx vite build",
     "build:player-core": "npm run build:player-host",
     "build:upload-bundle": "cd scripts && npx vite build",
     "typecheck": "tsc --noEmit",

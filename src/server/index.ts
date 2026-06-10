@@ -51,6 +51,7 @@ app.use('/api/media', express.static(path.resolve('data/publish')))
 app.use('/api/media/generates', express.static(path.resolve('data/generates')))
 app.use('/api/media/workspace', express.static(path.resolve('data/workspace')))
 app.use('/api/runtime-bundles', express.static(path.resolve('data/runtime-bundles')))
+app.use('/api/panorama-bundles', express.static(path.resolve('data/panorama-bundles')))
 
 // API routes
 app.use('/api', healthRouter)

@@ -123,6 +123,8 @@ export const fetchManifest = (guideId: string) => {
 }
 export const packageGuide = (guideId: string) =>
   request<any>(`/guides/${guideId}/package`, { method: 'POST' })
+export const packagePanoramaGuide = (guideId: string) =>
+  request<any>(`/guides/${guideId}/panorama-package`, { method: 'POST' })
 
 // Legacy aliases (for backward compatibility during migration)
 export const fetchPackages = fetchGuides

@@ -1,3 +1,5 @@
+import type { PanoramaEditorDocument } from './panorama-types.js'
+
 // ============================================================
 // Interactive Guide - Shared Type Definitions
 // ============================================================
@@ -293,6 +295,7 @@ export interface KnowledgePackage {
   style?: string
   runtimeConfig?: RuntimeConfig
   infoOverlay?: InfoOverlayConfig
+  panoramaEditorDocument?: PanoramaEditorDocument
   nodes: KnowledgeNode[]
   edges: KnowledgeEdge[]
   metadata?: PackageMetadata
