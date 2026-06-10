@@ -38,6 +38,16 @@ interface PanoramaListItemRefs {
   titleEl: HTMLDivElement
 }
 
+interface SceneGeometry {
+  viewportLeft: number
+  viewportTop: number
+  viewportSize: number
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 export class PanoramaPlayerHost {
   private product: PanoramaHtmlProduct | null = null
   private state: PanoramaRuntimeState | null = null
@@ -67,6 +77,8 @@ export class PanoramaPlayerHost {
   private focusAnimationFrame: number | null = null
   private displayedFocusRect: ProjectedFocusRect | null = null
   private lastSceneSignature: string | null = null
+  private backgroundImageUrl: string | null = null
+  private backgroundImageAspectRatio = 1
   private activeItemId: string | null = null
   private scrollSyncLocked = false
   private scrollSyncTimer: number | null = null
@@ -167,6 +179,11 @@ export class PanoramaPlayerHost {
 
     this.resizeObserver = typeof ResizeObserver !== 'undefined'
       ? new ResizeObserver(() => {
+          if (this.product && this.state) {
+            this.lastSceneSignature = null
+            this.render()
+            return
+          }
           this.syncBlurMaskSize()
           this.syncOverlayCanvasSize()
           if (this.displayedFocusRect) {
@@ -250,6 +267,8 @@ export class PanoramaPlayerHost {
       this.listEl.replaceChildren()
       this.displayedFocusRect = null
       this.lastSceneSignature = null
+      this.backgroundImageUrl = null
+      this.backgroundImageAspectRatio = 1
       this.blurViewportEl.style.display = 'none'
       this.sceneLayerEl.style.backgroundImage = 'none'
       this.blurSceneLayerEl.style.backgroundImage = 'none'
@@ -315,61 +334,107 @@ export class PanoramaPlayerHost {
     zoom: number,
     backgroundImageUrl: string,
   ): void {
-    const offsetX = 0.5 - this.state!.activeViewport.centerX * zoom
-    const offsetY = 0.5 - this.state!.activeViewport.centerY * zoom
-    const sceneLeft = offsetX * 100
-    const sceneTop = offsetY * 100
-    const sceneSize = zoom * 100
+    this.ensureBackgroundImageAspectRatio(backgroundImageUrl)
+    const sceneGeometry = this.computeSceneGeometry(zoom)
     const sceneSignature = [
       backgroundImageUrl,
-      sceneLeft.toFixed(5),
-      sceneTop.toFixed(5),
-      sceneSize.toFixed(5),
+      this.backgroundImageAspectRatio.toFixed(6),
+      sceneGeometry.left.toFixed(2),
+      sceneGeometry.top.toFixed(2),
+      sceneGeometry.width.toFixed(2),
+      sceneGeometry.height.toFixed(2),
       group.id,
     ].join('|')
 
     if (sceneSignature !== this.lastSceneSignature) {
-      this.sceneLayerEl.style.left = `${sceneLeft}%`
-      this.sceneLayerEl.style.top = `${sceneTop}%`
-      this.sceneLayerEl.style.width = `${sceneSize}%`
-      this.sceneLayerEl.style.height = `${sceneSize}%`
+      this.sceneLayerEl.style.left = `${sceneGeometry.left}px`
+      this.sceneLayerEl.style.top = `${sceneGeometry.top}px`
+      this.sceneLayerEl.style.width = `${sceneGeometry.width}px`
+      this.sceneLayerEl.style.height = `${sceneGeometry.height}px`
       this.sceneLayerEl.style.backgroundImage = backgroundImageUrl ? `url("${backgroundImageUrl}")` : 'none'
 
-      this.blurSceneLayerEl.style.left = `${sceneLeft}%`
-      this.blurSceneLayerEl.style.top = `${sceneTop}%`
-      this.blurSceneLayerEl.style.width = `${sceneSize}%`
-      this.blurSceneLayerEl.style.height = `${sceneSize}%`
+      this.blurSceneLayerEl.style.left = `${sceneGeometry.left}px`
+      this.blurSceneLayerEl.style.top = `${sceneGeometry.top}px`
+      this.blurSceneLayerEl.style.width = `${sceneGeometry.width}px`
+      this.blurSceneLayerEl.style.height = `${sceneGeometry.height}px`
       this.blurSceneLayerEl.style.backgroundImage = backgroundImageUrl ? `url("${backgroundImageUrl}")` : 'none'
 
-      this.markerLayerEl.style.left = `${sceneLeft}%`
-      this.markerLayerEl.style.top = `${sceneTop}%`
-      this.markerLayerEl.style.width = `${sceneSize}%`
-      this.markerLayerEl.style.height = `${sceneSize}%`
+      this.markerLayerEl.style.left = `${sceneGeometry.left}px`
+      this.markerLayerEl.style.top = `${sceneGeometry.top}px`
+      this.markerLayerEl.style.width = `${sceneGeometry.width}px`
+      this.markerLayerEl.style.height = `${sceneGeometry.height}px`
       this.lastSceneSignature = sceneSignature
     }
 
     this.blurViewportEl.style.display = backgroundImageUrl ? 'block' : 'none'
 
-    const projectedFocusRect = this.projectFocusRect(item, zoom)
+    const projectedFocusRect = this.projectFocusRect(item, sceneGeometry)
     this.animateFocusRect(projectedFocusRect)
 
     this.renderMarkers(group, item)
   }
 
-  private projectFocusRect(item: PanoramaItem, zoom: number): ProjectedFocusRect {
-    const viewportWidth = Math.max(this.viewportEl.clientWidth, 1)
-    const viewportHeight = Math.max(this.viewportEl.clientHeight, 1)
-    const offsetX = 0.5 - this.state!.activeViewport.centerX * zoom
-    const offsetY = 0.5 - this.state!.activeViewport.centerY * zoom
-
+  private projectFocusRect(item: PanoramaItem, sceneGeometry: SceneGeometry): ProjectedFocusRect {
     return {
-      x: (offsetX + item.focusRect.x * zoom) * viewportWidth,
-      y: (offsetY + item.focusRect.y * zoom) * viewportHeight,
-      width: item.focusRect.width * zoom * viewportWidth,
-      height: item.focusRect.height * zoom * viewportHeight,
+      x: sceneGeometry.left + item.focusRect.x * sceneGeometry.width,
+      y: sceneGeometry.top + item.focusRect.y * sceneGeometry.height,
+      width: item.focusRect.width * sceneGeometry.width,
+      height: item.focusRect.height * sceneGeometry.height,
       radius: item.focusRect.radius ?? 10,
       maskOpacity: clamp(item.focusRect.maskOpacity ?? 0.6, 0.3, 0.88),
     }
+  }
+
+  private computeSceneGeometry(zoom: number): SceneGeometry {
+    const viewportWidth = Math.max(this.viewportEl.clientWidth, 1)
+    const viewportHeight = Math.max(this.viewportEl.clientHeight, 1)
+    const imageAspectRatio = Math.max(this.backgroundImageAspectRatio, 0.01)
+    const viewportSize = Math.min(viewportWidth, viewportHeight)
+    const viewportLeft = (viewportWidth - viewportSize) / 2
+    const viewportTop = (viewportHeight - viewportSize) / 2
+
+    const baseHeight = viewportSize
+    const baseWidth = viewportSize * imageAspectRatio
+
+    const sceneWidth = baseWidth * zoom
+    const sceneHeight = baseHeight * zoom
+    const unclampedLeft = viewportLeft + viewportSize / 2 - this.state!.activeViewport.centerX * sceneWidth
+    const unclampedTop = viewportTop + viewportSize / 2 - this.state!.activeViewport.centerY * sceneHeight
+
+    return {
+      viewportLeft,
+      viewportTop,
+      viewportSize,
+      left: clampSceneOffset(unclampedLeft, viewportLeft, viewportSize, sceneWidth),
+      top: clampSceneOffset(unclampedTop, viewportTop, viewportSize, sceneHeight),
+      width: sceneWidth,
+      height: sceneHeight,
+    }
+  }
+
+  private ensureBackgroundImageAspectRatio(backgroundImageUrl: string): void {
+    if (!backgroundImageUrl) {
+      this.backgroundImageUrl = null
+      this.backgroundImageAspectRatio = 1
+      return
+    }
+
+    if (this.backgroundImageUrl === backgroundImageUrl) return
+
+    this.backgroundImageUrl = backgroundImageUrl
+    this.backgroundImageAspectRatio = 1
+
+    const image = new Image()
+    image.onload = () => {
+      if (this.backgroundImageUrl !== backgroundImageUrl) return
+      if (image.naturalWidth <= 0 || image.naturalHeight <= 0) return
+      this.backgroundImageAspectRatio = image.naturalWidth / image.naturalHeight
+      this.lastSceneSignature = null
+      if (this.product && this.state) {
+        this.render()
+      }
+    }
+    image.src = backgroundImageUrl
   }
 
   private animateFocusRect(nextRect: ProjectedFocusRect): void {
@@ -797,7 +862,6 @@ const hostStyles = `
   right: 16px;
   top: 14px;
   display: flex;
-  justify-content: center;
   align-items: center;
   gap: 8px;
   z-index: 4;
@@ -811,9 +875,10 @@ const hostStyles = `
   font: inherit;
 }
 .panorama-section-button {
-  min-width: 66px;
+  flex: 1 1 0;
+  min-width: 0;
   height: 30px;
-  padding: 5px 12px;
+  padding: 5px 8px;
   border-radius: 4px;
   background: rgba(245,245,245,0.12);
   color: rgba(255,255,255,0.84);
@@ -823,6 +888,7 @@ const hostStyles = `
   cursor: pointer;
   pointer-events: auto;
   text-align: center;
+  align-self: stretch;
 }
 .panorama-section-button.is-active {
   background: linear-gradient(0deg, rgba(146,146,146,0.1), rgba(146,146,146,0.1)), #ffffff;
@@ -1038,4 +1104,17 @@ function isProjectedFocusRectEqual(
 
 function lerp(fromValue: number, toValue: number, progress: number): number {
   return fromValue + (toValue - fromValue) * progress
+}
+
+function clampSceneOffset(
+  offset: number,
+  viewportStart: number,
+  viewportSize: number,
+  sceneSize: number,
+): number {
+  if (sceneSize <= viewportSize) {
+    return viewportStart + (viewportSize - sceneSize) / 2
+  }
+
+  return clamp(offset, viewportStart + viewportSize - sceneSize, viewportStart)
 }
