@@ -4,6 +4,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { execSync } from 'node:child_process'
 import type { PanoramaHtmlProduct } from '../../shared/panorama-types.js'
 import { isHtmlGroup, isPanoramaGroup } from '../../shared/panorama-types.js'
 import type { KnowledgePackage } from '../../shared/types.js'
@@ -236,6 +237,7 @@ export class PanoramaRuntimeBundleService {
   }
 
   private buildPlayerHostScript(): string {
+    this.ensurePanoramaPlayerHostBuild()
     const distPath = path.resolve(
       process.cwd(),
       'src/panorama-runtime/player-core/dist/panorama-player-host.js',
@@ -246,6 +248,32 @@ export class PanoramaRuntimeBundleService {
       )
     }
     return fs.readFileSync(distPath, 'utf-8')
+  }
+
+  private ensurePanoramaPlayerHostBuild(): void {
+    const buildCommand = process.platform === 'win32'
+      ? 'npm run build:panorama-player-host'
+      : 'npm run build:panorama-player-host'
+    try {
+      execSync(buildCommand, {
+        cwd: process.cwd(),
+        stdio: 'pipe',
+        encoding: 'utf-8',
+        shell: process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : '/bin/sh',
+      })
+    } catch (error) {
+      const stdout = error instanceof Error && 'stdout' in error
+        ? String((error as { stdout?: Buffer | string }).stdout ?? '')
+        : ''
+      const stderr = error instanceof Error && 'stderr' in error
+        ? String((error as { stderr?: Buffer | string }).stderr ?? '')
+        : ''
+      const message = [stderr.trim(), stdout.trim()]
+        .filter(Boolean)
+        .join('\n')
+        || 'Failed to build panorama-player-host runtime bundle'
+      throw AppError.validation(message)
+    }
   }
 
   private buildRuntimeScript(): string {
