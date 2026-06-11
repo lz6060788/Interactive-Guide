@@ -3,6 +3,9 @@
 // ============================================================
 
 import type {
+  PanoramaHtmlAssetRef,
+  PanoramaHtmlBridgeConfig,
+  PanoramaHtmlMessage,
   PanoramaConnectorTarget,
   PanoramaEditorDocument,
   PanoramaFocusRect,
@@ -14,6 +17,7 @@ import type {
   PanoramaSection,
   PanoramaViewport,
 } from './panorama-types.js'
+import { isHtmlGroup, isPanoramaGroup } from './panorama-types.js'
 
 export interface PanoramaValidationResult {
   valid: boolean
@@ -30,6 +34,39 @@ function validateNormalizedNumber(value: unknown, label: string, errors: string[
 function validateNonEmptyString(value: unknown, label: string, errors: string[]) {
   if (typeof value !== 'string' || value.trim() === '') {
     errors.push(`${label} must be a non-empty string`)
+  }
+}
+
+function validateHtmlAsset(asset: PanoramaHtmlAssetRef | undefined, label: string, errors: string[]) {
+  if (!asset) {
+    errors.push(`${label} is required`)
+    return
+  }
+  validateNonEmptyString(asset.assetId, `${label}.assetId`, errors)
+  validateNonEmptyString(asset.entryUrl, `${label}.entryUrl`, errors)
+}
+
+function validateHtmlMessage(message: PanoramaHtmlMessage | undefined, label: string, errors: string[]) {
+  if (!message) return
+  validateNonEmptyString(message.type, `${label}.type`, errors)
+  if (
+    message.payload != null
+    && (typeof message.payload !== 'object' || Array.isArray(message.payload))
+  ) {
+    errors.push(`${label}.payload must be an object when provided`)
+  }
+}
+
+function validateHtmlBridge(bridge: PanoramaHtmlBridgeConfig | undefined, label: string, errors: string[]) {
+  if (!bridge) return
+  if (bridge.targetOrigin != null && typeof bridge.targetOrigin !== 'string') {
+    errors.push(`${label}.targetOrigin must be a string when provided`)
+  }
+  if (bridge.namespace != null && typeof bridge.namespace !== 'string') {
+    errors.push(`${label}.namespace must be a string when provided`)
+  }
+  if (bridge.readyEventType != null && typeof bridge.readyEventType !== 'string') {
+    errors.push(`${label}.readyEventType must be a string when provided`)
   }
 }
 
@@ -148,6 +185,17 @@ function validatePanoramaGroup(group: PanoramaGroup | undefined, label: string, 
   if (typeof group.order !== 'number') {
     errors.push(`${label}.order must be a number`)
   }
+
+  if (isHtmlGroup(group)) {
+    validateHtmlAsset(group.htmlAsset, `${label}.htmlAsset`, errors)
+    validateHtmlBridge(group.htmlBridge, `${label}.htmlBridge`, errors)
+    validateHtmlMessage(group.activationMessage, `${label}.activationMessage`, errors)
+    return
+  }
+
+  if (group.renderMode != null && group.renderMode !== 'panorama') {
+    errors.push(`${label}.renderMode must be 'panorama' or 'html'`)
+  }
   if (!group.panoramaAsset || typeof group.panoramaAsset !== 'object') {
     errors.push(`${label}.panoramaAsset is required`)
   } else {
@@ -239,7 +287,8 @@ export function validatePanoramaEditorDocument(document: PanoramaEditorDocument)
   const groupIds = new Set(document.product.sections.flatMap(section => section.groups.map(group => group.id)))
   const itemIds = new Set(
     document.product.sections.flatMap(section =>
-      section.groups.flatMap(group => group.items.map(item => item.id))),
+      section.groups.flatMap(group =>
+        isPanoramaGroup(group) ? group.items.map(item => item.id) : [])),
   )
 
   if (document.draftState.selectedSectionId && !sectionIds.has(document.draftState.selectedSectionId)) {

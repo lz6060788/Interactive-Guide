@@ -11,6 +11,7 @@ import type {
   PanoramaSection,
   PanoramaViewport,
 } from '../../../shared/panorama-types'
+import { isPanoramaGroup } from '../../../shared/panorama-types'
 import {
   resolveFocusRectForItem,
   resolveInitialPanoramaRuntimeState,
@@ -25,6 +26,7 @@ import { PanoramaStructurePanel } from './PanoramaStructurePanel'
 
 interface PanoramaEditorPageProps {
   document: PanoramaEditorDocument
+  guideId?: string
   saving?: boolean
   packaging?: boolean
   lastSavedLabel?: string | null
@@ -35,6 +37,10 @@ interface PanoramaEditorPageProps {
   onSave?: (document: PanoramaEditorDocument) => void | Promise<void>
   onPreview?: (document: PanoramaEditorDocument) => void
   onPackage?: (document: PanoramaEditorDocument) => void | Promise<void>
+  onUploadHtmlBundle?: (
+    assetId: string,
+    file: File,
+  ) => Promise<{ entryUrl: string; assetBaseUrl: string }>
 }
 
 function createDraftId(prefix: string): string {
@@ -78,6 +84,28 @@ function createDefaultGroup(index: number): PanoramaGroup {
     },
     defaultItemId: firstItem.id,
     items: [firstItem],
+  }
+}
+
+function createDefaultHtmlGroup(index: number): PanoramaGroup {
+  return {
+    id: createDraftId('group'),
+    title: `二级标题 ${index}`,
+    order: index,
+    renderMode: 'html',
+    htmlAsset: {
+      assetId: createDraftId('html'),
+      entryUrl: '',
+    },
+    htmlBridge: {
+      targetOrigin: '*',
+      namespace: 'panorama-runtime',
+      readyEventType: 'html-ready',
+    },
+    activationMessage: {
+      type: 'switch-view',
+      payload: {},
+    },
   }
 }
 
@@ -129,6 +157,9 @@ function alignRuntimeState(
   if (!group) {
     return transitionToSection(previousState, section)
   }
+  if (!isPanoramaGroup(group)) {
+    return transitionToGroup(previousState, section, group)
+  }
   const item = group.items.find(entry => entry.id === previousState.activeItemId)
   if (!item) {
     return transitionToGroup(previousState, section, group)
@@ -146,6 +177,7 @@ function alignRuntimeState(
 
 export function PanoramaEditorPage({
   document,
+  guideId,
   saving = false,
   packaging = false,
   lastSavedLabel = null,
@@ -156,12 +188,16 @@ export function PanoramaEditorPage({
   onSave,
   onPreview,
   onPackage,
+  onUploadHtmlBundle,
 }: PanoramaEditorPageProps) {
   const [editorDocument, setEditorDocument] = useState<PanoramaEditorDocument>(() => structuredClone(document))
   const [runtimeState, setRuntimeState] = useState(() => resolveInitialPanoramaRuntimeState(document.product))
   const [viewportMode, setViewportMode] = useState<'group-default' | 'item-override'>(
     document.draftState.viewportMode ?? 'group-default',
   )
+  const [uploadingHtmlAssetId, setUploadingHtmlAssetId] = useState<string | null>(null)
+  const [htmlUploadFeedbackLabel, setHtmlUploadFeedbackLabel] = useState<string | null>(null)
+  const [htmlUploadFeedbackTone, setHtmlUploadFeedbackTone] = useState<'success' | 'error'>('success')
 
   const activeSection = useMemo((): PanoramaSection | null => {
     return editorDocument.product.sections.find(section => section.id === runtimeState.activeSectionId) ?? null
@@ -172,11 +208,12 @@ export function PanoramaEditorPage({
   }, [activeSection, runtimeState.activeGroupId])
 
   const activeItem = useMemo((): PanoramaItem | null => {
-    return activeGroup?.items.find(item => item.id === runtimeState.activeItemId) ?? null
+    if (!activeGroup || !isPanoramaGroup(activeGroup)) return null
+    return activeGroup.items.find(item => item.id === runtimeState.activeItemId) ?? null
   }, [activeGroup, runtimeState.activeItemId])
 
   const effectiveViewport = useMemo((): PanoramaViewport | null => {
-    if (!activeGroup || !activeItem) return null
+    if (!activeGroup || !activeItem || !isPanoramaGroup(activeGroup)) return null
     if (viewportMode === 'item-override') {
       return activeItem.viewportOverride ?? activeGroup.defaultViewport
     }
@@ -184,8 +221,9 @@ export function PanoramaEditorPage({
   }, [activeGroup, activeItem, viewportMode])
 
   const globalPanoramaImageUrl = useMemo(() => {
-    return editorDocument.product.globalPanoramaAsset?.imageUrl ?? activeGroup?.panoramaAsset.imageUrl ?? ''
-  }, [activeGroup?.panoramaAsset.imageUrl, editorDocument.product.globalPanoramaAsset?.imageUrl])
+    const groupImageUrl = activeGroup && isPanoramaGroup(activeGroup) ? activeGroup.panoramaAsset.imageUrl : ''
+    return editorDocument.product.globalPanoramaAsset?.imageUrl ?? groupImageUrl ?? ''
+  }, [activeGroup, editorDocument.product.globalPanoramaAsset?.imageUrl])
 
   const updateDocument = (
     updater: (current: PanoramaEditorDocument) => PanoramaEditorDocument,
@@ -216,8 +254,9 @@ export function PanoramaEditorPage({
   const handleSelectItem = (sectionId: string, groupId: string, itemId: string) => {
     const section = editorDocument.product.sections.find(item => item.id === sectionId)
     const group = section?.groups.find(entry => entry.id === groupId)
-    const item = group?.items.find(entry => entry.id === itemId)
-    if (!group || !item) return
+    if (!group || !isPanoramaGroup(group)) return
+    const item = group.items.find(entry => entry.id === itemId)
+    if (!item) return
     setViewportMode(item.viewportOverride ? 'item-override' : 'group-default')
     setRuntimeState(previous => transitionToItem(previous, group, item, 'scroll-sync'))
   }
@@ -240,7 +279,7 @@ export function PanoramaEditorPage({
   }
 
   const handleUpdateItem = (updater: (item: PanoramaItem) => PanoramaItem) => {
-    if (!activeSection || !activeGroup || !activeItem) return
+    if (!activeSection || !activeGroup || !activeItem || !isPanoramaGroup(activeGroup)) return
     updateDocument(current => ({
       ...current,
       product: {
@@ -294,18 +333,113 @@ export function PanoramaEditorPage({
           ...section,
           groups: section.groups.map(group => ({
             ...group,
-            panoramaAsset: {
-              ...group.panoramaAsset,
-              imageUrl,
-            },
+            ...(isPanoramaGroup(group)
+              ? {
+                  panoramaAsset: {
+                    ...group.panoramaAsset,
+                    imageUrl,
+                  },
+                }
+              : {}),
           })),
         })),
       },
     }))
   }
 
+  const handleChangeGroupRenderMode = (mode: 'panorama' | 'html') => {
+    if (!activeSection || !activeGroup) return
+    updateDocument(current => ({
+      ...current,
+      product: {
+        ...current.product,
+        sections: current.product.sections.map(section => {
+          if (section.id !== activeSection.id) return section
+          return {
+            ...section,
+            groups: section.groups.map(group => {
+              if (group.id !== activeGroup.id) return group
+              if (mode === 'html') {
+                return isPanoramaGroup(group)
+                  ? {
+                      id: group.id,
+                      title: group.title,
+                      order: group.order,
+                      renderMode: 'html',
+                      htmlAsset: {
+                        assetId: createDraftId('html'),
+                        entryUrl: '',
+                      },
+                      htmlBridge: {
+                        targetOrigin: '*',
+                        namespace: 'panorama-runtime',
+                        readyEventType: 'html-ready',
+                      },
+                      activationMessage: {
+                        type: 'switch-view',
+                        payload: {
+                          groupId: group.id,
+                          title: group.title,
+                        },
+                      },
+                    }
+                  : group
+              }
+
+              if (isPanoramaGroup(group)) return group
+              const firstItem = createDefaultItem(1)
+              return {
+                id: group.id,
+                title: group.title,
+                order: group.order,
+                renderMode: 'panorama',
+                panoramaAsset: {
+                  assetId: createDraftId('asset'),
+                  imageUrl: current.product.globalPanoramaAsset?.imageUrl ?? '',
+                },
+                defaultViewport: {
+                  centerX: 0.5,
+                  centerY: 0.5,
+                  zoom: 3.6,
+                },
+                defaultItemId: firstItem.id,
+                items: [firstItem],
+              }
+            }),
+          }
+        }),
+      },
+    }))
+  }
+
+  const handleUploadHtmlBundle = async (file: File) => {
+    if (!guideId || !activeGroup || isPanoramaGroup(activeGroup) || !onUploadHtmlBundle) return
+    setUploadingHtmlAssetId(activeGroup.htmlAsset.assetId)
+    try {
+      const result = await onUploadHtmlBundle(activeGroup.htmlAsset.assetId, file)
+      handleUpdateGroup(group => (
+        isPanoramaGroup(group)
+          ? group
+          : {
+              ...group,
+              htmlAsset: {
+                ...group.htmlAsset,
+                entryUrl: result.entryUrl,
+              },
+            }
+      ))
+      setHtmlUploadFeedbackTone('success')
+      setHtmlUploadFeedbackLabel(`HTML 资源上传成功: ${file.name}`)
+    } catch (error) {
+      setHtmlUploadFeedbackTone('error')
+      setHtmlUploadFeedbackLabel(error instanceof Error ? error.message : 'HTML 压缩包上传失败')
+    } finally {
+      setUploadingHtmlAssetId(null)
+    }
+  }
+
   const handleUpdateViewportMode = (mode: 'group-default' | 'item-override') => {
-    if (!activeGroup || !activeItem) return
+    if (!activeGroup || !activeItem || !isPanoramaGroup(activeGroup)) return
     if (mode === 'item-override' && !activeItem.viewportOverride) {
       handleUpdateItem(item => ({
         ...item,
@@ -316,6 +450,7 @@ export function PanoramaEditorPage({
   }
 
   const handleClearViewportOverride = () => {
+    if (!activeGroup || !isPanoramaGroup(activeGroup)) return
     handleUpdateItem(item => ({
       ...item,
       viewportOverride: undefined,
@@ -324,6 +459,7 @@ export function PanoramaEditorPage({
   }
 
   const handleUpdateViewport = (viewport: PanoramaViewport) => {
+    if (!activeGroup || !isPanoramaGroup(activeGroup)) return
     if (viewportMode === 'item-override') {
       handleUpdateItem(item => ({
         ...item,
@@ -383,7 +519,9 @@ export function PanoramaEditorPage({
     updateDocument(current => {
       const nextSections = current.product.sections.map(section => {
         if (section.id !== sectionId) return section
-        const nextGroup = createDefaultGroup(section.groups.length + 1)
+        const nextGroup = section.label === '上游'
+          ? createDefaultHtmlGroup(section.groups.length + 1)
+          : createDefaultGroup(section.groups.length + 1)
         return {
           ...section,
           defaultGroupId: section.defaultGroupId ?? nextGroup.id,
@@ -449,6 +587,9 @@ export function PanoramaEditorPage({
   }
 
   const handleAddItem = (sectionId: string, groupId: string) => {
+    const targetSection = editorDocument.product.sections.find(section => section.id === sectionId)
+    const targetGroup = targetSection?.groups.find(group => group.id === groupId)
+    if (!targetGroup || !isPanoramaGroup(targetGroup)) return
     updateDocument(current => ({
       ...current,
       product: {
@@ -483,7 +624,7 @@ export function PanoramaEditorPage({
   const handleDeleteItem = (sectionId: string, groupId: string, itemId: string) => {
     const section = editorDocument.product.sections.find(item => item.id === sectionId)
     const group = section?.groups.find(item => item.id === groupId)
-    if (!group || group.items.length <= 1) return
+    if (!group || !isPanoramaGroup(group) || group.items.length <= 1) return
     if (!window.confirm('确认删除该三级项吗？')) return
     updateDocument(current => ({
       ...current,
@@ -511,6 +652,9 @@ export function PanoramaEditorPage({
   }
 
   const handleMoveItem = (sectionId: string, groupId: string, itemId: string, direction: -1 | 1) => {
+    const section = editorDocument.product.sections.find(entry => entry.id === sectionId)
+    const group = section?.groups.find(entry => entry.id === groupId)
+    if (!group || !isPanoramaGroup(group)) return
     updateDocument(current => ({
       ...current,
       product: {
@@ -581,7 +725,13 @@ export function PanoramaEditorPage({
                 {editorDocument.product.sections.reduce((count, section) => count + section.groups.length, 0)} 个二级
               </Badge>
               <Badge bg="surface-raised" color="text-secondary">
-                {editorDocument.product.sections.reduce((count, section) => count + section.groups.reduce((inner, group) => inner + group.items.length, 0), 0)} 个三级
+                {editorDocument.product.sections.reduce(
+                  (count, section) => count + section.groups.reduce(
+                    (inner, group) => inner + (isPanoramaGroup(group) ? group.items.length : 0),
+                    0,
+                  ),
+                  0,
+                )} 个三级
               </Badge>
               {lastSavedLabel ? (
                 <Badge bg="surface-raised" color="text-secondary">
@@ -614,6 +764,14 @@ export function PanoramaEditorPage({
                   }
                 >
                   {packageFeedbackLabel}
+                </Badge>
+              ) : null}
+              {htmlUploadFeedbackLabel ? (
+                <Badge
+                  bg={htmlUploadFeedbackTone === 'error' ? 'error-subtle' : 'success-subtle'}
+                  color={htmlUploadFeedbackTone === 'error' ? 'error' : 'success'}
+                >
+                  {htmlUploadFeedbackLabel}
                 </Badge>
               ) : null}
             </HStack>
@@ -692,12 +850,12 @@ export function PanoramaEditorPage({
           onSelectItem={handleSelectItem}
         />
         <PanoramaCanvas
-          backgroundImageUrl={globalPanoramaImageUrl}
+          backgroundImageUrl={activeGroup && isPanoramaGroup(activeGroup) ? globalPanoramaImageUrl : ''}
           group={activeGroup}
           item={activeItem}
           viewport={effectiveViewport}
           marker={activeItem?.marker ?? null}
-          focusRect={runtimeState.activeFocusRect}
+          focusRect={runtimeState.activeFocusRect ?? null}
           onMarkerChange={handleUpdateMarker}
           onFocusRectChange={handleUpdateFocusRect}
           onViewportChange={handleUpdateViewport}
@@ -708,12 +866,66 @@ export function PanoramaEditorPage({
           item={activeItem}
           globalPanoramaImageUrl={globalPanoramaImageUrl}
           viewport={effectiveViewport}
-          focusRect={runtimeState.activeFocusRect}
+          focusRect={runtimeState.activeFocusRect ?? null}
           viewportMode={viewportMode}
+          onGroupRenderModeChange={handleChangeGroupRenderMode}
           onViewportModeChange={handleUpdateViewportMode}
           onClearViewportOverride={handleClearViewportOverride}
           onGroupTitleChange={title => handleUpdateGroup(group => ({ ...group, title }))}
           onGlobalPanoramaImageUrlChange={handleGlobalPanoramaAssetUrlChange}
+          onGroupHtmlEntryUrlChange={entryUrl => handleUpdateGroup(group => (
+            isPanoramaGroup(group)
+              ? group
+              : {
+                  ...group,
+                  htmlAsset: {
+                    ...group.htmlAsset,
+                    assetId: group.htmlAsset.assetId || createDraftId('html'),
+                    entryUrl,
+                  },
+                }
+          ))}
+          onGroupHtmlMessageTypeChange={messageType => handleUpdateGroup(group => (
+            isPanoramaGroup(group)
+              ? group
+              : {
+                  ...group,
+                  activationMessage: {
+                    ...group.activationMessage,
+                    type: messageType,
+                    payload: group.activationMessage?.payload ?? { groupId: group.id, title: group.title },
+                  },
+                }
+          ))}
+          onGroupHtmlTargetOriginChange={targetOrigin => handleUpdateGroup(group => (
+            isPanoramaGroup(group)
+              ? group
+              : {
+                  ...group,
+                  htmlBridge: {
+                    ...group.htmlBridge,
+                    targetOrigin,
+                  },
+                }
+          ))}
+          onGroupHtmlPayloadChange={payload => handleUpdateGroup(group => (
+            isPanoramaGroup(group)
+              ? group
+              : {
+                  ...group,
+                  activationMessage: {
+                    ...group.activationMessage,
+                    type: group.activationMessage?.type ?? 'switch-view',
+                    payload,
+                  },
+                }
+          ))}
+          onGroupHtmlBundleUpload={handleUploadHtmlBundle}
+          htmlBundleUploading={
+            !!activeGroup
+            && !isPanoramaGroup(activeGroup)
+            && uploadingHtmlAssetId === activeGroup.htmlAsset.assetId
+          }
           onItemTitleChange={title => handleUpdateItem(item => ({ ...item, title }))}
           onItemDescriptionChange={description => handleUpdateItem(item => ({ ...item, description }))}
           onViewportChange={handleUpdateViewport}

@@ -117,6 +117,13 @@ export function PanoramaEditorWorkbenchPage() {
     }
   }, [guideId, pkg])
 
+  const handleUploadHtmlBundle = useCallback(async (assetId: string, file: File) => {
+    if (!guideId) {
+      throw new Error('缺少 guideId，无法上传 HTML 压缩包')
+    }
+    return api.uploadPanoramaHtmlBundle(guideId, assetId, file)
+  }, [guideId])
+
   if (loading) {
     return (
       <Flex h="100vh" align="center" justify="center" bg="base">
@@ -208,6 +215,7 @@ export function PanoramaEditorWorkbenchPage() {
       <Box flex="1" overflow="auto" p="5" pt="4" bg="base">
         <PanoramaEditorPage
           document={document}
+          guideId={guideId}
           saving={saving}
           packaging={packaging}
           lastSavedLabel={lastSavedLabel}
@@ -218,6 +226,7 @@ export function PanoramaEditorWorkbenchPage() {
           onSave={handleSave}
           onPreview={handleOpenPreview}
           onPackage={handlePackage}
+          onUploadHtmlBundle={handleUploadHtmlBundle}
         />
       </Box>
       {previewDocument ? (

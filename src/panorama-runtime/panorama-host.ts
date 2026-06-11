@@ -6,9 +6,11 @@ import type {
   PanoramaGroup,
   PanoramaHtmlProduct,
   PanoramaItem,
+  PanoramaPanoramaGroup,
   PanoramaRuntimeState,
   PanoramaSection,
 } from '../shared/panorama-types.js'
+import { isPanoramaGroup } from '../shared/panorama-types.js'
 import {
   resolveInitialPanoramaRuntimeState,
   transitionToGroup,
@@ -53,7 +55,8 @@ export class PanoramaHost {
 
   selectItem(group: PanoramaGroup, item: PanoramaItem, mode: PanoramaRuntimeState['interactionMode'] = 'scroll-sync'): void {
     if (!this.state) return
-    this.state = transitionToItem(this.state, group, item, mode)
+    if (!isPanoramaGroup(group)) return
+    this.state = transitionToItem(this.state, group as PanoramaPanoramaGroup, item, mode)
     this.emitState()
   }
 
@@ -65,7 +68,7 @@ export class PanoramaHost {
     this.refs.container.dataset.panoramaProductType = this.product.productType
     this.refs.container.dataset.panoramaActiveSectionId = this.state.activeSectionId
     this.refs.container.dataset.panoramaActiveGroupId = this.state.activeGroupId
-    this.refs.container.dataset.panoramaActiveItemId = this.state.activeItemId
+    this.refs.container.dataset.panoramaActiveItemId = this.state.activeItemId ?? ''
   }
 
   private emitState(): void {

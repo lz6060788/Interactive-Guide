@@ -1,5 +1,6 @@
 import type {
   KnowledgePackage,
+  KnowledgeNode,
   SurfaceCard,
   SurfaceFocusLayer,
 } from '../../../shared/types'
@@ -12,6 +13,7 @@ import type {
   PanoramaSection,
   PanoramaViewport,
 } from '../../../shared/panorama-types'
+import { isPanoramaGroup } from '../../../shared/panorama-types'
 import { validatePanoramaEditorDocument } from '../../../shared/panorama-validators'
 
 interface SurfaceHierarchyCatalogItem {
@@ -129,6 +131,45 @@ function buildGroupFromCatalog(
   }
 }
 
+function buildHtmlGroupFromCatalog(
+  secondary: SurfaceHierarchyCatalogSection['secondaryCategories'][number],
+  index: number,
+  htmlNode?: KnowledgeNode,
+  guideId?: string,
+): PanoramaGroup {
+  const resolvedEntryUrl = htmlNode?.htmlUrl
+    || (htmlNode?.htmlSource ? `/api/media/workspace/${guideId}/nodes/${htmlNode.id}.html` : '')
+
+  return {
+    id: `html-group-${index + 1}-${secondary.title}`,
+    title: secondary.title,
+    order: index + 1,
+    renderMode: 'html',
+    htmlAsset: {
+      assetId: htmlNode?.id ?? `html-asset-${index + 1}`,
+      entryUrl: resolvedEntryUrl,
+    },
+    htmlBridge: {
+      targetOrigin: '*',
+      readyEventType: 'html-ready',
+      namespace: 'panorama-runtime',
+    },
+    activationMessage: {
+      type: 'switch-view',
+      payload: {
+        view: secondary.title,
+        nodeId: htmlNode?.id,
+      },
+    },
+  }
+}
+
+function resolveInitialDraftItemId(section: PanoramaSection | undefined): string | undefined {
+  const group = section?.groups[0]
+  if (!group || !isPanoramaGroup(group)) return undefined
+  return group.items[0]?.id
+}
+
 export function buildPanoramaEditorDocumentFromGuide(pkg: KnowledgePackage): PanoramaEditorDocument {
   if (pkg.panoramaEditorDocument) {
     const validation = validatePanoramaEditorDocument(pkg.panoramaEditorDocument)
@@ -145,6 +186,7 @@ export function buildPanoramaEditorDocumentFromGuide(pkg: KnowledgePackage): Pan
   const catalog = (rootSurfaceNode.extensions?.surfaceHierarchyCatalog ?? []) as SurfaceHierarchyCatalogSection[]
   const layers = rootSurfaceNode.surfaceLayers ?? []
   const imageUrl = rootSurfaceNode.surfaceConfig?.sourceImageUrl || rootSurfaceNode.imageUrl || ''
+  const htmlNodes = pkg.nodes.filter(node => node.nodeKind === 'html' || node.contentType === 'html')
 
   const layersByTitle = new Map<string, SurfaceFocusLayer>()
   const groupedLayers = new Map<string, SurfaceFocusLayer[]>()
@@ -159,15 +201,22 @@ export function buildPanoramaEditorDocumentFromGuide(pkg: KnowledgePackage): Pan
   }
 
   const sections: PanoramaSection[] = catalog
-    .filter(section => section.primaryCategory !== '上游')
     .map((section, sectionIndex) => {
-      const groups = section.secondaryCategories.map((secondary, groupIndex) =>
-        buildGroupFromCatalog(
-          layersByTitle.get(secondary.title),
-          secondary,
-          imageUrl,
-          groupIndex,
-        ))
+      const groups = section.secondaryCategories.map((secondary, groupIndex) => (
+        section.primaryCategory === '上游'
+          ? buildHtmlGroupFromCatalog(
+              secondary,
+              groupIndex,
+              htmlNodes.find(node => node.title === secondary.title),
+              pkg.id,
+            )
+          : buildGroupFromCatalog(
+              layersByTitle.get(secondary.title),
+              secondary,
+              imageUrl,
+              groupIndex,
+            )
+      ))
 
       return {
         id: `section-${sectionIndex + 1}`,
@@ -181,7 +230,6 @@ export function buildPanoramaEditorDocumentFromGuide(pkg: KnowledgePackage): Pan
 
   if (sections.length === 0) {
     const fallbackSections = [...groupedLayers.entries()]
-      .filter(([primaryCategory]) => primaryCategory !== '上游')
       .map(([primaryCategory, primaryLayers], sectionIndex) => {
         const groups = primaryLayers
           .map(layer => createFallbackGroup(layer, imageUrl))
@@ -224,7 +272,7 @@ export function buildPanoramaEditorDocumentFromGuide(pkg: KnowledgePackage): Pan
       draftState: {
         selectedSectionId: fallbackSections[0]?.id,
         selectedGroupId: fallbackSections[0]?.groups[0]?.id,
-        selectedItemId: fallbackSections[0]?.groups[0]?.items[0]?.id,
+        selectedItemId: resolveInitialDraftItemId(fallbackSections[0]),
         viewportMode: 'group-default',
         overlayMode: 'focusRect',
       },
@@ -253,7 +301,7 @@ export function buildPanoramaEditorDocumentFromGuide(pkg: KnowledgePackage): Pan
     draftState: {
       selectedSectionId: sections[0]?.id,
       selectedGroupId: sections[0]?.groups[0]?.id,
-      selectedItemId: sections[0]?.groups[0]?.items[0]?.id,
+      selectedItemId: resolveInitialDraftItemId(sections[0]),
       viewportMode: 'group-default',
       overlayMode: 'focusRect',
     },
