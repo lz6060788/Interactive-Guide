@@ -1,6 +1,7 @@
-import { Box, Button, Flex, Heading, HStack, Stack, Text } from '@chakra-ui/react'
+import { Badge, Box, Button, Flex, Heading, HStack, Stack, Text } from '@chakra-ui/react'
 import { ChevronDown, ChevronUp, FolderTree, Plus, Trash2 } from 'lucide-react'
 import type { PanoramaGroup, PanoramaItem, PanoramaSection } from '../../../shared/panorama-types'
+import { isPanoramaGroup } from '../../../shared/panorama-types'
 
 interface PanoramaStructurePanelProps {
   sections: PanoramaSection[]
@@ -185,17 +186,20 @@ export function PanoramaStructurePanel({
                       <Button {...actionButtonProps} onClick={() => onMoveGroup(section.id, group.id, 1)} isDisabled={groupIndex === section.groups.length - 1}>
                         <ChevronDown size={14} />
                       </Button>
-                      <Button {...actionButtonProps} onClick={() => onAddItem(section.id, group.id)}>
-                        <Plus size={14} />
-                      </Button>
+                      {isPanoramaGroup(group) ? (
+                        <Button {...actionButtonProps} onClick={() => onAddItem(section.id, group.id)}>
+                          <Plus size={14} />
+                        </Button>
+                      ) : null}
                       <Button {...actionButtonProps} color="error" _hover={{ bg: 'error-subtle', color: 'error' }} onClick={() => onDeleteGroup(section.id, group.id)} isDisabled={section.groups.length <= 1}>
                         <Trash2 size={14} />
                       </Button>
                       </HStack>
                     </Flex>
                   </Stack>
-                  <Stack mt="2" gap="1">
-                    {group.items.map((item, itemIndex) => (
+                  {isPanoramaGroup(group) ? (
+                    <Stack mt="2" gap="1">
+                      {group.items.map((item, itemIndex) => (
                       <Flex
                         key={item.id}
                         gap="2"
@@ -240,8 +244,14 @@ export function PanoramaStructurePanel({
                           </Button>
                         </HStack>
                       </Flex>
-                    ))}
-                  </Stack>
+                      ))}
+                    </Stack>
+                  ) : (
+                    <Flex mt="2" pl="7" align="center" gap="2">
+                      <Badge bg="info-subtle" color="info">HTML</Badge>
+                      <Text fontSize="xs" color="text-tertiary">该二级项为 HTML 视图，无三级结构</Text>
+                    </Flex>
+                  )}
                 </Box>
               ))}
             </Stack>

@@ -5,6 +5,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { PanoramaHtmlProduct } from '../../shared/panorama-types.js'
+import { isHtmlGroup, isPanoramaGroup } from '../../shared/panorama-types.js'
 import type { KnowledgePackage } from '../../shared/types.js'
 import type { Repository } from '../storage/repository.js'
 import { nowISO } from '../../shared/utils.js'
@@ -32,11 +33,13 @@ export class PanoramaRuntimeBundleService {
     const bundleId = `${guide.id}-panorama-${Date.now()}`
     const bundleDir = `panorama-bundles/${bundleId}`
     const panoramaAssetsDir = `${bundleDir}/assets/panoramas`
+    const htmlAssetsDir = `${bundleDir}/assets/html`
     const generatedAt = nowISO()
 
     this.repo.ensureDir(panoramaAssetsDir)
+    this.repo.ensureDir(htmlAssetsDir)
 
-    const bundledProduct = this.buildBundledProduct(guide, buildResult.product, panoramaAssetsDir)
+    const bundledProduct = this.buildBundledProduct(guide, buildResult.product, panoramaAssetsDir, htmlAssetsDir)
     bundledProduct.metadata = {
       ...bundledProduct.metadata,
       generatedAt,
@@ -67,6 +70,7 @@ export class PanoramaRuntimeBundleService {
     guide: KnowledgePackage,
     product: PanoramaHtmlProduct,
     panoramaAssetsDir: string,
+    htmlAssetsDir: string,
   ): PanoramaHtmlProduct {
     const nextProduct = structuredClone(product)
     const copiedAssetUrlBySource = new Map<string, string>()
@@ -97,13 +101,47 @@ export class PanoramaRuntimeBundleService {
       return bundledUrl
     }
 
+    const rewriteHtmlEntryUrl = (entryUrl: string | undefined, assetId: string): string | undefined => {
+      if (!entryUrl) return entryUrl
+      const cached = copiedAssetUrlBySource.get(`${assetId}:${entryUrl}`)
+      if (cached) return cached
+
+      const sourcePath = this.resolvePanoramaAssetPath(guide, entryUrl)
+      if (!sourcePath) {
+        copiedAssetUrlBySource.set(`${assetId}:${entryUrl}`, entryUrl)
+        return entryUrl
+      }
+
+      const fileName = this.extractFileName(entryUrl)
+      if (!fileName) {
+        copiedAssetUrlBySource.set(`${assetId}:${entryUrl}`, entryUrl)
+        return entryUrl
+      }
+
+      const targetDirName = this.sanitizeAssetSegment(assetId || path.basename(path.dirname(sourcePath)) || 'html-entry')
+      const sourceDir = path.dirname(sourcePath)
+      const destDir = `${htmlAssetsDir}/${targetDirName}`
+      if (!this.repo.fileExists(destDir)) {
+        this.repo.copyDir(sourceDir, destDir)
+      }
+      const bundledUrl = `./assets/html/${targetDirName}/${fileName}`
+      copiedAssetUrlBySource.set(`${assetId}:${entryUrl}`, bundledUrl)
+      return bundledUrl
+    }
+
     if (nextProduct.globalPanoramaAsset) {
       nextProduct.globalPanoramaAsset.imageUrl = rewriteImageUrl(nextProduct.globalPanoramaAsset.imageUrl) ?? nextProduct.globalPanoramaAsset.imageUrl
     }
 
     nextProduct.sections.forEach(section => {
       section.groups.forEach(group => {
-        group.panoramaAsset.imageUrl = rewriteImageUrl(group.panoramaAsset.imageUrl) ?? group.panoramaAsset.imageUrl
+        if (isPanoramaGroup(group)) {
+          group.panoramaAsset.imageUrl = rewriteImageUrl(group.panoramaAsset.imageUrl) ?? group.panoramaAsset.imageUrl
+          return
+        }
+        if (isHtmlGroup(group)) {
+          group.htmlAsset.entryUrl = rewriteHtmlEntryUrl(group.htmlAsset.entryUrl, group.htmlAsset.assetId) ?? group.htmlAsset.entryUrl
+        }
       })
     })
 
@@ -111,20 +149,44 @@ export class PanoramaRuntimeBundleService {
   }
 
   private resolvePanoramaAssetPath(guide: KnowledgePackage, imageUrl: string): string | null {
-    const fileName = this.extractFileName(imageUrl)
-    if (!fileName) return null
-
-    const workspaceCandidate = `workspace/${guide.id}/nodes/${fileName}`
-    if (this.repo.fileExists(workspaceCandidate)) {
-      return workspaceCandidate
+    for (const candidate of this.buildAssetCandidates(guide, imageUrl)) {
+      if (this.repo.fileExists(candidate)) {
+        return candidate
+      }
     }
-
-    const publishCandidate = `publish/${guide.id}/${guide.version}/assets/nodes/${fileName}`
-    if (this.repo.fileExists(publishCandidate)) {
-      return publishCandidate
-    }
-
     return null
+  }
+
+  private buildAssetCandidates(guide: KnowledgePackage, assetUrl: string): string[] {
+    const sanitized = assetUrl.split('?')[0]?.split('#')[0]?.replace(/\\/g, '/') ?? ''
+    if (!sanitized || /^https?:\/\//i.test(sanitized) || /^data:/i.test(sanitized)) {
+      return []
+    }
+
+    const trimmed = sanitized.replace(/^\.\//, '').replace(/^\/+/, '')
+    const workspaceMediaPrefix = `api/media/workspace/${guide.id}/`
+    const publishMediaPrefix = `api/media/publish/${guide.id}/${guide.version}/`
+    if (trimmed.startsWith(workspaceMediaPrefix)) {
+      return [`workspace/${guide.id}/${trimmed.slice(workspaceMediaPrefix.length)}`]
+    }
+    if (trimmed.startsWith(publishMediaPrefix)) {
+      return [`publish/${guide.id}/${guide.version}/${trimmed.slice(publishMediaPrefix.length)}`]
+    }
+
+    const normalized = trimmed
+    const afterNodes = normalized.includes('nodes/') ? normalized.split('nodes/').pop() ?? normalized : normalized
+    const afterAssetsNodes = normalized.includes('assets/nodes/')
+      ? normalized.split('assets/nodes/').pop() ?? afterNodes
+      : afterNodes
+
+    return [
+      `workspace/${guide.id}/${normalized}`,
+      `workspace/${guide.id}/nodes/${normalized}`,
+      `workspace/${guide.id}/nodes/${afterAssetsNodes}`,
+      `publish/${guide.id}/${guide.version}/${normalized}`,
+      `publish/${guide.id}/${guide.version}/assets/${normalized}`,
+      `publish/${guide.id}/${guide.version}/assets/nodes/${afterAssetsNodes}`,
+    ]
   }
 
   private extractFileName(url: string | undefined): string | null {
@@ -132,6 +194,11 @@ export class PanoramaRuntimeBundleService {
     const sanitized = url.split('?')[0]?.split('#')[0] ?? ''
     const fileName = sanitized.split('/').filter(Boolean).pop() ?? ''
     return fileName || null
+  }
+
+  private sanitizeAssetSegment(value: string): string {
+    const normalized = value.trim().replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/-+/g, '-')
+    return normalized || 'asset'
   }
 
   private buildIndexHtml(title: string): string {

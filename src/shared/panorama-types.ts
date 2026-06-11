@@ -8,6 +8,7 @@ export type PanoramaSchemaVersion = '1.0.0'
 export type PanoramaConnectorMode = 'divider-left'
 export type PanoramaMarkerStyle = 'default' | 'highlight'
 export type PanoramaDetailExpandMode = 'active-only'
+export type PanoramaGroupRenderMode = 'panorama' | 'html'
 export type PanoramaInteractionMode =
   | 'idle'
   | 'scroll-sync'
@@ -36,6 +37,22 @@ export interface PanoramaAssetRef {
   imageUrl: string
   width?: number
   height?: number
+}
+
+export interface PanoramaHtmlAssetRef {
+  assetId: string
+  entryUrl: string
+}
+
+export interface PanoramaHtmlMessage {
+  type: string
+  payload?: Record<string, unknown>
+}
+
+export interface PanoramaHtmlBridgeConfig {
+  targetOrigin?: string
+  namespace?: string
+  readyEventType?: string
 }
 
 export interface PanoramaMarker {
@@ -82,15 +99,29 @@ export interface PanoramaItem {
   detailBehavior?: PanoramaDetailBehavior
 }
 
-export interface PanoramaGroup {
+interface PanoramaGroupBase {
   id: string
   title: string
   order: number
+  renderMode?: PanoramaGroupRenderMode
+}
+
+export interface PanoramaPanoramaGroup extends PanoramaGroupBase {
+  renderMode?: 'panorama'
   panoramaAsset: PanoramaAssetRef
   defaultViewport: PanoramaViewport
   defaultItemId?: string
   items: PanoramaItem[]
 }
+
+export interface PanoramaHtmlGroup extends PanoramaGroupBase {
+  renderMode: 'html'
+  htmlAsset: PanoramaHtmlAssetRef
+  htmlBridge?: PanoramaHtmlBridgeConfig
+  activationMessage?: PanoramaHtmlMessage
+}
+
+export type PanoramaGroup = PanoramaPanoramaGroup | PanoramaHtmlGroup
 
 export interface PanoramaSection {
   id: string
@@ -129,10 +160,20 @@ export interface PanoramaEditorDocument {
 export interface PanoramaRuntimeState {
   activeSectionId: string
   activeGroupId: string
-  activeItemId: string
-  activeViewport: PanoramaViewport
-  activeFocusRect: PanoramaFocusRect
-  activeMarkerId: string
+  activeGroupRenderMode: PanoramaGroupRenderMode
+  activeItemId?: string
+  activeViewport?: PanoramaViewport
+  activeFocusRect?: PanoramaFocusRect
+  activeMarkerId?: string
+  activeHtmlMessage?: PanoramaHtmlMessage
   scrollingItemId?: string
   interactionMode: PanoramaInteractionMode
+}
+
+export function isHtmlGroup(group: PanoramaGroup): group is PanoramaHtmlGroup {
+  return group.renderMode === 'html'
+}
+
+export function isPanoramaGroup(group: PanoramaGroup): group is PanoramaPanoramaGroup {
+  return group.renderMode !== 'html'
 }

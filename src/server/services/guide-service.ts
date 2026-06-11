@@ -5,6 +5,7 @@
 // Depends on Repository interface — does NOT import FsRepository.
 // Throws AppError for controlled HTTP error responses.
 
+import AdmZip from 'adm-zip'
 import type { Repository } from '../storage/repository.js'
 import type {
   KnowledgePackage,
@@ -570,6 +571,58 @@ export class GuideService {
     return { htmlUrl: `/api/media/workspace/${guideId}/nodes/${nodeId}.html` }
   }
 
+  uploadPanoramaHtmlBundle(
+    guideId: string,
+    assetId: string,
+    buffer: Buffer,
+  ): { entryUrl: string; assetBaseUrl: string } {
+    this.repo.refresh()
+    const guide = this.repo.loadAllGuides().get(guideId)
+    if (!guide) throw AppError.notFound(`Guide "${guideId}" not found`)
+    if (!assetId.trim()) {
+      throw AppError.validation('assetId is required')
+    }
+
+    let zip: AdmZip
+    try {
+      zip = new AdmZip(buffer)
+    } catch {
+      throw AppError.validation('上传文件不是合法的 ZIP 压缩包')
+    }
+
+    const assetDir = `workspace/${guideId}/panorama-html-assets/${assetId}`
+    this.repo.deleteDir(assetDir)
+    this.repo.ensureDir(assetDir)
+
+    let htmlEntries: string[] = []
+    for (const entry of zip.getEntries()) {
+      if (entry.isDirectory) continue
+      const normalizedPath = this.normalizeZipEntryPath(entry.entryName)
+      if (!normalizedPath || normalizedPath.startsWith('__MACOSX/')) continue
+      this.repo.writeFile(`${assetDir}/${normalizedPath}`, entry.getData())
+      if (normalizedPath.toLowerCase().endsWith('.html')) {
+        htmlEntries.push(normalizedPath)
+      }
+    }
+
+    if (htmlEntries.length === 0) {
+      throw AppError.validation('ZIP 压缩包中未找到 HTML 入口文件')
+    }
+
+    htmlEntries = htmlEntries.sort((left, right) => {
+      const leftRank = this.rankHtmlEntry(left)
+      const rightRank = this.rankHtmlEntry(right)
+      return leftRank - rightRank || left.localeCompare(right)
+    })
+
+    const entryPath = htmlEntries[0]
+    const assetBaseUrl = `/api/media/workspace/${guideId}/panorama-html-assets/${assetId}`
+    return {
+      entryUrl: `${assetBaseUrl}/${entryPath}`,
+      assetBaseUrl,
+    }
+  }
+
   uploadEdgeVideo(guideId: string, edgeId: string, buffer: Buffer): { videoUrl: string } {
     this.repo.refresh()
     const guide = this.repo.loadAllGuides().get(guideId)
@@ -604,6 +657,24 @@ export class GuideService {
     if (!manifest) return
     patcher(manifest)
     this.repo.writeJson(`workspace/${guideId}/manifest.json`, manifest)
+  }
+
+  private normalizeZipEntryPath(entryName: string): string | null {
+    const normalized = entryName.replace(/\\/g, '/').replace(/^\/+/, '')
+    if (!normalized) return null
+    const segments = normalized.split('/').filter(Boolean)
+    if (segments.length === 0) return null
+    if (segments.some(segment => segment === '.' || segment === '..')) {
+      throw AppError.validation(`ZIP contains invalid entry path "${entryName}"`)
+    }
+    return segments.join('/')
+  }
+
+  private rankHtmlEntry(entryPath: string): number {
+    const lower = entryPath.toLowerCase()
+    if (lower === 'index.html') return 0
+    if (lower.endsWith('/index.html')) return 1
+    return 2
   }
 
 }

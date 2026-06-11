@@ -170,6 +170,23 @@ export function createGuidesRouter(guideService: GuideService): Router {
   )
 
   router.post(
+    '/guides/:guideId/panorama-html-assets/:assetId/upload-bundle',
+    express.raw({ type: '*/*', limit: '200mb' }),
+    (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const result = guideService.uploadPanoramaHtmlBundle(
+          String(req.params.guideId),
+          String(req.params.assetId),
+          req.body as Buffer,
+        )
+        res.json({ data: result })
+      } catch (err) {
+        next(err)
+      }
+    },
+  )
+
+  router.post(
     '/guides/:guideId/edges/:edgeId/upload-video',
     express.raw({ type: '*/*', limit: '50mb' }),
     (req: Request, res: Response, next: NextFunction) => {

@@ -98,6 +98,27 @@ export const uploadNodeHtml = async (guideId: string, nodeId: string, file: File
   return json.data !== undefined ? json.data : json
 }
 
+export const uploadPanoramaHtmlBundle = async (
+  guideId: string,
+  assetId: string,
+  file: File,
+): Promise<{ entryUrl: string; assetBaseUrl: string }> => {
+  const res = await fetch(`${BASE_URL}/guides/${guideId}/panorama-html-assets/${assetId}/upload-bundle`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'application/zip',
+      'X-File-Name': encodeURIComponent(file.name),
+    },
+    body: await file.arrayBuffer(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  const json = await res.json()
+  return json.data !== undefined ? json.data : json
+}
+
 export const uploadEdgeVideo = async (guideId: string, edgeId: string, file: File): Promise<{ videoUrl: string }> => {
   const res = await fetch(`${BASE_URL}/guides/${guideId}/edges/${edgeId}/upload-video`, {
     method: 'POST',
