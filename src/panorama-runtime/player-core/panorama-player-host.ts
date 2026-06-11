@@ -98,6 +98,7 @@ export class PanoramaPlayerHost {
   private scrollSyncTimer: number | null = null
   private scrollSettleTimer: number | null = null
   private listDragState: PanoramaListDragState | null = null
+  private listPressTarget: EventTarget | null = null
 
   constructor(
     private readonly refs: PanoramaPlayerHostRefs,
@@ -181,6 +182,7 @@ export class PanoramaPlayerHost {
     this.listEl = document.createElement('div')
     this.listEl.className = 'panorama-list'
     this.listEl.addEventListener('scroll', this.handleListScroll, { passive: true })
+    this.listEl.addEventListener('click', this.handleListClick)
     this.listEl.addEventListener('pointerdown', this.handleListPointerDown)
     this.listEl.addEventListener('pointermove', this.handleListPointerMove)
     this.listEl.addEventListener('pointerup', this.handleListPointerUp)
@@ -299,6 +301,7 @@ export class PanoramaPlayerHost {
     }
     this.resizeObserver?.disconnect()
     this.listEl.removeEventListener('scroll', this.handleListScroll)
+    this.listEl.removeEventListener('click', this.handleListClick)
     this.listEl.removeEventListener('pointerdown', this.handleListPointerDown)
     this.listEl.removeEventListener('pointermove', this.handleListPointerMove)
     this.listEl.removeEventListener('pointerup', this.handleListPointerUp)
@@ -358,6 +361,8 @@ export class PanoramaPlayerHost {
     this.sceneLayerEl.style.display = 'none'
     this.blurViewportEl.style.display = 'none'
     this.markerLayerEl.replaceChildren()
+    this.markerLayerEl.style.display = 'none'
+    this.markerLayerEl.style.pointerEvents = 'none'
     this.listEl.replaceChildren()
     this.listEl.style.display = 'none'
     this.hintFadeEl.style.display = 'none'
@@ -427,6 +432,8 @@ export class PanoramaPlayerHost {
   ): void {
     this.sceneLayerEl.style.display = 'block'
     this.htmlLayerEl.style.display = 'none'
+    this.markerLayerEl.style.display = 'block'
+    this.markerLayerEl.style.pointerEvents = 'auto'
     this.listEl.style.display = 'block'
     this.hintFadeEl.style.display = 'block'
     this.hintTextEl.style.display = 'block'
@@ -781,13 +788,7 @@ export class PanoramaPlayerHost {
     const itemCards = group.items.map(entry => {
       const cardEl = document.createElement('div')
       cardEl.className = `panorama-list-item ${entry.id === activeItem.id ? 'is-active' : ''}`
-      cardEl.addEventListener('click', () => {
-        if (this.ignoreListClick) {
-          this.ignoreListClick = false
-          return
-        }
-        this.selectItem(group, entry)
-      })
+      cardEl.dataset.itemId = entry.id
 
       const dividerEl = document.createElement('div')
       dividerEl.className = 'panorama-list-divider'
@@ -862,6 +863,7 @@ export class PanoramaPlayerHost {
   private readonly handleListPointerDown = (event: PointerEvent) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
     this.clearScrollSettleTimer()
+    this.listPressTarget = event.target
     this.listDragState = {
       pointerId: event.pointerId,
       startY: event.clientY,
@@ -899,11 +901,47 @@ export class PanoramaPlayerHost {
       } else {
         this.setPreviewItem(null)
       }
+      window.setTimeout(() => {
+        this.ignoreListClick = false
+        this.listPressTarget = null
+      }, 0)
     } else {
       this.setPreviewItem(null)
+      this.ignoreListClick = false
     }
 
     this.listDragState = null
+  }
+
+  private readonly handleListClick = (event: MouseEvent) => {
+    if (this.ignoreListClick) {
+      this.ignoreListClick = false
+      this.listPressTarget = null
+      return
+    }
+    if (!this.product || !this.state) {
+      this.listPressTarget = null
+      return
+    }
+    const fallbackTarget = event.target
+    const target = this.listPressTarget instanceof Element
+      ? this.listPressTarget
+      : fallbackTarget instanceof Element
+        ? fallbackTarget
+        : fallbackTarget instanceof Node
+          ? fallbackTarget.parentElement
+          : null
+    this.listPressTarget = null
+    if (!(target instanceof Element)) return
+    const cardEl = target.closest<HTMLDivElement>('.panorama-list-item')
+    const itemId = cardEl?.dataset.itemId
+    if (!itemId) return
+    const model = buildPanoramaRenderModel(this.product, this.state)
+    if (!model.item || !isPanoramaGroup(model.group)) return
+    const nextItem = model.group.items.find(entry => entry.id === itemId)
+    if (!nextItem) return
+    this.selectItem(model.group, nextItem)
+    this.centerItemInList(nextItem.id, 'smooth')
   }
 
   private clearScrollSettleTimer(): void {
@@ -1315,6 +1353,11 @@ const hostStyles = `
 .panorama-marker-dot {
   width: 9px;
   height: 9px;
+  min-width: 9px;
+  min-height: 9px;
+  flex: 0 0 auto;
+  aspect-ratio: 1 / 1;
+  display: block;
   border-radius: 999px;
   background: #ffffff;
   transition:
