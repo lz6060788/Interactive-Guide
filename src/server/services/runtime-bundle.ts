@@ -109,29 +109,51 @@ export class RuntimeBundleGenerator {
     workspaceFallback: boolean,
     bundleNodesDir: string,
   ): void {
-    const needsThreeRuntime = manifest.nodes.some(node => {
+    const htmlAssetsUsingThree = manifest.nodes.flatMap(node => {
       const htmlAssetPath = this.resolveNodeHtmlAssetPath(guide, node, workspaceFallback)
-      if (!htmlAssetPath) return false
+      if (!htmlAssetPath) return []
       const htmlBuffer = this.repo.readFile(htmlAssetPath)
-      if (!htmlBuffer) return false
+      if (!htmlBuffer) return []
       const html = htmlBuffer.toString('utf-8')
-      return html.includes('"three": "./lib/three.module.js"')
+      const usesThreeRuntime = html.includes('"three": "./lib/three.module.js"')
         || html.includes(`'three': "./lib/three.module.js"`)
         || html.includes('"three/addons/": "./lib/"')
         || html.includes(`'three/addons/': "./lib/"`)
+      return usesThreeRuntime ? [{ htmlAssetPath, html }] : []
     })
-    if (!needsThreeRuntime) return
+    if (htmlAssetsUsingThree.length === 0) return
 
     const projectRoot = process.cwd()
     const threeRoot = path.join(projectRoot, 'node_modules', 'three')
-    const threeBuildPath = path.join(threeRoot, 'build')
-    const threeExamplesPath = path.join(threeRoot, 'examples', 'jsm')
-    if (!fs.existsSync(threeBuildPath) || !fs.existsSync(threeExamplesPath)) {
+    const copiedSourceFiles = new Set<string>()
+    const threeModuleEntryPath = path.join(threeRoot, 'build', 'three.module.js')
+    if (!fs.existsSync(threeModuleEntryPath)) {
       throw AppError.validation('Missing runtime dependency "three" for HTML node bundle generation')
     }
 
-    this.copyAbsoluteDirIntoDataPath(threeBuildPath, `${bundleNodesDir}/lib`)
-    this.copyAbsoluteDirIntoDataPath(threeExamplesPath, `${bundleNodesDir}/lib`)
+    this.copyThreeRuntimeModuleGraph(
+      threeModuleEntryPath,
+      'three.module.js',
+      bundleNodesDir,
+      copiedSourceFiles,
+    )
+
+    for (const { htmlAssetPath, html } of htmlAssetsUsingThree) {
+      for (const modulePath of this.extractThreeAddonModulePathsFromHtml(html)) {
+        const sourceModulePath = path.join(threeRoot, 'examples', 'jsm', ...modulePath.split('/'))
+        if (!fs.existsSync(sourceModulePath)) {
+          throw AppError.validation(
+            `Missing three addon runtime dependency "${modulePath}" referenced by ${path.basename(htmlAssetPath)}`,
+          )
+        }
+        this.copyThreeRuntimeModuleGraph(
+          sourceModulePath,
+          modulePath,
+          bundleNodesDir,
+          copiedSourceFiles,
+        )
+      }
+    }
   }
 
   private copyHtmlReferencedAssetDirectories(
@@ -161,18 +183,90 @@ export class RuntimeBundleGenerator {
     }
   }
 
-  private copyAbsoluteDirIntoDataPath(srcDir: string, destDir: string): void {
-    if (!fs.existsSync(srcDir)) return
-    this.repo.ensureDir(destDir)
-    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
-      const srcPath = path.join(srcDir, entry.name)
-      const destPath = `${destDir}/${entry.name}`
-      if (entry.isDirectory()) {
-        this.copyAbsoluteDirIntoDataPath(srcPath, destPath)
-      } else {
-        this.repo.writeFile(destPath, fs.readFileSync(srcPath))
+  private copyThreeRuntimeModuleGraph(
+    sourceFilePath: string,
+    bundleLibRelativePath: string,
+    bundleNodesDir: string,
+    copiedSourceFiles: Set<string>,
+  ): void {
+    const normalizedSourcePath = path.resolve(sourceFilePath)
+    if (copiedSourceFiles.has(normalizedSourcePath)) return
+    if (!fs.existsSync(normalizedSourcePath)) {
+      throw AppError.validation(`Missing runtime dependency file "${normalizedSourcePath}"`)
+    }
+
+    copiedSourceFiles.add(normalizedSourcePath)
+    const normalizedBundlePath = path.posix.normalize(bundleLibRelativePath.replace(/\\/g, '/'))
+    const destPath = `${bundleNodesDir}/lib/${normalizedBundlePath}`
+    const destDir = path.posix.dirname(destPath)
+    if (destDir && destDir !== '.') {
+      this.repo.ensureDir(destDir)
+    }
+
+    const sourceBuffer = fs.readFileSync(normalizedSourcePath)
+    this.repo.writeFile(destPath, sourceBuffer)
+
+    const source = sourceBuffer.toString('utf-8')
+    const sourceDir = path.dirname(normalizedSourcePath)
+    const bundleDir = path.posix.dirname(normalizedBundlePath)
+    for (const specifier of this.extractJavascriptModuleSpecifiers(source)) {
+      if (!specifier.startsWith('.')) continue
+      const dependencySourcePath = this.resolveJavascriptModulePath(sourceDir, specifier)
+      if (!dependencySourcePath) {
+        throw AppError.validation(
+          `Unable to resolve runtime dependency "${specifier}" from ${path.basename(normalizedSourcePath)}`,
+        )
+      }
+      const dependencyBundlePath = path.posix.normalize(path.posix.join(bundleDir, specifier))
+      this.copyThreeRuntimeModuleGraph(
+        dependencySourcePath,
+        dependencyBundlePath,
+        bundleNodesDir,
+        copiedSourceFiles,
+      )
+    }
+  }
+
+  private extractThreeAddonModulePathsFromHtml(html: string): string[] {
+    const modulePaths = new Set<string>()
+    const pattern = /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]three\/addons\/([^'"]+)['"]/g
+    for (const match of html.matchAll(pattern)) {
+      const modulePath = match[1]?.trim()
+      if (modulePath) {
+        modulePaths.add(modulePath.replace(/\\/g, '/'))
       }
     }
+    return [...modulePaths]
+  }
+
+  private extractJavascriptModuleSpecifiers(source: string): string[] {
+    const specifiers = new Set<string>()
+    const staticPattern = /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g
+    const dynamicPattern = /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g
+    for (const match of source.matchAll(staticPattern)) {
+      const specifier = match[1]?.trim()
+      if (specifier) specifiers.add(specifier)
+    }
+    for (const match of source.matchAll(dynamicPattern)) {
+      const specifier = match[1]?.trim()
+      if (specifier) specifiers.add(specifier)
+    }
+    return [...specifiers]
+  }
+
+  private resolveJavascriptModulePath(sourceDir: string, specifier: string): string | null {
+    const candidateBasePath = path.resolve(sourceDir, specifier)
+    const candidates = [
+      candidateBasePath,
+      `${candidateBasePath}.js`,
+      path.join(candidateBasePath, 'index.js'),
+    ]
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+        return candidate
+      }
+    }
+    return null
   }
 
   private buildRuntimeBundleManifest(
