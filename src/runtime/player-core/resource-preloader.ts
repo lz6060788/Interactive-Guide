@@ -30,9 +30,6 @@ export class RuntimeResourcePreloader {
 
     const promise = new Promise<void>((resolve) => {
       const img = new Image()
-      // #region debug-point C:preload-image-start
-      fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'C', location: 'resource-preloader.ts:26', msg: '[DEBUG] preloadImage start', data: { url, completeAtStart: img.complete }, ts: Date.now() }) }).catch(() => {})
-      // #endregion
 
       const cleanup = () => {
         img.onload = null
@@ -54,9 +51,6 @@ export class RuntimeResourcePreloader {
         })
         const entry = this.imageEntries.get(url)
         if (entry) entry.status = 'fulfilled'
-        // #region debug-point C:preload-image-success
-        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'C', location: 'resource-preloader.ts:39', msg: '[DEBUG] preloadImage success', data: { url, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight }, ts: Date.now() }) }).catch(() => {})
-        // #endregion
         resolve()
       }
 
@@ -64,9 +58,6 @@ export class RuntimeResourcePreloader {
         cleanup()
         const entry = this.imageEntries.get(url)
         if (entry) entry.status = 'rejected'
-        // #region debug-point E:preload-image-error
-        fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'E', location: 'resource-preloader.ts:57', msg: '[DEBUG] preloadImage error', data: { url, currentSrc: img.currentSrc || img.src }, ts: Date.now() }) }).catch(() => {})
-        // #endregion
         resolve()
       }
 
@@ -169,9 +160,6 @@ export class RuntimeResourcePreloader {
       ...this.createNodePreloadJobs(manifest, node, { includeHtml: options.includeHtml }),
       ...(options.includeOutgoingVideo === false ? [] : this.createOutgoingEdgePreloadJobs(manifest, node.id)),
     ]
-    // #region debug-point B:preload-node-jobs
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'B', location: 'resource-preloader.ts:151', msg: '[DEBUG] preloadNodeResourcesWithOptions prepared jobs', data: { nodeId, nodeKind: node.nodeKind ?? node.contentType ?? 'image', jobCount: jobs.length, includeHtml: options.includeHtml ?? null, includeOutgoingVideo: options.includeOutgoingVideo ?? null, imageUrl: node.surfaceConfig?.sourceImageUrl ?? node.imageUrl ?? null, htmlUrl: node.htmlUrl ?? null }, ts: Date.now() }) }).catch(() => {})
-    // #endregion
     return Promise.allSettled(jobs.map(job => job())).then(() => undefined)
   }
 

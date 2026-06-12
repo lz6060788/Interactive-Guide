@@ -97,6 +97,28 @@ type TouchPinchState = {
   baseHeight: number
 }
 
+type SheetCardDragState = {
+  pointerId: number
+  startX: number
+  startScrollLeft: number
+  moved: boolean
+}
+
+type RuntimeRouteSelection = {
+  focusName: string
+}
+
+type RuntimeRouteTarget =
+  | {
+      kind: 'surface'
+      nodeId: string
+      cardId: string
+    }
+  | {
+      kind: 'html'
+      nodeId: string
+    }
+
 const HOTSPOT_SIZE = 28
 const BACK_ICON_SVG = `
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -145,6 +167,9 @@ const SURFACE_MARKER_SELECTED_SVG = `
 </svg>
 `
 export class PlayerHost {
+  private static readonly SURFACE_CARD_SCROLL_SETTLE_MS = 140
+  private static readonly SURFACE_CARD_SCROLL_LOCK_MS = 420
+  private static readonly FLOATING_BACK_BUTTON_OFFSET_PX = 24
   private engine: PlayerCore
   private htmlNodeBridge: HtmlNodeBridge
   private dragState: DragState = {
@@ -161,6 +186,7 @@ export class PlayerHost {
   private imageOffset = { x: 0, y: 0 }
   private destroyers: Array<() => void> = []
   private chromeRoot = document.createElement('div')
+  private headerBackdropEl = document.createElement('div')
   private backControlEl = document.createElement('div')
   private backButtonEl = document.createElement('button')
   private headerCenterEl = document.createElement('div')
@@ -180,6 +206,7 @@ export class PlayerHost {
   private infoSheetTitleEl = document.createElement('div')
   private infoSheetCloseButtonEl = document.createElement('button')
   private infoSheetContentEl = document.createElement('div')
+  private dragHintBackdropEl = document.createElement('div')
   private dragHintEl = document.createElement('div')
   private activeContentType: 'image' | 'html' = 'image'
   private activeSurfaceLayout: SurfaceCameraLayout | null = null
@@ -196,8 +223,15 @@ export class PlayerHost {
   private htmlIframePreloadedScopes = new Set<string>()
   private htmlIframeWarmupQueue: Promise<void> = Promise.resolve()
   private activeHtmlIframeUrl = ''
+  private activeHtmlRouteSelection: RuntimeRouteSelection | null = null
+  private pendingRouteSelection: RuntimeRouteSelection | null = null
   private viewportPointerDownTarget: EventTarget | null = null
   private hotspotViewportFrameId: number | null = null
+  private surfaceCardScrollSettleTimer: number | null = null
+  private surfaceCardScrollSyncTimer: number | null = null
+  private surfaceCardScrollSyncLocked = false
+  private bottomSheetCardsDragState: SheetCardDragState | null = null
+  private ignoreBottomSheetCardClick = false
   private pinchState: TouchPinchState = {
     active: false,
     startDistance: 0,
@@ -234,10 +268,21 @@ export class PlayerHost {
 
   loadManifest(manifest: PublishManifest): void {
     this.engine.loadManifest(manifest)
+    this.activeHtmlRouteSelection = null
     this.htmlIframePreloading = false
     this.htmlIframePreloadedScopes.clear()
     this.htmlIframeWarmupQueue = Promise.resolve()
     this.updateLayout()
+    this.render()
+  }
+
+  applyRouteSelection(search: string | URLSearchParams): void {
+    const params = typeof search === 'string'
+      ? new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
+      : search
+    this.pendingRouteSelection = parseRuntimeRouteSelection(params)
+    this.activeHtmlRouteSelection = null
+    if (!this.pendingRouteSelection) return
     this.render()
   }
 
@@ -325,6 +370,8 @@ export class PlayerHost {
       cancelAnimationFrame(this.surfaceAnimationFrameId)
       this.surfaceAnimationFrameId = null
     }
+    this.clearSurfaceCardScrollSettleTimer()
+    this.clearSurfaceCardScrollSyncTimer()
     this.destroyers.forEach(dispose => dispose())
     this.destroyers = []
     this.htmlNodeBridge.destroy()
@@ -382,9 +429,6 @@ export class PlayerHost {
   }
 
   private handleNodeImageLoad = (): void => {
-    // #region debug-point F:node-image-load
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'F', location: 'player-host.ts:384', msg: '[DEBUG] node image load event fired', data: { currentSrc: this.refs.nodeImage.currentSrc || this.refs.nodeImage.src, complete: this.refs.nodeImage.complete, naturalWidth: this.refs.nodeImage.naturalWidth, naturalHeight: this.refs.nodeImage.naturalHeight }, ts: Date.now() }) }).catch(() => {})
-    // #endregion
     this.updateHotspotViewport()
     requestAnimationFrame(() => {
       this.confirmHostVisualCommitIfReady('node-image:onLoad:next-frame')
@@ -777,6 +821,11 @@ export class PlayerHost {
       event.stopPropagation()
       this.closeSurfaceSheet()
     })
+    this.bottomSheetCardsEl.addEventListener('scroll', this.handleBottomSheetCardsScroll, { passive: true })
+    this.bottomSheetCardsEl.addEventListener('pointerdown', this.handleBottomSheetCardsPointerDown)
+    this.bottomSheetCardsEl.addEventListener('pointermove', this.handleBottomSheetCardsPointerMove)
+    this.bottomSheetCardsEl.addEventListener('pointerup', this.handleBottomSheetCardsPointerUp)
+    this.bottomSheetCardsEl.addEventListener('pointercancel', this.handleBottomSheetCardsPointerCancel)
     this.infoSheetCloseButtonEl.type = 'button'
     this.infoSheetCloseButtonEl.setAttribute('aria-label', '关闭说明弹窗')
     this.infoSheetCloseButtonEl.textContent = '×'
@@ -803,6 +852,7 @@ export class PlayerHost {
     this.infoSheetHeaderEl.appendChild(this.infoSheetCloseButtonEl)
     this.infoSheetEl.appendChild(this.infoSheetHeaderEl)
     this.infoSheetEl.appendChild(this.infoSheetContentEl)
+    this.chromeRoot.appendChild(this.headerBackdropEl)
     this.chromeRoot.appendChild(this.backControlEl)
     this.chromeRoot.appendChild(this.headerCenterEl)
     this.chromeRoot.appendChild(this.shareButtonEl)
@@ -810,6 +860,7 @@ export class PlayerHost {
     this.chromeRoot.appendChild(this.bottomSheetEl)
     this.chromeRoot.appendChild(this.infoSheetBackdropEl)
     this.chromeRoot.appendChild(this.infoSheetEl)
+    this.chromeRoot.appendChild(this.dragHintBackdropEl)
     this.chromeRoot.appendChild(this.dragHintEl)
   }
 
@@ -849,10 +900,25 @@ export class PlayerHost {
       fontFamily: '"Noto Sans SC", "Noto Sans S Chinese", "PingFang SC", "Microsoft YaHei", sans-serif',
     })
 
+    Object.assign(this.headerBackdropEl.style, {
+      position: 'absolute',
+      left: '0',
+      right: '0',
+      top: '0',
+      height: '56px',
+      display: 'none',
+      background: 'rgba(255, 255, 255, 0.96)',
+      borderBottom: '1px solid rgba(15, 23, 42, 0.08)',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+      zIndex: '0',
+    })
+
     Object.assign(this.backControlEl.style, {
       position: 'absolute',
       left: '16px',
-      top: '14px',
+      top: '6px',
       display: 'none',
       alignItems: 'center',
       justifyContent: 'center',
@@ -1045,6 +1111,7 @@ export class PlayerHost {
       scrollSnapType: 'x proximity',
       paddingBottom: '4px',
       scrollbarWidth: 'none',
+      pointerEvents: 'auto',
     })
     Object.assign(this.infoSheetBackdropEl.style, {
       position: 'absolute',
@@ -1123,17 +1190,31 @@ export class PlayerHost {
       paddingRight: '2px',
     })
 
+    Object.assign(this.dragHintBackdropEl.style, {
+      position: 'absolute',
+      left: '0',
+      right: '0',
+      bottom: '0',
+      height: '86px',
+      display: 'none',
+      background: 'linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.6) 100%)',
+      pointerEvents: 'none',
+      opacity: '0',
+      transition: 'opacity 220ms ease',
+      zIndex: '0',
+    })
+
     Object.assign(this.dragHintEl.style, {
       position: 'absolute',
       left: '50%',
-      bottom: '28px',
+      bottom: '24px',
       transform: 'translateX(-50%)',
       display: 'none',
       fontFamily: '"MiSans", "PingFang SC", "Microsoft YaHei", sans-serif',
       fontStyle: 'normal',
-      fontWeight: '400',
-      fontSize: '11px',
-      lineHeight: '15px',
+      fontWeight: '500',
+      fontSize: '13px',
+      lineHeight: '18px',
       textAlign: 'center',
       color: '#FFFFFF',
       whiteSpace: 'nowrap',
@@ -1143,10 +1224,36 @@ export class PlayerHost {
       zIndex: '1',
     })
     this.dragHintEl.innerHTML = [
-      '<span style="color:rgba(255,255,255,0.45)">&lt;</span>',
-      '<span style="color:#FFFFFF">&lt;&lt;&nbsp;&nbsp;左右滑动查看完整场景&nbsp;&nbsp;&gt;&gt;</span>',
-      '<span style="color:rgba(255,255,255,0.45)">&gt;</span>',
+      '<span data-drag-hint-arrow="left-1" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.28)">&lt;</span>',
+      '<span data-drag-hint-arrow="left-2" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.48)">&lt;</span>',
+      '<span data-drag-hint-arrow="left-3" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.78)">&lt;</span>',
+      '<span style="display:inline-block;padding:0 8px;color:#FFFFFF;letter-spacing:0.2px;">左右滑动查看完整场景</span>',
+      '<span data-drag-hint-arrow="right-1" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.78)">&gt;</span>',
+      '<span data-drag-hint-arrow="right-2" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.48)">&gt;</span>',
+      '<span data-drag-hint-arrow="right-3" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.28)">&gt;</span>',
     ].join('')
+    ensureChromeAnimationStyle()
+    const arrowDelayMap: Record<string, string> = {
+      'left-3': '0ms',
+      'right-1': '0ms',
+      'left-2': '180ms',
+      'right-2': '180ms',
+      'left-1': '360ms',
+      'right-3': '360ms',
+    }
+    const arrowShiftMap: Record<string, string> = {
+      'left-1': '-3px',
+      'left-2': '-2px',
+      'left-3': '-1px',
+      'right-1': '1px',
+      'right-2': '2px',
+      'right-3': '3px',
+    }
+    Array.from(this.dragHintEl.querySelectorAll<HTMLElement>('[data-drag-hint-arrow]')).forEach(arrowEl => {
+      const arrowKey = arrowEl.dataset.dragHintArrow ?? ''
+      arrowEl.style.setProperty('--drag-hint-shift', arrowShiftMap[arrowKey] ?? '0px')
+      arrowEl.style.animation = `drag-hint-arrow-glow 1.8s ease-in-out ${arrowDelayMap[arrowKey] ?? '0ms'} infinite`
+    })
 
     container.style.position = 'relative'
     container.style.width = '100%'
@@ -1309,10 +1416,6 @@ export class PlayerHost {
       this.renderImageNode(currentNode, transitioning)
     }
 
-    // #region debug-point F:render-state
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'F', location: 'player-host.ts:1282', msg: '[DEBUG] host render state snapshot', data: { nodeId: currentNode.id, nodeKind, transitioning, enginePreloading: this.engine.isPreloading(), hostLoading: this.isLoading(), waitingForActiveImage: this.getNodeKind(currentNode) !== 'html' && !this.isActiveNodeImageReady(currentNode), expectedSrc: this.getNodeKind(currentNode) === 'html' ? null : this.toAbsoluteUrl(this.getNodeImageSource(currentNode) ?? ''), actualSrc: this.refs.nodeImage.currentSrc || this.refs.nodeImage.src, imageComplete: this.refs.nodeImage.complete, naturalWidth: this.refs.nodeImage.naturalWidth }, ts: Date.now() }) }).catch(() => {})
-    // #endregion
-
     requestAnimationFrame(() => {
       this.confirmHostVisualCommitIfReady('render:next-frame')
     })
@@ -1332,10 +1435,13 @@ export class PlayerHost {
     const chromeVisible = !!currentNode && !state.transitioning && !state.preloading
     const canShare = chromeVisible && this.canUseNativeShare()
     const canShowInfo = chromeVisible && !!this.getInfoOverlayConfig(state.manifest)
+    const showHtmlHeaderBackdrop = chromeVisible && nodeKind === 'html'
 
     this.backControlEl.style.display = hasBack ? 'flex' : 'none'
     this.backControlEl.style.opacity = hasBack && chromeVisible ? '1' : '0'
     this.backControlEl.style.pointerEvents = hasBack && chromeVisible ? 'auto' : 'none'
+    this.headerBackdropEl.style.display = showHtmlHeaderBackdrop ? 'block' : 'none'
+    this.headerBackdropEl.style.opacity = showHtmlHeaderBackdrop ? '1' : '0'
     this.headerCenterEl.style.display = chromeVisible ? 'flex' : 'none'
     this.headerCenterEl.style.opacity = chromeVisible ? '1' : '0'
     this.infoButtonEl.style.display = canShowInfo ? 'flex' : 'none'
@@ -1345,8 +1451,11 @@ export class PlayerHost {
     this.shareButtonEl.style.pointerEvents = canShare ? 'auto' : 'none'
     this.packageTitleEl.textContent = manifestTitle
     this.renderBottomSheet(currentNode, chromeVisible)
+    this.renderFloatingBackButton(currentNode, chromeVisible)
     this.renderInfoSheet(state.manifest, chromeVisible)
 
+    this.dragHintBackdropEl.style.display = showHorizontalDragHint ? 'block' : 'none'
+    this.dragHintBackdropEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
     this.dragHintEl.style.display = showHorizontalDragHint ? 'block' : 'none'
     this.dragHintEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
   }
@@ -1359,9 +1468,6 @@ export class PlayerHost {
     this.bottomSheetEl.style.opacity = shouldMount ? '1' : '0'
     this.bottomSheetEl.style.transform = shouldShow ? 'translateY(0)' : 'translateY(calc(100% + 20px))'
     this.bottomSheetEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
-    this.bottomSheetResetButtonEl.style.display = shouldMount ? 'flex' : 'none'
-    this.bottomSheetResetButtonEl.style.opacity = shouldMount ? '1' : '0'
-    this.bottomSheetResetButtonEl.style.pointerEvents = shouldMount ? 'auto' : 'none'
     if (!shouldMount || !layer) {
       this.bottomSheetBreadcrumbEl.replaceChildren()
       this.bottomSheetCardsEl.replaceChildren()
@@ -1452,16 +1558,86 @@ export class PlayerHost {
       cardEl.appendChild(titleEl)
       cardEl.appendChild(descEl)
       cardEl.addEventListener('click', event => {
+        if (this.ignoreBottomSheetCardClick) {
+          event.preventDefault()
+          event.stopPropagation()
+          this.ignoreBottomSheetCardClick = false
+          return
+        }
         event.preventDefault()
         event.stopPropagation()
         this.focusSurfaceCard(card.id, true)
       })
       this.bottomSheetCardsEl.appendChild(cardEl)
     }
-    this.bottomSheetResetButtonEl.style.bottom = shouldShow
-      ? `${this.bottomSheetEl.offsetHeight + 16}px`
-      : '16px'
     this.scrollActiveSheetCardIntoView()
+  }
+
+  private renderFloatingBackButton(
+    currentNode: PublishNode | null,
+    chromeVisible: boolean,
+  ): void {
+    const nodeKind = this.getNodeKind(currentNode)
+    const layer = this.getActiveSurfaceLayer(currentNode)
+    const showForSurface = !!layer && chromeVisible && !this.infoSheetOpen
+    const showForHtml = nodeKind === 'html' && chromeVisible && !this.infoSheetOpen
+    const shouldShow = showForSurface || showForHtml
+    this.bottomSheetResetButtonEl.style.display = shouldShow ? 'flex' : 'none'
+    this.bottomSheetResetButtonEl.style.opacity = shouldShow ? '1' : '0'
+    this.bottomSheetResetButtonEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
+    this.bottomSheetResetButtonEl.style.bottom = showForSurface && this.surfaceSheetOpen
+      ? `${this.bottomSheetEl.offsetHeight + PlayerHost.FLOATING_BACK_BUTTON_OFFSET_PX}px`
+      : `${PlayerHost.FLOATING_BACK_BUTTON_OFFSET_PX}px`
+  }
+
+  private readonly handleBottomSheetCardsScroll = (): void => {
+    if (this.surfaceCardScrollSyncLocked || !this.surfaceSheetOpen) return
+    if (!this.bottomSheetCardsDragState?.moved) return
+    this.scheduleSurfaceCardScrollCommit()
+  }
+
+  private readonly handleBottomSheetCardsPointerDown = (event: PointerEvent): void => {
+    if (!this.surfaceSheetOpen || event.button !== 0) return
+    this.bottomSheetCardsDragState = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: this.bottomSheetCardsEl.scrollLeft,
+      moved: false,
+    }
+    this.ignoreBottomSheetCardClick = false
+    this.bottomSheetCardsEl.setPointerCapture?.(event.pointerId)
+  }
+
+  private readonly handleBottomSheetCardsPointerMove = (event: PointerEvent): void => {
+    const dragState = this.bottomSheetCardsDragState
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    const deltaX = event.clientX - dragState.startX
+    if (Math.abs(deltaX) < 4) return
+    dragState.moved = true
+    this.ignoreBottomSheetCardClick = true
+    this.bottomSheetCardsEl.scrollLeft = dragState.startScrollLeft - deltaX
+    event.preventDefault()
+  }
+
+  private readonly handleBottomSheetCardsPointerUp = (event: PointerEvent): void => {
+    const dragState = this.bottomSheetCardsDragState
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    this.bottomSheetCardsDragState = null
+    if (this.bottomSheetCardsEl.hasPointerCapture?.(event.pointerId)) {
+      this.bottomSheetCardsEl.releasePointerCapture(event.pointerId)
+    }
+    if (!dragState.moved) return
+    this.scheduleSurfaceCardScrollCommit()
+  }
+
+  private readonly handleBottomSheetCardsPointerCancel = (event: PointerEvent): void => {
+    const dragState = this.bottomSheetCardsDragState
+    if (!dragState || dragState.pointerId !== event.pointerId) return
+    this.bottomSheetCardsDragState = null
+    if (this.bottomSheetCardsEl.hasPointerCapture?.(event.pointerId)) {
+      this.bottomSheetCardsEl.releasePointerCapture(event.pointerId)
+    }
+    this.clearSurfaceCardScrollSettleTimer()
   }
 
   private renderInfoSheet(manifest: PublishManifest | null, chromeVisible: boolean): void {
@@ -1566,6 +1742,7 @@ export class PlayerHost {
 
   private renderHtmlNode(currentNode: PublishNode, transitioning: boolean): void {
     this.pinchState.active = false
+    this.clearSurfaceCardScrollSettleTimer()
     this.activeSurfaceLayout = null
     this.activeSurfaceNodeId = null
     this.activeSurfaceLayerId = null
@@ -1602,6 +1779,7 @@ export class PlayerHost {
     requestAnimationFrame(() => {
       this.updateHotspotViewport()
     })
+    this.applyPendingRouteSelection(currentNode)
   }
 
   private renderImageNode(currentNode: PublishNode, transitioning: boolean): void {
@@ -1666,9 +1844,6 @@ export class PlayerHost {
     this.refs.nodeImage.src = currentNode.surfaceConfig.sourceImageUrl
     this.refs.nodeImage.alt = currentNode.title ?? currentNode.id
     this.refs.nodeImage.style.opacity = transitioning ? '0' : '1'
-    // #region debug-point F:surface-src-assigned
-    fetch('http://127.0.0.1:7777/event', { method: 'POST', body: JSON.stringify({ sessionId: 'packaged-runtime', runId: 'pre-fix', hypothesisId: 'F', location: 'player-host.ts:1645', msg: '[DEBUG] surface node image src assigned', data: { nodeId: currentNode.id, assignedSrc: currentNode.surfaceConfig.sourceImageUrl, actualSrcAfterAssign: this.refs.nodeImage.currentSrc || this.refs.nodeImage.src, completeAfterAssign: this.refs.nodeImage.complete }, ts: Date.now() }) }).catch(() => {})
-    // #endregion
     this.applySurfaceImageLayout(currentNode)
     this.renderAnnotations(currentNode, transitioning)
 
@@ -1676,6 +1851,7 @@ export class PlayerHost {
     requestAnimationFrame(() => {
       this.updateHotspotViewport()
     })
+    this.applyPendingRouteSelection(currentNode)
   }
 
   private applyImageFitMode(fitMode: string): void {
@@ -2090,6 +2266,83 @@ export class PlayerHost {
     return !!entry?.ready
   }
 
+  private applyPendingRouteSelection(currentNode: PublishNode | null): void {
+    const selection = this.pendingRouteSelection
+    if (!selection || !currentNode) return
+    const target = this.resolveRuntimeRouteTarget(selection.focusName)
+    if (!target) {
+      this.pendingRouteSelection = null
+      this.activeHtmlRouteSelection = null
+      return
+    }
+
+    if (currentNode.id !== target.nodeId) {
+      this.engine.switchNode(target.nodeId)
+      return
+    }
+
+    if (target.kind === 'surface' && this.getNodeKind(currentNode) === 'surface') {
+      this.pendingRouteSelection = null
+      this.focusSurfaceCard(target.cardId, true)
+      return
+    }
+
+    if (target.kind === 'html' && this.getNodeKind(currentNode) === 'html') {
+      this.activeHtmlRouteSelection = selection
+      this.pendingRouteSelection = null
+      this.postHtmlNodeRouteSelection(currentNode)
+      return
+    }
+
+    this.pendingRouteSelection = null
+  }
+
+  private postHtmlNodeRouteSelection(currentNode: PublishNode): void {
+    if (this.getNodeKind(currentNode) !== 'html' || !this.isActiveHtmlIframeReady()) return
+    if (!this.refs.nodeIframe.contentWindow) return
+    const selection = this.activeHtmlRouteSelection
+    if (!selection) return
+    this.refs.nodeIframe.contentWindow.postMessage({
+      source: 'panorama-player-host',
+      namespace: currentNode.htmlBridge?.namespace ?? 'panorama-runtime',
+      type: 'switchView',
+      payload: {
+        targetName: selection.focusName,
+      },
+    }, currentNode.htmlBridge?.targetOrigin || '*')
+    this.activeHtmlRouteSelection = null
+  }
+
+  private resolveRuntimeRouteTarget(focusName: string): RuntimeRouteTarget | null {
+    const manifest = this.engine.getManifest()
+    if (!manifest) return null
+    const normalizedFocusName = normalizeRuntimeRouteFocusName(focusName)
+    if (!normalizedFocusName) return null
+    for (const node of manifest.nodes) {
+      if (this.getNodeKind(node) !== 'surface') continue
+      for (const layer of node.surfaceLayers ?? []) {
+        const matchedCard = layer.cards.find(card => normalizeRuntimeRouteFocusName(card.title) === normalizedFocusName)
+        if (matchedCard) {
+          return {
+            kind: 'surface',
+            nodeId: node.id,
+            cardId: matchedCard.id,
+          }
+        }
+      }
+    }
+    for (const node of manifest.nodes) {
+      if (this.getNodeKind(node) !== 'html' || !node.htmlUrl) continue
+      if (!matchesKnownHtmlRouteFocus(node.htmlUrl, normalizedFocusName)) continue
+      return {
+        kind: 'html',
+        nodeId: node.id,
+      }
+    }
+
+    return null
+  }
+
   private getHtmlNodeBridgeRuntimeSnapshot = (): {
     currentNodeId: string
     historyDepth: number
@@ -2320,7 +2573,8 @@ export class PlayerHost {
       const { layerId } = hotspot.target
       const layer = currentNode.surfaceLayers?.find(item => item.id === layerId)
       this.activeSurfaceLayerId = layerId
-      this.activeSurfaceCardId = null
+      const fallbackCardId = layer?.cards[0]?.id ?? null
+      this.activeSurfaceCardId = fallbackCardId
       this.surfaceSheetOpen = false
       if (layer?.cameraPreset) {
         this.setSurfaceCamera({
@@ -2329,6 +2583,9 @@ export class PlayerHost {
         }, true)
       } else {
         this.render()
+      }
+      if (fallbackCardId) {
+        requestAnimationFrame(() => this.focusSurfaceCard(fallbackCardId, false))
       }
     }
   }
@@ -2438,6 +2695,7 @@ export class PlayerHost {
     const currentNode = this.engine.getCurrentNode()
     const cardContext = this.findSurfaceCardContext(currentNode, cardId)
     if (!cardContext) return
+    this.clearSurfaceCardScrollSettleTimer()
     this.activeSurfaceLayerId = cardContext.layer.id
     const shouldAnimateOpen = !this.surfaceSheetOpen
     this.surfaceSheetOpen = false
@@ -2446,10 +2704,15 @@ export class PlayerHost {
       this.render()
     }
     if (moveCamera && this.currentSurfaceCamera) {
+      const nextZoom = Math.max(
+        this.currentSurfaceCamera.zoom,
+        cardContext.layer.visibility.minZoom,
+        cardContext.layer.cameraPreset?.zoom ?? 0,
+      )
       this.setSurfaceCamera({
         centerX: cardContext.card.anchor.x,
         centerY: cardContext.card.anchor.y,
-        zoom: this.currentSurfaceCamera.zoom,
+        zoom: nextZoom,
       }, true)
     } else {
       this.scrollActiveSheetCardIntoView()
@@ -2466,6 +2729,7 @@ export class PlayerHost {
   }
 
   private closeSurfaceSheet(): void {
+    this.clearSurfaceCardScrollSettleTimer()
     this.surfaceSheetOpen = false
     this.activeSurfaceCardId = null
     if (this.getNodeKind(this.engine.getCurrentNode()) === 'surface') {
@@ -2499,10 +2763,61 @@ export class PlayerHost {
 
   private scrollActiveSheetCardIntoView(): void {
     if (!this.activeSurfaceCardId) return
+    this.lockSurfaceCardScrollSync()
     requestAnimationFrame(() => {
       const activeCard = this.bottomSheetCardsEl.querySelector<HTMLElement>(`[data-surface-sheet-card-id="${this.activeSurfaceCardId}"]`)
       activeCard?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
     })
+  }
+
+  private resolveNearestBottomSheetCardId(): string | null {
+    const cards = Array.from(this.bottomSheetCardsEl.querySelectorAll<HTMLElement>('[data-surface-sheet-card-id]'))
+    if (cards.length === 0) return null
+    const containerRect = this.bottomSheetCardsEl.getBoundingClientRect()
+    const centerX = containerRect.left + containerRect.width / 2
+    let nearestCardId: string | null = null
+    let nearestDistance = Number.POSITIVE_INFINITY
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect()
+      const cardCenter = rect.left + rect.width / 2
+      const distance = Math.abs(cardCenter - centerX)
+      if (distance < nearestDistance) {
+        nearestDistance = distance
+        nearestCardId = card.dataset.surfaceSheetCardId ?? null
+      }
+    }
+    return nearestCardId
+  }
+
+  private scheduleSurfaceCardScrollCommit(): void {
+    this.clearSurfaceCardScrollSettleTimer()
+    this.surfaceCardScrollSettleTimer = window.setTimeout(() => {
+      this.surfaceCardScrollSettleTimer = null
+      const nearestCardId = this.resolveNearestBottomSheetCardId()
+      if (!nearestCardId || nearestCardId === this.activeSurfaceCardId) return
+      this.focusSurfaceCard(nearestCardId, true)
+    }, PlayerHost.SURFACE_CARD_SCROLL_SETTLE_MS)
+  }
+
+  private clearSurfaceCardScrollSettleTimer(): void {
+    if (this.surfaceCardScrollSettleTimer === null) return
+    window.clearTimeout(this.surfaceCardScrollSettleTimer)
+    this.surfaceCardScrollSettleTimer = null
+  }
+
+  private lockSurfaceCardScrollSync(duration = PlayerHost.SURFACE_CARD_SCROLL_LOCK_MS): void {
+    this.surfaceCardScrollSyncLocked = true
+    this.clearSurfaceCardScrollSyncTimer()
+    this.surfaceCardScrollSyncTimer = window.setTimeout(() => {
+      this.surfaceCardScrollSyncLocked = false
+      this.surfaceCardScrollSyncTimer = null
+    }, duration)
+  }
+
+  private clearSurfaceCardScrollSyncTimer(): void {
+    if (this.surfaceCardScrollSyncTimer === null) return
+    window.clearTimeout(this.surfaceCardScrollSyncTimer)
+    this.surfaceCardScrollSyncTimer = null
   }
 
   private getNodeImageSource(node: PublishNode | null | undefined): string | undefined {
@@ -2581,6 +2896,10 @@ export class PlayerHost {
         settlePreloadWait()
         if (this.refs.nodeIframe === iframe) {
           this.render()
+          const currentNode = this.engine.getCurrentNode()
+          if (currentNode && this.getNodeKind(currentNode) === 'html') {
+            this.postHtmlNodeRouteSelection(currentNode)
+          }
           this.updateHotspotViewport()
           requestAnimationFrame(() => {
             this.confirmHostVisualCommitIfReady('node-iframe:onLoad:next-frame')
@@ -2620,3 +2939,79 @@ if (typeof window !== 'undefined') {
 }
 
 export default PlayerHost
+
+function ensureChromeAnimationStyle(): void {
+  const styleId = 'player-host-chrome-animations'
+  if (document.getElementById(styleId)) return
+  const style = document.createElement('style')
+  style.id = styleId
+  style.textContent = `
+    @keyframes drag-hint-arrow-glow {
+      0%, 100% {
+        opacity: 0.28;
+        transform: translateX(0);
+        text-shadow: none;
+      }
+      35% {
+        opacity: 0.52;
+        transform: translateX(0);
+        text-shadow: none;
+      }
+      55% {
+        opacity: 1;
+        transform: translateX(var(--drag-hint-shift, 1px));
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
+      }
+      75% {
+        opacity: 0.42;
+        transform: translateX(0);
+        text-shadow: none;
+      }
+    }
+  `
+  document.head.appendChild(style)
+}
+
+function parseRuntimeRouteSelection(params: URLSearchParams): RuntimeRouteSelection | null {
+  const focusName = params.get('focus')?.trim() || ''
+  if (!focusName) {
+    return null
+  }
+  return {
+    focusName,
+  }
+}
+
+function normalizeRuntimeRouteFocusName(value: string): string {
+  return value.trim().replace(/\s+/g, '').toLocaleLowerCase()
+}
+
+const KNOWN_ROCKET_HTML_ROUTE_FOCUS_NAMES = new Set([
+  '卫星总装',
+  '整流罩',
+  '二级控制系统',
+  '二级箭体结构',
+  '二级发动机',
+  '级间段',
+  '格栅舵',
+  '一级控制系统',
+  '一级箭体结构',
+  '着陆系统',
+  '一级发动机组',
+  '热控系统',
+  '结构系统',
+  '有效载荷系统',
+  '综合电子系统',
+  '测控系统',
+  '电源系统',
+  '姿轨控系统',
+].map(normalizeRuntimeRouteFocusName))
+
+function matchesKnownHtmlRouteFocus(htmlUrl: string, normalizedFocusName: string): boolean {
+  const normalizedHtmlUrl = htmlUrl.trim().toLocaleLowerCase()
+  if (!normalizedFocusName) return false
+  if (normalizedHtmlUrl.includes('rocket-shared/rocket.html') || normalizedHtmlUrl.endsWith('/rocket.html')) {
+    return KNOWN_ROCKET_HTML_ROUTE_FOCUS_NAMES.has(normalizedFocusName)
+  }
+  return false
+}

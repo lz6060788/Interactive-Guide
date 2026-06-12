@@ -70,6 +70,8 @@ export class RuntimeBundleGenerator {
         }
       }
     }
+    this.copyHtmlReferencedAssetDirectories(guide, manifest, workspaceFallback, bundleNodesDir)
+    this.copyHtmlRuntimeVendorAssets(guide, manifest, workspaceFallback, bundleNodesDir)
 
     const bundledManifest = this.buildRuntimeBundleManifest(guide, manifest, workspaceFallback)
     this.repo.writeJson(`${bundleDir}/manifest.json`, bundledManifest)
@@ -99,6 +101,78 @@ export class RuntimeBundleGenerator {
     )
 
     return payload
+  }
+
+  private copyHtmlRuntimeVendorAssets(
+    guide: KnowledgePackage,
+    manifest: PublishManifest,
+    workspaceFallback: boolean,
+    bundleNodesDir: string,
+  ): void {
+    const needsThreeRuntime = manifest.nodes.some(node => {
+      const htmlAssetPath = this.resolveNodeHtmlAssetPath(guide, node, workspaceFallback)
+      if (!htmlAssetPath) return false
+      const htmlBuffer = this.repo.readFile(htmlAssetPath)
+      if (!htmlBuffer) return false
+      const html = htmlBuffer.toString('utf-8')
+      return html.includes('"three": "./lib/three.module.js"')
+        || html.includes(`'three': "./lib/three.module.js"`)
+        || html.includes('"three/addons/": "./lib/"')
+        || html.includes(`'three/addons/': "./lib/"`)
+    })
+    if (!needsThreeRuntime) return
+
+    const projectRoot = process.cwd()
+    const threeRoot = path.join(projectRoot, 'node_modules', 'three')
+    const threeBuildPath = path.join(threeRoot, 'build')
+    const threeExamplesPath = path.join(threeRoot, 'examples', 'jsm')
+    if (!fs.existsSync(threeBuildPath) || !fs.existsSync(threeExamplesPath)) {
+      throw AppError.validation('Missing runtime dependency "three" for HTML node bundle generation')
+    }
+
+    this.copyAbsoluteDirIntoDataPath(threeBuildPath, `${bundleNodesDir}/lib`)
+    this.copyAbsoluteDirIntoDataPath(threeExamplesPath, `${bundleNodesDir}/lib`)
+  }
+
+  private copyHtmlReferencedAssetDirectories(
+    guide: KnowledgePackage,
+    manifest: PublishManifest,
+    workspaceFallback: boolean,
+    bundleNodesDir: string,
+  ): void {
+    for (const node of manifest.nodes) {
+      const htmlAssetPath = this.resolveNodeHtmlAssetPath(guide, node, workspaceFallback)
+      if (!htmlAssetPath) continue
+      const htmlBuffer = this.repo.readFile(htmlAssetPath)
+      if (!htmlBuffer) continue
+      const html = htmlBuffer.toString('utf-8')
+      const sourceDir = path.posix.dirname(htmlAssetPath)
+      const referencedDirs = new Set<string>()
+      for (const match of html.matchAll(/\.\/([A-Za-z0-9_-]+)\//g)) {
+        const dirName = match[1]
+        if (!dirName || dirName === 'lib') continue
+        referencedDirs.add(dirName)
+      }
+      for (const dirName of referencedDirs) {
+        const sourceAssetDir = `${sourceDir}/${dirName}`
+        if (!this.repo.fileExists(sourceAssetDir)) continue
+        this.repo.copyDir(sourceAssetDir, `${bundleNodesDir}/${dirName}`)
+      }
+    }
+  }
+
+  private copyAbsoluteDirIntoDataPath(srcDir: string, destDir: string): void {
+    if (!fs.existsSync(srcDir)) return
+    this.repo.ensureDir(destDir)
+    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+      const srcPath = path.join(srcDir, entry.name)
+      const destPath = `${destDir}/${entry.name}`
+      if (entry.isDirectory()) {
+        this.copyAbsoluteDirIntoDataPath(srcPath, destPath)
+      } else {
+        this.repo.writeFile(destPath, fs.readFileSync(srcPath))
+      }
+    }
   }
 
   private buildRuntimeBundleManifest(
@@ -567,6 +641,7 @@ export class RuntimeBundleGenerator {
       '  })',
       '',
       '  host.loadManifest(manifest)',
+      '  host.applyRouteSelection(window.location.search)',
       '',
       '  document.title = `${manifest.title} - Runtime Bundle`',
       '  render(host.getState())',
