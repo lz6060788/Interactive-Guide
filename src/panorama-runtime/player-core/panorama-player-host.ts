@@ -673,10 +673,10 @@ export class PanoramaPlayerHost {
 
     context.save()
     context.fillStyle = `rgba(0, 0, 0, ${rect.maskOpacity})`
-    context.fillRect(0, 0, width, height)
-    context.globalCompositeOperation = 'destination-out'
-    this.drawRoundedRectPath(context, rect)
-    context.fill()
+    context.beginPath()
+    context.rect(0, 0, width, height)
+    this.appendRoundedRectPath(context, rect)
+    context.fill('evenodd')
     context.restore()
 
     const connector = this.resolveConnectorLine(rect)
@@ -710,8 +710,13 @@ export class PanoramaPlayerHost {
   }
 
   private drawRoundedRectPath(context: CanvasRenderingContext2D, rect: ProjectedFocusRect): void {
-    const radius = Math.max(Math.min(rect.radius, rect.width / 2, rect.height / 2), 0)
     context.beginPath()
+    this.appendRoundedRectPath(context, rect)
+    context.closePath()
+  }
+
+  private appendRoundedRectPath(context: CanvasRenderingContext2D, rect: ProjectedFocusRect): void {
+    const radius = Math.max(Math.min(rect.radius, rect.width / 2, rect.height / 2), 0)
     context.moveTo(rect.x + radius, rect.y)
     context.lineTo(rect.x + rect.width - radius, rect.y)
     context.quadraticCurveTo(rect.x + rect.width, rect.y, rect.x + rect.width, rect.y + radius)
@@ -721,7 +726,6 @@ export class PanoramaPlayerHost {
     context.quadraticCurveTo(rect.x, rect.y + rect.height, rect.x, rect.y + rect.height - radius)
     context.lineTo(rect.x, rect.y + radius)
     context.quadraticCurveTo(rect.x, rect.y, rect.x + radius, rect.y)
-    context.closePath()
   }
 
   private resolveConnectorLine(rect: ProjectedFocusRect): {
@@ -1161,6 +1165,10 @@ const hostStyles = `
   width: 100%;
   height: 100%;
   overflow: hidden;
+  --panorama-side-inset: clamp(10px, 3.6%, 16px);
+  --panorama-hint-bottom: 32px;
+  --panorama-bottom-alignment: clamp(10px, 3.6%, 16px);
+  --panorama-floating-action-size: 16px;
   border-radius: 10px;
   background: #1d1d1d;
   border: 1px solid rgba(255,255,255,0.08);
@@ -1476,25 +1484,29 @@ const hostStyles = `
 }
 .panorama-hint-text {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: clamp(22px, 6.4%, 32px);
-  color: rgba(255,255,255,0.35);
-  font-size: clamp(10px, 2.8vw, 12px);
-  line-height: clamp(14px, 3.6vw, 16px);
+  left: var(--panorama-side-inset);
+  right: calc(var(--panorama-side-inset) + var(--panorama-floating-action-size) + 12px);
+  bottom: var(--panorama-hint-bottom);
+  min-height: var(--panorama-floating-action-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.6);
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 400;
   text-align: center;
-  letter-spacing: clamp(0.8px, 0.3vw, 1.5px);
+  letter-spacing: 0;
   z-index: 5;
   pointer-events: none;
-  padding: 0 clamp(28px, 10%, 44px);
+  padding: 0 4px;
 }
 .panorama-floating-action {
   position: absolute;
-  right: clamp(10px, 3.6%, 16px);
-  bottom: clamp(10px, 3.6%, 16px);
-  width: 16px;
-  height: 16px;
+  right: var(--panorama-side-inset);
+  bottom: var(--panorama-bottom-alignment);
+  width: var(--panorama-floating-action-size);
+  height: var(--panorama-floating-action-size);
   padding: 0;
   border: none;
   background: transparent;

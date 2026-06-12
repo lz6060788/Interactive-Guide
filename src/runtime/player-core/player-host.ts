@@ -31,6 +31,8 @@ import {
   resolveSurfaceCameraLayout,
   type SurfaceCameraLayout,
 } from './surface-camera.js'
+import kingfisherBridgeUmdScript from './vendor/kingfisher-bridge.umd.js?raw'
+import kingfisherFalconUmdScript from './vendor/kingfisher-falcon.umd.js?raw'
 
 export interface PlayerHostRefs {
   viewport: HTMLElement
@@ -119,7 +121,29 @@ type RuntimeRouteTarget =
       nodeId: string
     }
 
+type BrowserNavigatorWithShare = Navigator & {
+  share?: (data: { title?: string, text?: string, url?: string }) => Promise<void>
+}
+
+type F10ShareUtils = {
+  shareUrlCard?: (payload?: Record<string, unknown>) => void | Promise<void>
+}
+
+type PlayerHostWindow = Window & typeof globalThis & {
+  F10Utils?: F10ShareUtils
+  _f?: F10ShareUtils
+  __interactiveGuideF10UtilsPromise?: Promise<F10ShareUtils | null>
+  Bridge?: unknown
+  'kingfisher-bridge'?: unknown
+  _falcon?: unknown
+  FalconJavaInterface?: unknown
+}
+
 const HOTSPOT_SIZE = 28
+const THSC_F10_UTILS_CDN_URL = 'https://s.thsi.cn/cb?cd/website-thsc-f10-utils/1.6.0/thsc-f10-utils.js'
+const KINGFISHER_BRIDGE_SCRIPT_ATTR = 'data-interactive-guide-kingfisher-bridge'
+const KINGFISHER_FALCON_SCRIPT_ATTR = 'data-interactive-guide-kingfisher-falcon'
+const THSC_F10_UTILS_SCRIPT_ATTR = 'data-interactive-guide-f10-utils'
 const BACK_ICON_SVG = `
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
   <path d="M15.25 5.5L8.75 12L15.25 18.5" stroke="#231815" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -225,6 +249,9 @@ export class PlayerHost {
   private activeHtmlIframeUrl = ''
   private activeHtmlRouteSelection: RuntimeRouteSelection | null = null
   private pendingRouteSelection: RuntimeRouteSelection | null = null
+  private renderedBottomSheetNodeId: string | null = null
+  private renderedBottomSheetLayerId: string | null = null
+  private renderedBottomSheetCardId: string | null = null
   private viewportPointerDownTarget: EventTarget | null = null
   private hotspotViewportFrameId: number | null = null
   private surfaceCardScrollSettleTimer: number | null = null
@@ -232,6 +259,7 @@ export class PlayerHost {
   private surfaceCardScrollSyncLocked = false
   private bottomSheetCardsDragState: SheetCardDragState | null = null
   private ignoreBottomSheetCardClick = false
+  private shareDependencyPrimed = false
   private pinchState: TouchPinchState = {
     active: false,
     startDistance: 0,
@@ -262,6 +290,7 @@ export class PlayerHost {
 
     this.bindEvents()
     this.buildChrome()
+    this.primeShareDependency()
     this.applyBaseStyles()
     this.emitState()
   }
@@ -551,10 +580,7 @@ export class PlayerHost {
   private handleHtmlNodeBackRequest = (
     _payload: HtmlNodeBackRequestPayload | undefined,
   ): HtmlNodeBackResponsePayload => {
-    const handled = this.engine.getHistory().length > 0
-    if (handled) {
-      this.engine.handleBack()
-    }
+    const handled = this.tryHandleBackAction()
     return {
       handled,
       runtime: this.getHtmlNodeBridgeRuntimeSnapshot(),
@@ -840,7 +866,6 @@ export class PlayerHost {
       this.closeInfoSheet()
     })
 
-    this.backControlEl.appendChild(this.backButtonEl)
     this.headerCenterEl.appendChild(this.packageTitleEl)
     this.headerCenterEl.appendChild(this.infoButtonEl)
     this.bottomSheetActionsEl.appendChild(this.bottomSheetCloseButtonEl)
@@ -853,7 +878,6 @@ export class PlayerHost {
     this.infoSheetEl.appendChild(this.infoSheetHeaderEl)
     this.infoSheetEl.appendChild(this.infoSheetContentEl)
     this.chromeRoot.appendChild(this.headerBackdropEl)
-    this.chromeRoot.appendChild(this.backControlEl)
     this.chromeRoot.appendChild(this.headerCenterEl)
     this.chromeRoot.appendChild(this.shareButtonEl)
     this.chromeRoot.appendChild(this.bottomSheetResetButtonEl)
@@ -1427,19 +1451,15 @@ export class PlayerHost {
   private renderChrome(state: PlayerHostState): void {
     const currentNode = state.currentNode
     const manifestTitle = state.manifest?.title ?? ''
-    const hasBack = state.history.length > 0 || this.hasActiveSurfaceFocus(currentNode)
     const nodeKind = this.getNodeKind(currentNode)
     const showHorizontalDragHint = nodeKind === 'surface'
       ? true
       : currentNode?.imageFitMode === 'fitHeight'
     const chromeVisible = !!currentNode && !state.transitioning && !state.preloading
-    const canShare = chromeVisible && this.canUseNativeShare()
+    const canShare = chromeVisible && this.canUseShareAction()
     const canShowInfo = chromeVisible && !!this.getInfoOverlayConfig(state.manifest)
     const showHtmlHeaderBackdrop = chromeVisible && nodeKind === 'html'
 
-    this.backControlEl.style.display = hasBack ? 'flex' : 'none'
-    this.backControlEl.style.opacity = hasBack && chromeVisible ? '1' : '0'
-    this.backControlEl.style.pointerEvents = hasBack && chromeVisible ? 'auto' : 'none'
     this.headerBackdropEl.style.display = showHtmlHeaderBackdrop ? 'block' : 'none'
     this.headerBackdropEl.style.opacity = showHtmlHeaderBackdrop ? '1' : '0'
     this.headerCenterEl.style.display = chromeVisible ? 'flex' : 'none'
@@ -1469,108 +1489,129 @@ export class PlayerHost {
     this.bottomSheetEl.style.transform = shouldShow ? 'translateY(0)' : 'translateY(calc(100% + 20px))'
     this.bottomSheetEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
     if (!shouldMount || !layer) {
+      this.renderedBottomSheetNodeId = null
+      this.renderedBottomSheetLayerId = null
+      this.renderedBottomSheetCardId = null
       this.bottomSheetBreadcrumbEl.replaceChildren()
       this.bottomSheetCardsEl.replaceChildren()
       return
     }
 
-    this.bottomSheetBreadcrumbEl.replaceChildren()
-    if (layer.primaryCategory?.trim()) {
-      const primaryEl = document.createElement('span')
-      primaryEl.textContent = layer.primaryCategory
-      Object.assign(primaryEl.style, {
-        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-        fontStyle: 'normal',
-        fontWeight: '600',
-        fontSize: '14px',
-        lineHeight: '18px',
-        color: 'rgba(0, 0, 0, 0.84)',
-        flexShrink: '0',
-      })
-      const separatorEl = document.createElement('span')
-      separatorEl.textContent = '>'
-      Object.assign(separatorEl.style, {
-        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-        fontStyle: 'normal',
-        fontWeight: '600',
-        fontSize: '14px',
-        lineHeight: '18px',
-        color: 'rgba(0, 0, 0, 0.84)',
-        flexShrink: '0',
-      })
-      this.bottomSheetBreadcrumbEl.appendChild(primaryEl)
-      this.bottomSheetBreadcrumbEl.appendChild(separatorEl)
-    }
-    const titleEl = document.createElement('span')
-    titleEl.textContent = layer.title
-    Object.assign(titleEl.style, {
-      minWidth: '0',
-      fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-      fontStyle: 'normal',
-      fontWeight: '400',
-      fontSize: '14px',
-      lineHeight: '18px',
-      color: 'rgba(0, 0, 0, 0.6)',
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-    })
-    this.bottomSheetBreadcrumbEl.appendChild(titleEl)
-    this.bottomSheetCardsEl.replaceChildren()
-
-    for (const card of layer.cards) {
-      const cardEl = document.createElement('button')
-      const titleEl = document.createElement('div')
-      const descEl = document.createElement('div')
-      const selected = card.id === this.activeSurfaceCardId
-      cardEl.type = 'button'
-      cardEl.dataset.surfaceSheetCardId = card.id
-      Object.assign(cardEl.style, {
-        flex: '0 0 260px',
-        minHeight: '108px',
-        padding: '14px 16px',
-        borderRadius: '12px',
-        border: selected ? '2px solid #3366FF' : '1px solid rgba(15, 23, 42, 0.08)',
-        background: selected ? 'rgba(51, 102, 255, 0.10)' : '#FFFFFF',
-        boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        justifyContent: 'flex-start',
-        gap: '8px',
-        textAlign: 'left',
-        cursor: 'pointer',
-        scrollSnapAlign: 'start',
-      })
+    const currentNodeId = currentNode?.id ?? null
+    const shouldRebuild = this.renderedBottomSheetNodeId !== currentNodeId
+      || this.renderedBottomSheetLayerId !== layer.id
+      || this.bottomSheetCardsEl.childElementCount !== layer.cards.length
+    if (shouldRebuild) {
+      this.bottomSheetBreadcrumbEl.replaceChildren()
+      if (layer.primaryCategory?.trim()) {
+        const primaryEl = document.createElement('span')
+        primaryEl.textContent = layer.primaryCategory
+        Object.assign(primaryEl.style, {
+          fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+          fontStyle: 'normal',
+          fontWeight: '600',
+          fontSize: '14px',
+          lineHeight: '18px',
+          color: 'rgba(0, 0, 0, 0.84)',
+          flexShrink: '0',
+        })
+        const separatorEl = document.createElement('span')
+        separatorEl.textContent = '>'
+        Object.assign(separatorEl.style, {
+          fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+          fontStyle: 'normal',
+          fontWeight: '600',
+          fontSize: '14px',
+          lineHeight: '18px',
+          color: 'rgba(0, 0, 0, 0.84)',
+          flexShrink: '0',
+        })
+        this.bottomSheetBreadcrumbEl.appendChild(primaryEl)
+        this.bottomSheetBreadcrumbEl.appendChild(separatorEl)
+      }
+      const titleEl = document.createElement('span')
+      titleEl.textContent = layer.title
       Object.assign(titleEl.style, {
-        fontSize: '16px',
-        lineHeight: '22px',
-        fontWeight: '700',
-        color: 'rgba(0, 0, 0, 0.88)',
-      })
-      titleEl.textContent = card.title
-      Object.assign(descEl.style, {
+        minWidth: '0',
+        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
+        fontStyle: 'normal',
+        fontWeight: '400',
         fontSize: '14px',
-        lineHeight: '22px',
-        color: 'rgba(0, 0, 0, 0.72)',
+        lineHeight: '18px',
+        color: 'rgba(0, 0, 0, 0.6)',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
       })
-      descEl.textContent = card.description ?? ''
-      cardEl.appendChild(titleEl)
-      cardEl.appendChild(descEl)
-      cardEl.addEventListener('click', event => {
-        if (this.ignoreBottomSheetCardClick) {
+      this.bottomSheetBreadcrumbEl.appendChild(titleEl)
+      this.bottomSheetCardsEl.replaceChildren()
+
+      for (const card of layer.cards) {
+        const cardEl = document.createElement('button')
+        const titleEl = document.createElement('div')
+        const descEl = document.createElement('div')
+        cardEl.type = 'button'
+        cardEl.dataset.surfaceSheetCardId = card.id
+        Object.assign(cardEl.style, {
+          flex: '0 0 260px',
+          minHeight: '108px',
+          padding: '14px 16px',
+          borderRadius: '12px',
+          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          justifyContent: 'flex-start',
+          gap: '8px',
+          textAlign: 'left',
+          cursor: 'pointer',
+          scrollSnapAlign: 'start',
+        })
+        Object.assign(titleEl.style, {
+          fontSize: '16px',
+          lineHeight: '22px',
+          fontWeight: '700',
+          color: 'rgba(0, 0, 0, 0.88)',
+        })
+        titleEl.textContent = card.title
+        Object.assign(descEl.style, {
+          fontSize: '14px',
+          lineHeight: '22px',
+          color: 'rgba(0, 0, 0, 0.72)',
+        })
+        descEl.textContent = card.description ?? ''
+        cardEl.appendChild(titleEl)
+        cardEl.appendChild(descEl)
+        cardEl.addEventListener('click', event => {
+          if (this.ignoreBottomSheetCardClick) {
+            event.preventDefault()
+            event.stopPropagation()
+            this.ignoreBottomSheetCardClick = false
+            return
+          }
           event.preventDefault()
           event.stopPropagation()
-          this.ignoreBottomSheetCardClick = false
-          return
-        }
-        event.preventDefault()
-        event.stopPropagation()
-        this.focusSurfaceCard(card.id, true)
-      })
-      this.bottomSheetCardsEl.appendChild(cardEl)
+          this.focusSurfaceCard(card.id, true)
+        })
+        this.bottomSheetCardsEl.appendChild(cardEl)
+      }
+      this.renderedBottomSheetNodeId = currentNodeId
+      this.renderedBottomSheetLayerId = layer.id
     }
-    this.scrollActiveSheetCardIntoView()
+    this.syncBottomSheetCardSelection()
+    if (this.renderedBottomSheetCardId !== this.activeSurfaceCardId) {
+      this.renderedBottomSheetCardId = this.activeSurfaceCardId
+      this.scrollActiveSheetCardIntoView()
+    }
+  }
+
+  private syncBottomSheetCardSelection(): void {
+    const cards = Array.from(this.bottomSheetCardsEl.querySelectorAll<HTMLElement>('[data-surface-sheet-card-id]'))
+    for (const cardEl of cards) {
+      const selected = cardEl.dataset.surfaceSheetCardId === this.activeSurfaceCardId
+      cardEl.style.border = selected ? '2px solid #3366FF' : '1px solid rgba(15, 23, 42, 0.08)'
+      cardEl.style.background = selected ? 'rgba(51, 102, 255, 0.10)' : '#FFFFFF'
+    }
   }
 
   private renderFloatingBackButton(
@@ -1726,18 +1767,21 @@ export class PlayerHost {
   }
 
   private async handleShareAction(): Promise<void> {
-    const browserNavigator = globalThis.navigator as Navigator & {
-      share?: (data: { title?: string, text?: string, url?: string }) => Promise<void>
+    const sharePayload = {
+      title: this.engine.getManifest()?.title ?? '',
+      text: this.engine.getManifest()?.title ?? '',
+      url: window.location.href,
+      shareUrl: window.location.href,
+      content: this.engine.getManifest()?.title ?? '',
+      description: this.engine.getManifest()?.title ?? '',
     }
-    if (typeof browserNavigator.share !== 'function') return
-    try {
-      await browserNavigator.share({
-        title: this.engine.getManifest()?.title ?? '',
-        url: window.location.href,
-      })
-    } catch {
-      // Ignore abort and unsupported platform share failures.
+    if (this.canUseFalconShareAction()) {
+      const sharedByF10 = await this.tryShareWithF10(sharePayload)
+      if (sharedByF10) {
+        return
+      }
     }
+    await this.shareWithNavigator(sharePayload)
   }
 
   private renderHtmlNode(currentNode: PublishNode, transitioning: boolean): void {
@@ -2349,10 +2393,13 @@ export class PlayerHost {
     canGoBack: boolean
   } => {
     const history = this.engine.getHistory()
+    const currentNode = this.engine.getCurrentNode()
     return {
       currentNodeId: this.engine.getCurrentNodeId(),
       historyDepth: history.length,
-      canGoBack: history.length > 0,
+      canGoBack: history.length > 0
+        || this.hasActiveSurfaceFocus(currentNode)
+        || this.canFallbackBackToRoot(currentNode),
     }
   }
 
@@ -2472,16 +2519,7 @@ export class PlayerHost {
   }
 
   private handleBackAction(): void {
-    if (this.infoSheetOpen) {
-      this.closeInfoSheet()
-      return
-    }
-    const currentNode = this.engine.getCurrentNode()
-    if (this.hasActiveSurfaceFocus(currentNode)) {
-      this.resetSurfaceFocus(true)
-      return
-    }
-    this.engine.handleBack()
+    this.tryHandleBackAction()
   }
 
   private canResetSurfaceCamera(node: PublishNode | null | undefined): boolean {
@@ -2504,6 +2542,37 @@ export class PlayerHost {
       || !!this.activeSurfaceLayerId
       || !!this.activeSurfaceCardId
       || this.canResetSurfaceCamera(node)
+  }
+
+  private canFallbackBackToRoot(node: PublishNode | null | undefined): boolean {
+    const manifest = this.engine.getManifest()
+    if (!manifest || !node) return false
+    return node.id !== manifest.rootNodeId && this.engine.getHistory().length === 0
+  }
+
+  private tryHandleBackAction(): boolean {
+    if (this.infoSheetOpen) {
+      this.closeInfoSheet()
+      return true
+    }
+    const currentNode = this.engine.getCurrentNode()
+    if (this.hasActiveSurfaceFocus(currentNode)) {
+      this.resetSurfaceFocus(true)
+      return true
+    }
+    if (this.engine.getHistory().length > 0) {
+      this.engine.handleBack()
+      return true
+    }
+    if (this.canFallbackBackToRoot(currentNode)) {
+      const manifest = this.engine.getManifest()
+      if (!manifest) return false
+      this.pendingRouteSelection = null
+      this.activeHtmlRouteSelection = null
+      this.engine.switchNode(manifest.rootNodeId)
+      return true
+    }
+    return false
   }
 
   private resetSurfaceFocus(animated: boolean): void {
@@ -2697,9 +2766,8 @@ export class PlayerHost {
     if (!cardContext) return
     this.clearSurfaceCardScrollSettleTimer()
     this.activeSurfaceLayerId = cardContext.layer.id
-    const shouldAnimateOpen = !this.surfaceSheetOpen
-    this.surfaceSheetOpen = false
     this.activeSurfaceCardId = cardId
+    this.surfaceSheetOpen = true
     if (this.getNodeKind(currentNode) === 'surface') {
       this.render()
     }
@@ -2717,15 +2785,7 @@ export class PlayerHost {
     } else {
       this.scrollActiveSheetCardIntoView()
     }
-    if (shouldAnimateOpen) {
-      requestAnimationFrame(() => {
-        this.surfaceSheetOpen = true
-        this.renderChrome(this.getState())
-      })
-    } else {
-      this.surfaceSheetOpen = true
-      this.renderChrome(this.getState())
-    }
+    this.renderChrome(this.getState())
   }
 
   private closeSurfaceSheet(): void {
@@ -2742,11 +2802,154 @@ export class PlayerHost {
     return node.surfaceLayers?.find(layer => layer.id === this.activeSurfaceLayerId) ?? null
   }
 
+  private canUseShareAction(): boolean {
+    return this.canUseFalconShareAction() || this.canUseNativeShare()
+  }
+
+  private canUseFalconShareAction(): boolean {
+    const hostWindow = window as PlayerHostWindow
+    return typeof hostWindow._falcon !== 'undefined'
+      || typeof hostWindow.FalconJavaInterface !== 'undefined'
+  }
+
   private canUseNativeShare(): boolean {
-    const browserNavigator = globalThis.navigator as Navigator & {
-      share?: (data: { title?: string, text?: string, url?: string }) => Promise<void>
-    }
+    const browserNavigator = globalThis.navigator as BrowserNavigatorWithShare
     return typeof browserNavigator.share === 'function'
+  }
+
+  private async shareWithNavigator(payload: {
+    title?: string
+    text?: string
+    url?: string
+  }): Promise<void> {
+    const browserNavigator = globalThis.navigator as BrowserNavigatorWithShare
+    if (typeof browserNavigator.share !== 'function') return
+    try {
+      await browserNavigator.share(payload)
+    } catch {
+      // Ignore abort and unsupported platform share failures.
+    }
+  }
+
+  private async tryShareWithF10(payload: Record<string, unknown>): Promise<boolean> {
+    try {
+      const f10Utils = await this.ensureF10ShareUtilsLoaded()
+      if (typeof f10Utils?.shareUrlCard !== 'function') {
+        return false
+      }
+      await f10Utils.shareUrlCard(payload)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private primeShareDependency(): void {
+    if (this.shareDependencyPrimed) return
+    this.shareDependencyPrimed = true
+    if (!this.canUseFalconShareAction()) return
+    void this.ensureF10ShareUtilsLoaded()
+  }
+
+  private async ensureF10ShareUtilsLoaded(): Promise<F10ShareUtils | null> {
+    const hostWindow = window as PlayerHostWindow
+    const resolvedUtils = this.resolveF10ShareUtils(hostWindow)
+    if (resolvedUtils) return resolvedUtils
+    if (hostWindow.__interactiveGuideF10UtilsPromise) {
+      return hostWindow.__interactiveGuideF10UtilsPromise
+    }
+
+    hostWindow.__interactiveGuideF10UtilsPromise = this.loadShareDependencyChain()
+      .then(() => this.resolveF10ShareUtils(hostWindow))
+
+    return hostWindow.__interactiveGuideF10UtilsPromise
+  }
+
+  private async loadShareDependencyChain(): Promise<void> {
+    const hostWindow = window as PlayerHostWindow
+    await this.ensureInlineScriptLoaded(
+      KINGFISHER_BRIDGE_SCRIPT_ATTR,
+      kingfisherBridgeUmdScript,
+      () => {
+        const bridge = hostWindow.Bridge ?? hostWindow['kingfisher-bridge']
+        if (bridge && !hostWindow.Bridge) {
+          hostWindow.Bridge = bridge
+        }
+      },
+    )
+    await this.ensureInlineScriptLoaded(
+      KINGFISHER_FALCON_SCRIPT_ATTR,
+      kingfisherFalconUmdScript,
+    )
+    await this.ensureExternalScriptLoaded(
+      THSC_F10_UTILS_SCRIPT_ATTR,
+      THSC_F10_UTILS_CDN_URL,
+    )
+  }
+
+  private async ensureInlineScriptLoaded(
+    scriptAttr: string,
+    scriptText: string,
+    onReady?: () => void,
+  ): Promise<void> {
+    const existingScript = document.querySelector(
+      `script[${scriptAttr}="true"]`,
+    ) as HTMLScriptElement | null
+    if (existingScript) {
+      onReady?.()
+      return
+    }
+
+    const script = document.createElement('script')
+    script.type = 'text/javascript'
+    script.setAttribute(scriptAttr, 'true')
+    script.text = scriptText
+    document.head.appendChild(script)
+    onReady?.()
+  }
+
+  private async ensureExternalScriptLoaded(
+    scriptAttr: string,
+    src: string,
+  ): Promise<void> {
+    await new Promise<void>(resolve => {
+      const complete = () => resolve()
+      const existingScript = document.querySelector(
+        `script[${scriptAttr}="true"]`,
+      ) as HTMLScriptElement | null
+      if (existingScript) {
+        if (existingScript.dataset.loaded === 'true' || existingScript.dataset.failed === 'true') {
+          complete()
+          return
+        }
+        existingScript.addEventListener('load', complete, { once: true })
+        existingScript.addEventListener('error', complete, { once: true })
+        return
+      }
+
+      const script = document.createElement('script')
+      script.src = src
+      script.async = true
+      script.crossOrigin = 'anonymous'
+      script.setAttribute(scriptAttr, 'true')
+      script.addEventListener('load', () => {
+        script.dataset.loaded = 'true'
+        complete()
+      }, { once: true })
+      script.addEventListener('error', () => {
+        script.dataset.failed = 'true'
+        complete()
+      }, { once: true })
+      document.head.appendChild(script)
+    })
+  }
+
+  private resolveF10ShareUtils(hostWindow: PlayerHostWindow): F10ShareUtils | null {
+    const utils = hostWindow.F10Utils ?? hostWindow._f ?? null
+    if (utils && !hostWindow.F10Utils) {
+      hostWindow.F10Utils = utils
+    }
+    return utils
   }
 
   private findSurfaceCardContext(
