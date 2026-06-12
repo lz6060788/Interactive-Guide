@@ -213,8 +213,8 @@ export class PanoramaPlayerHost {
       this.sceneLayerEl,
       this.htmlLayerEl,
       this.blurViewportEl,
-      this.markerLayerEl,
       this.overlayLayerEl,
+      this.markerLayerEl,
       this.sectionTabsEl,
       this.groupTabsEl,
       this.listEl,
@@ -247,7 +247,7 @@ export class PanoramaPlayerHost {
   }
 
   loadProduct(product: PanoramaHtmlProduct): void {
-
+    this.product = product
     this.state = resolveInitialPanoramaRuntimeState(product)
     this.render()
     this.emitState()
@@ -498,7 +498,7 @@ export class PanoramaPlayerHost {
       width: item.focusRect.width * sceneGeometry.width,
       height: item.focusRect.height * sceneGeometry.height,
       radius: item.focusRect.radius ?? 10,
-      maskOpacity: clamp(item.focusRect.maskOpacity ?? 0.6, 0.3, 0.88),
+      maskOpacity: 0.5,
     }
   }
 
@@ -669,14 +669,6 @@ export class PanoramaPlayerHost {
     context.globalCompositeOperation = 'destination-out'
     this.drawRoundedRectPath(context, rect)
     context.fill()
-    context.restore()
-
-    context.save()
-    this.drawRoundedRectPath(context, rect)
-    context.setLineDash([6, 4])
-    context.lineWidth = 1
-    context.strokeStyle = 'rgba(255, 255, 255, 0.92)'
-    context.stroke()
     context.restore()
 
     const connector = this.resolveConnectorLine(rect)
@@ -1194,7 +1186,7 @@ const hostStyles = `
     top 520ms cubic-bezier(0.22, 1, 0.36, 1),
     width 520ms cubic-bezier(0.22, 1, 0.36, 1),
     height 520ms cubic-bezier(0.22, 1, 0.36, 1);
-  z-index: 2;
+  z-index: 4;
 }
 .panorama-overlay-layer {
   position: absolute;
