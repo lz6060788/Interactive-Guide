@@ -57,6 +57,8 @@ interface SceneGeometry {
   height: number
 }
 
+const STANDALONE_PRODUCT_BASE_URL = 'http://o.thsi.cn/datav.narrative-vision/interactive-guide'
+
 export class PanoramaPlayerHost {
   private static readonly LIST_SCROLL_SMOOTH_LOCK_MS = 720
   private product: PanoramaHtmlProduct | null = null
@@ -201,11 +203,17 @@ export class PanoramaPlayerHost {
     this.floatingActionButtonEl = document.createElement('button')
     this.floatingActionButtonEl.type = 'button'
     this.floatingActionButtonEl.className = 'panorama-floating-action'
+    this.floatingActionButtonEl.setAttribute('aria-label', '打开独立产物')
     this.floatingActionButtonEl.innerHTML = `
       <svg width="11" height="11" viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path d="M1.40978e-05 4.7424L1.42797e-05 0.5824C1.42864e-05 0.427938 0.0613747 0.279802 0.170596 0.170581C0.279817 0.0613594 0.427952 -4.5649e-07 0.582415 -4.49738e-07L4.74241 -2.67898e-07C4.89688 -2.61147e-07 5.04501 0.0613597 5.15423 0.170581C5.26346 0.279802 5.32482 0.427938 5.32482 0.5824C5.32482 0.736862 5.26346 0.884998 5.15423 0.994219C5.04501 1.10344 4.89688 1.1648 4.74241 1.1648L1.16481 1.1648L1.16481 4.7424C1.16481 4.89686 1.10345 5.045 0.994234 5.15422C0.885012 5.26344 0.736876 5.3248 0.582414 5.3248C0.427952 5.3248 0.279816 5.26344 0.170596 5.15422C0.0613744 5.045 1.40911e-05 4.89686 1.40978e-05 4.7424ZM5.54642 10.2888C5.54642 10.1343 5.60777 9.9862 5.717 9.87698C5.82622 9.76776 5.97435 9.7064 6.12881 9.7064L9.70642 9.7064L9.70642 6.1288C9.70642 5.97434 9.76778 5.8262 9.877 5.71698C9.98622 5.60776 10.1344 5.5464 10.2888 5.5464C10.4433 5.5464 10.5914 5.60776 10.7006 5.71698C10.8099 5.8262 10.8712 5.97434 10.8712 6.1288L10.8712 10.2888C10.8712 10.4433 10.8099 10.5914 10.7006 10.7006C10.5914 10.8098 10.4433 10.8712 10.2888 10.8712L6.12881 10.8712C5.97435 10.8712 5.82622 10.8098 5.717 10.7006C5.60777 10.5914 5.54642 10.4433 5.54642 10.2888Z" fill="white"/>
       </svg>
     `
+    this.floatingActionButtonEl.addEventListener('click', event => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.openStandaloneProduct()
+    })
 
     this.overlayLayerEl.appendChild(this.overlayCanvasEl)
 
@@ -1075,6 +1083,52 @@ export class PanoramaPlayerHost {
       group.htmlBridge?.targetOrigin || '*',
     )
   }
+
+  private openStandaloneProduct(): void {
+    const targetUrl = this.buildStandaloneProductUrl()
+    if (!targetUrl) return
+    window.open(targetUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  private buildStandaloneProductUrl(): string | null {
+    if (!this.product?.packageId || !this.product.version) return null
+    const targetUrl = new URL(
+      `${encodeURIComponent(this.product.packageId)}/${encodeURIComponent(this.product.version)}/index.html`,
+      `${STANDALONE_PRODUCT_BASE_URL}/`,
+    )
+    const focusName = this.resolveStandaloneFocusName()
+    if (focusName) {
+      targetUrl.searchParams.set('focus', focusName)
+    }
+    return targetUrl.toString()
+  }
+
+  private resolveStandaloneFocusName(): string | null {
+    if (!this.product || !this.state) return null
+    const section = this.product.sections.find(entry => entry.id === this.state?.activeSectionId)
+    const group = section?.groups.find(entry => entry.id === this.state?.activeGroupId)
+    if (!group) return null
+    if (isPanoramaGroup(group)) {
+      const activeItem = group.items.find(entry => entry.id === this.state?.activeItemId)
+      return activeItem?.title?.trim() || null
+    }
+    return this.resolveHtmlStandaloneFocusName()
+  }
+
+  private resolveHtmlStandaloneFocusName(): string | null {
+    const iframeWindow = this.htmlFrameEl.contentWindow as (Window & {
+      __interactiveGuideGetCurrentFocusName?: () => unknown
+    }) | null
+    if (!iframeWindow || typeof iframeWindow.__interactiveGuideGetCurrentFocusName !== 'function') {
+      return null
+    }
+    try {
+      const focusName = iframeWindow.__interactiveGuideGetCurrentFocusName()
+      return typeof focusName === 'string' && focusName.trim() ? focusName.trim() : null
+    } catch {
+      return null
+    }
+  }
 }
 
 declare global {
@@ -1106,7 +1160,6 @@ const hostStyles = `
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 420px;
   overflow: hidden;
   border-radius: 10px;
   background: #1d1d1d;
@@ -1203,9 +1256,9 @@ const hostStyles = `
 }
 .panorama-section-tabs {
   position: absolute;
-  left: 16px;
-  right: 16px;
-  top: 14px;
+  left: clamp(10px, 3.6%, 16px);
+  right: clamp(10px, 3.6%, 16px);
+  top: clamp(10px, 3.2%, 14px);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1225,8 +1278,10 @@ const hostStyles = `
   height: 30px;
   padding: 5px 8px;
   border-radius: 4px;
-  background: rgba(245,245,245,0.12);
-  color: rgba(255,255,255,0.84);
+  border: 1px solid rgba(255,255,255,0.1);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.03) 100%);
+  color: rgba(255,255,255,0.78);
   font-size: 14px;
   line-height: 20px;
   font-weight: 400;
@@ -1234,17 +1289,24 @@ const hostStyles = `
   pointer-events: auto;
   text-align: center;
   align-self: stretch;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  backdrop-filter: blur(8px) saturate(125%);
+  -webkit-backdrop-filter: blur(8px) saturate(125%);
 }
 .panorama-section-button.is-active {
   background: linear-gradient(0deg, rgba(146,146,146,0.1), rgba(146,146,146,0.1)), #ffffff;
+  border-color: rgba(255,255,255,0.78);
   color: rgba(0,0,0,0.84);
   font-weight: 500;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.4),
+    0 10px 24px rgba(0,0,0,0.14);
 }
 .panorama-group-tabs {
   position: absolute;
-  left: 16px;
-  right: 16px;
-  top: 58px;
+  left: clamp(10px, 3.6%, 16px);
+  right: clamp(10px, 3.6%, 16px);
+  top: clamp(46px, 13%, 58px);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1279,10 +1341,10 @@ const hostStyles = `
 }
 .panorama-list {
   position: absolute;
-  right: 14px;
-  top: 108px;
-  bottom: 56px;
-  width: 138px;
+  right: clamp(8px, 3%, 14px);
+  top: clamp(88px, 24%, 108px);
+  bottom: clamp(42px, 12%, 56px);
+  width: clamp(112px, 30%, 138px);
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0 4px 0 0;
@@ -1408,7 +1470,7 @@ const hostStyles = `
   left: 0;
   right: 0;
   bottom: 0;
-  height: 36px;
+  height: clamp(28px, 8%, 36px);
   background: linear-gradient(0deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 100%);
   z-index: 4;
 }
@@ -1416,20 +1478,21 @@ const hostStyles = `
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 32px;
+  bottom: clamp(22px, 6.4%, 32px);
   color: rgba(255,255,255,0.35);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: clamp(10px, 2.8vw, 12px);
+  line-height: clamp(14px, 3.6vw, 16px);
   font-weight: 400;
   text-align: center;
-  letter-spacing: 1.5px;
+  letter-spacing: clamp(0.8px, 0.3vw, 1.5px);
   z-index: 5;
   pointer-events: none;
+  padding: 0 clamp(28px, 10%, 44px);
 }
 .panorama-floating-action {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
+  right: clamp(10px, 3.6%, 16px);
+  bottom: clamp(10px, 3.6%, 16px);
   width: 16px;
   height: 16px;
   padding: 0;
