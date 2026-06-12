@@ -58,6 +58,7 @@ interface SceneGeometry {
 }
 
 export class PanoramaPlayerHost {
+  private static readonly LIST_SCROLL_SMOOTH_LOCK_MS = 720
   private product: PanoramaHtmlProduct | null = null
   private state: PanoramaRuntimeState | null = null
   private readonly shadowRoot: ShadowRoot
@@ -75,6 +76,7 @@ export class PanoramaPlayerHost {
   private readonly listEl: HTMLDivElement
   private readonly hintFadeEl: HTMLDivElement
   private readonly hintTextEl: HTMLDivElement
+  private readonly floatingActionButtonEl: HTMLButtonElement
   private readonly overlayLayerEl: HTMLDivElement
   private readonly overlayCanvasEl: HTMLCanvasElement
   private readonly overlayContext: CanvasRenderingContext2D | null
@@ -85,12 +87,14 @@ export class PanoramaPlayerHost {
   private readonly itemElements = new Map<string, PanoramaListItemRefs>()
   private readonly markerElements = new Map<string, HTMLButtonElement>()
   private currentMarkerGroupId: string | null = null
+  private currentListGroupId: string | null = null
   private readonly resizeObserver: ResizeObserver | null
   private focusAnimationFrame: number | null = null
   private displayedFocusRect: ProjectedFocusRect | null = null
   private lastSceneSignature: string | null = null
   private backgroundImageUrl: string | null = null
   private backgroundImageAspectRatio = 1
+  private readonly prefersSimpleFocusOverlay = shouldUseAppleFocusOverlayFallback()
   private activeItemId: string | null = null
   private previewItemId: string | null = null
   private ignoreListClick = false
@@ -194,6 +198,15 @@ export class PanoramaPlayerHost {
     this.hintTextEl = document.createElement('div')
     this.hintTextEl.className = 'panorama-hint-text'
 
+    this.floatingActionButtonEl = document.createElement('button')
+    this.floatingActionButtonEl.type = 'button'
+    this.floatingActionButtonEl.className = 'panorama-floating-action'
+    this.floatingActionButtonEl.innerHTML = `
+      <svg width="11" height="11" viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M1.40978e-05 4.7424L1.42797e-05 0.5824C1.42864e-05 0.427938 0.0613747 0.279802 0.170596 0.170581C0.279817 0.0613594 0.427952 -4.5649e-07 0.582415 -4.49738e-07L4.74241 -2.67898e-07C4.89688 -2.61147e-07 5.04501 0.0613597 5.15423 0.170581C5.26346 0.279802 5.32482 0.427938 5.32482 0.5824C5.32482 0.736862 5.26346 0.884998 5.15423 0.994219C5.04501 1.10344 4.89688 1.1648 4.74241 1.1648L1.16481 1.1648L1.16481 4.7424C1.16481 4.89686 1.10345 5.045 0.994234 5.15422C0.885012 5.26344 0.736876 5.3248 0.582414 5.3248C0.427952 5.3248 0.279816 5.26344 0.170596 5.15422C0.0613744 5.045 1.40911e-05 4.89686 1.40978e-05 4.7424ZM5.54642 10.2888C5.54642 10.1343 5.60777 9.9862 5.717 9.87698C5.82622 9.76776 5.97435 9.7064 6.12881 9.7064L9.70642 9.7064L9.70642 6.1288C9.70642 5.97434 9.76778 5.8262 9.877 5.71698C9.98622 5.60776 10.1344 5.5464 10.2888 5.5464C10.4433 5.5464 10.5914 5.60776 10.7006 5.71698C10.8099 5.8262 10.8712 5.97434 10.8712 6.1288L10.8712 10.2888C10.8712 10.4433 10.8099 10.5914 10.7006 10.7006C10.5914 10.8098 10.4433 10.8712 10.2888 10.8712L6.12881 10.8712C5.97435 10.8712 5.82622 10.8098 5.717 10.7006C5.60777 10.5914 5.54642 10.4433 5.54642 10.2888Z" fill="white"/>
+      </svg>
+    `
+
     this.overlayLayerEl.appendChild(this.overlayCanvasEl)
 
     this.viewportEl.append(
@@ -207,6 +220,7 @@ export class PanoramaPlayerHost {
       this.listEl,
       this.hintFadeEl,
       this.hintTextEl,
+      this.floatingActionButtonEl,
     )
     this.rootEl.appendChild(this.viewportEl)
     this.shadowRoot.append(styleEl, this.blurMaskSvgEl, this.rootEl)
@@ -233,7 +247,7 @@ export class PanoramaPlayerHost {
   }
 
   loadProduct(product: PanoramaHtmlProduct): void {
-    this.product = product
+
     this.state = resolveInitialPanoramaRuntimeState(product)
     this.render()
     this.emitState()
@@ -318,6 +332,7 @@ export class PanoramaPlayerHost {
       this.listEl.replaceChildren()
       this.previewItemId = null
       this.listDragState = null
+      this.currentListGroupId = null
       this.lastSceneSignature = null
       this.backgroundImageUrl = null
       this.backgroundImageAspectRatio = 1
@@ -333,6 +348,7 @@ export class PanoramaPlayerHost {
 
     const model = buildPanoramaRenderModel(this.product, this.state)
     const { product, section, group, item, state } = model
+
     this.renderSectionTabs(product.sections, section)
     this.renderGroupTabs(section, group)
     this.hintTextEl.textContent = product.hintText
@@ -349,9 +365,6 @@ export class PanoramaPlayerHost {
     this.renderList(group, item)
     this.renderViewport(group, item, zoom, backgroundImageUrl)
 
-    if (state.interactionMode !== 'scroll-sync') {
-      this.scrollItemIntoView(item.id)
-    }
   }
 
   private renderHtmlGroup(group: PanoramaHtmlGroup): void {
@@ -364,6 +377,7 @@ export class PanoramaPlayerHost {
     this.markerLayerEl.style.display = 'none'
     this.markerLayerEl.style.pointerEvents = 'none'
     this.listEl.replaceChildren()
+    this.currentListGroupId = null
     this.listEl.style.display = 'none'
     this.hintFadeEl.style.display = 'none'
     this.hintTextEl.style.display = 'none'
@@ -435,7 +449,7 @@ export class PanoramaPlayerHost {
     this.markerLayerEl.style.display = 'block'
     this.markerLayerEl.style.pointerEvents = 'auto'
     this.listEl.style.display = 'block'
-    this.hintFadeEl.style.display = 'block'
+    this.hintFadeEl.style.display = 'none'
     this.hintTextEl.style.display = 'block'
     this.ensureBackgroundImageAspectRatio(backgroundImageUrl)
     const sceneGeometry = this.computeSceneGeometry(zoom)
@@ -469,7 +483,7 @@ export class PanoramaPlayerHost {
       this.lastSceneSignature = sceneSignature
     }
 
-    this.blurViewportEl.style.display = backgroundImageUrl ? 'block' : 'none'
+    this.blurViewportEl.style.display = backgroundImageUrl && !this.prefersSimpleFocusOverlay ? 'block' : 'none'
 
     const projectedFocusRect = this.projectFocusRect(item, sceneGeometry)
     this.animateFocusRect(projectedFocusRect)
@@ -783,47 +797,48 @@ export class PanoramaPlayerHost {
   }
 
   private renderList(group: Extract<PanoramaGroup, { renderMode?: 'panorama' }>, activeItem: PanoramaItem): void {
-    this.itemElements.clear()
+    if (this.currentListGroupId !== group.id) {
+      this.itemElements.clear()
 
-    const itemCards = group.items.map(entry => {
-      const cardEl = document.createElement('div')
-      cardEl.className = `panorama-list-item ${entry.id === activeItem.id ? 'is-active' : ''}`
-      cardEl.dataset.itemId = entry.id
+      const itemCards = group.items.map(entry => {
+        const cardEl = document.createElement('div')
+        cardEl.className = `panorama-list-item ${entry.id === activeItem.id ? 'is-active' : ''}`
+        cardEl.dataset.itemId = entry.id
 
-      const dividerEl = document.createElement('div')
-      dividerEl.className = 'panorama-list-divider'
-      cardEl.appendChild(dividerEl)
+        const dividerEl = document.createElement('div')
+        dividerEl.className = 'panorama-list-divider'
+        cardEl.appendChild(dividerEl)
 
-      const titleEl = document.createElement('div')
-      titleEl.className = 'panorama-list-title'
-      titleEl.textContent = entry.title
+        const titleEl = document.createElement('div')
+        titleEl.className = 'panorama-list-title'
+        titleEl.textContent = entry.title
 
-      cardEl.appendChild(titleEl)
+        cardEl.appendChild(titleEl)
 
-      if (entry.id === activeItem.id) {
         const bodyEl = document.createElement('div')
         bodyEl.className = 'panorama-list-body'
         bodyEl.textContent = entry.description || '暂无说明'
         cardEl.appendChild(bodyEl)
-      }
 
-      this.itemElements.set(entry.id, {
-        cardEl,
-        dividerEl,
-        titleEl,
+        this.itemElements.set(entry.id, {
+          cardEl,
+          dividerEl,
+          titleEl,
+        })
+        return cardEl
       })
-      return cardEl
-    })
 
-    const topSpacerEl = document.createElement('div')
-    topSpacerEl.className = 'panorama-list-edge-spacer panorama-list-edge-spacer-top'
-    topSpacerEl.setAttribute('aria-hidden', 'true')
+      const topSpacerEl = document.createElement('div')
+      topSpacerEl.className = 'panorama-list-edge-spacer panorama-list-edge-spacer-top'
+      topSpacerEl.setAttribute('aria-hidden', 'true')
 
-    const bottomSpacerEl = document.createElement('div')
-    bottomSpacerEl.className = 'panorama-list-edge-spacer panorama-list-edge-spacer-bottom'
-    bottomSpacerEl.setAttribute('aria-hidden', 'true')
+      const bottomSpacerEl = document.createElement('div')
+      bottomSpacerEl.className = 'panorama-list-edge-spacer panorama-list-edge-spacer-bottom'
+      bottomSpacerEl.setAttribute('aria-hidden', 'true')
 
-    this.listEl.replaceChildren(topSpacerEl, ...itemCards, bottomSpacerEl)
+      this.listEl.replaceChildren(topSpacerEl, ...itemCards, bottomSpacerEl)
+      this.currentListGroupId = group.id
+    }
     this.updateListEdgeSpacers()
     this.syncListSelectionClasses(activeItem.id)
   }
@@ -832,7 +847,7 @@ export class PanoramaPlayerHost {
     this.centerItemInList(itemId, 'smooth')
   }
 
-  private lockScrollSync(): void {
+  private lockScrollSync(duration = 320): void {
     this.scrollSyncLocked = true
     if (this.scrollSyncTimer !== null) {
       window.clearTimeout(this.scrollSyncTimer)
@@ -840,7 +855,7 @@ export class PanoramaPlayerHost {
     this.scrollSyncTimer = window.setTimeout(() => {
       this.scrollSyncLocked = false
       this.scrollSyncTimer = null
-    }, 320)
+    }, duration)
   }
 
   private readonly handleListScroll = () => {
@@ -850,7 +865,6 @@ export class PanoramaPlayerHost {
     if (this.scrollSyncLocked || !this.product || !this.state) return
     const model = buildPanoramaRenderModel(this.product, this.state)
     if (!model.item || !isPanoramaGroup(model.group)) return
-
     const nextItem = this.resolveNearestListItem(model.group)
     if (!nextItem) return
 
@@ -895,9 +909,15 @@ export class PanoramaPlayerHost {
     } catch {}
 
     if (this.listDragState.moved) {
-      const currentPreviewItemId = this.previewItemId ?? this.activeItemId
-      if (currentPreviewItemId) {
-        this.commitListSelection(currentPreviewItemId)
+      this.listDragState = null
+      const model = this.product && this.state ? buildPanoramaRenderModel(this.product, this.state) : null
+      const nextItem = model?.item && isPanoramaGroup(model.group)
+        ? this.resolveNearestListItem(model.group)
+        : null
+      if (nextItem) {
+        this.commitListSelection(nextItem.id)
+      } else if (this.activeItemId) {
+        this.commitListSelection(this.activeItemId)
       } else {
         this.setPreviewItem(null)
       }
@@ -908,9 +928,8 @@ export class PanoramaPlayerHost {
     } else {
       this.setPreviewItem(null)
       this.ignoreListClick = false
+      this.listDragState = null
     }
-
-    this.listDragState = null
   }
 
   private readonly handleListClick = (event: MouseEvent) => {
@@ -941,7 +960,6 @@ export class PanoramaPlayerHost {
     const nextItem = model.group.items.find(entry => entry.id === itemId)
     if (!nextItem) return
     this.selectItem(model.group, nextItem)
-    this.centerItemInList(nextItem.id, 'smooth')
   }
 
   private clearScrollSettleTimer(): void {
@@ -971,8 +989,8 @@ export class PanoramaPlayerHost {
     this.lockScrollSync()
     if (nextItem.id !== model.item.id) {
       this.selectItem(model.group, nextItem, 'scroll-sync')
+      this.centerItemInList(nextItem.id, 'smooth')
     }
-    this.centerItemInList(nextItem.id, 'smooth')
   }
 
   private setPreviewItem(itemId: string | null): void {
@@ -996,8 +1014,11 @@ export class PanoramaPlayerHost {
     const viewportHeight = this.listEl.clientHeight
     const firstHeight = itemCards[0].cardEl.getBoundingClientRect().height
     const lastHeight = itemCards[itemCards.length - 1].cardEl.getBoundingClientRect().height
-    topSpacerEl.style.height = `${Math.max((viewportHeight - firstHeight) / 2, 0)}px`
-    bottomSpacerEl.style.height = `${Math.max((viewportHeight - lastHeight) / 2, 0)}px`
+    const topSpacerHeight = Math.max((viewportHeight - firstHeight) / 2, 0)
+    const bottomSpacerHeight = Math.max((viewportHeight - lastHeight) / 2, 0)
+    topSpacerEl.style.height = `${topSpacerHeight}px`
+    bottomSpacerEl.style.height = `${bottomSpacerHeight}px`
+
   }
 
   private getItemCenterScrollTop(itemId: string): number {
@@ -1009,10 +1030,15 @@ export class PanoramaPlayerHost {
     const deltaToCenter = itemRect.top + itemRect.height / 2 - (listRect.top + listRect.height / 2)
     const nextScrollTop = this.listEl.scrollTop + deltaToCenter
     const maxScrollTop = Math.max(this.listEl.scrollHeight - this.listEl.clientHeight, 0)
-    return clamp(nextScrollTop, 0, maxScrollTop)
+    const clampedScrollTop = clamp(nextScrollTop, 0, maxScrollTop)
+
+    return clampedScrollTop
   }
 
   private centerItemInList(itemId: string, behavior: ScrollBehavior = 'smooth'): void {
+    if (behavior === 'smooth') {
+      this.lockScrollSync(PanoramaPlayerHost.LIST_SCROLL_SMOOTH_LOCK_MS)
+    }
     window.requestAnimationFrame(() => {
       const nextScrollTop = this.getItemCenterScrollTop(itemId)
       this.listEl.scrollTo({ top: nextScrollTop, behavior })
@@ -1310,11 +1336,19 @@ const hostStyles = `
 }
 .panorama-list-body {
   margin-top: 10px;
-  color: #ffffff;
+  color: rgba(255,255,255,0.5);
   font-size: 12px;
   line-height: 18px;
+  font-weight: 400;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.32);
+}
+.panorama-list-item.is-active .panorama-list-body {
+  color: rgba(255,255,255,0.92);
   font-weight: 500;
   text-shadow: 0 1px 6px rgba(0,0,0,0.4);
+}
+.panorama-list-item.is-preview .panorama-list-body {
+  color: rgba(255,255,255,0.72);
 }
 .panorama-list-divider {
   margin-top: 0;
@@ -1388,17 +1422,52 @@ const hostStyles = `
 }
 .panorama-hint-text {
   position: absolute;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
-  color: rgba(255,255,255,0.6);
-  font-size: 10px;
-  line-height: 14px;
+  left: 0;
+  right: 0;
+  bottom: 32px;
+  color: rgba(255,255,255,0.35);
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 400;
   text-align: center;
-  z-index: 4;
-  width: calc(100% - 32px);
+  letter-spacing: 1.5px;
+  z-index: 5;
   pointer-events: none;
+}
+.panorama-floating-action {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 6;
+  cursor: pointer;
+  opacity: 0.92;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.panorama-floating-action:hover {
+  opacity: 1;
+  transform: scale(1.06);
+}
+.panorama-floating-action:active {
+  transform: scale(0.96);
+}
+.panorama-floating-action:focus-visible {
+  outline: 1px solid rgba(255,255,255,0.62);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+.panorama-floating-action svg {
+  display: block;
+  width: 11px;
+  height: 11px;
 }
 @media (max-width: 980px) {
   .panorama-list {
@@ -1418,6 +1487,17 @@ const hostStyles = `
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
+}
+
+function shouldUseAppleFocusOverlayFallback(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const platform = navigator.platform || ''
+  const vendor = navigator.vendor || ''
+  const userAgent = navigator.userAgent || ''
+  const maxTouchPoints = navigator.maxTouchPoints || 0
+  const isIOSDevice = /iPad|iPhone|iPod/.test(userAgent) || (platform === 'MacIntel' && maxTouchPoints > 1)
+  const isSafariOnMac = /Mac/.test(platform) && /Apple/i.test(vendor)
+  return isIOSDevice || isSafariOnMac
 }
 
 function easeOutCubic(value: number): number {
