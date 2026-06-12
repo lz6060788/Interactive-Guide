@@ -150,7 +150,6 @@ export class HtmlNodeBridge {
     if (!this.activeNode || this.activeNode.initPosted) {
       return
     }
-
     this.postEventToActiveNode('host:node-init', {
       activationId: this.activeNode.activationId,
       sessionId: this.sessionId,
