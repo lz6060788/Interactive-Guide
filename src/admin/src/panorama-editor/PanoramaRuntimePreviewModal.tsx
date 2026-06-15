@@ -18,8 +18,8 @@ export function PanoramaRuntimePreviewModal({
       <Flex
         position="relative"
         zIndex={1}
-        w="min(1440px, calc(100vw - 64px))"
-        h="min(860px, calc(100vh - 64px))"
+        w="min(620px, calc(100vw - 48px))"
+        h="min(620px, calc(100vh - 48px))"
         borderRadius="2xl"
         overflow="hidden"
         bg="rgba(10, 11, 15, 0.98)"
@@ -48,8 +48,8 @@ export function PanoramaRuntimePreviewModal({
 
         <Flex px="6" py="5" flex="1" minH="0" align="center" justify="center">
           <Box
-            w="min(calc(100vw - 160px), calc(100vh - 220px), 760px)"
-            h="min(calc(100vw - 160px), calc(100vh - 220px), 760px)"
+            w="min(455px, calc(100vw - 120px), calc(100vh - 180px))"
+            h="min(455px, calc(100vw - 120px), calc(100vh - 180px))"
             maxW="100%"
             maxH="100%"
             borderRadius="xl"
