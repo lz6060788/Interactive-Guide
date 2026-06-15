@@ -129,10 +129,18 @@ type F10ShareUtils = {
   shareUrlCard?: (payload?: Record<string, unknown>) => void | Promise<void>
 }
 
+type WeblogApi = {
+  report?: (payload?: Record<string, unknown>) => void
+  setConfig?: (payload?: Record<string, unknown>) => void
+}
+
 type PlayerHostWindow = Window & typeof globalThis & {
   F10Utils?: F10ShareUtils
   _f?: F10ShareUtils
+  weblog?: WeblogApi
   __interactiveGuideF10UtilsPromise?: Promise<F10ShareUtils | null>
+  __interactiveGuideWeblogPromise?: Promise<WeblogApi | null>
+  __interactiveGuideWeblogConfigured?: boolean
   Bridge?: unknown
   'kingfisher-bridge'?: unknown
   _falcon?: unknown
@@ -141,9 +149,14 @@ type PlayerHostWindow = Window & typeof globalThis & {
 
 const HOTSPOT_SIZE = 28
 const THSC_F10_UTILS_CDN_URL = 'https://s.thsi.cn/cb?cd/website-thsc-f10-utils/1.6.0/thsc-f10-utils.js'
+const THSC_WEBLOG_CDN_URL = 'https://s.thsi.cn/cd/weblog/0.0.5/weblog.js'
 const KINGFISHER_BRIDGE_SCRIPT_ATTR = 'data-interactive-guide-kingfisher-bridge'
 const KINGFISHER_FALCON_SCRIPT_ATTR = 'data-interactive-guide-kingfisher-falcon'
 const THSC_F10_UTILS_SCRIPT_ATTR = 'data-interactive-guide-f10-utils'
+const THSC_WEBLOG_SCRIPT_ATTR = 'data-interactive-guide-weblog'
+const INDUSTRY_TRACKING_PAGE_TYPE = 'visIndustry'
+const INDUSTRY_TRACKING_NAME = '商业航天'
+const INDUSTRY_TRACKING_SOURCE = ''
 const BACK_ICON_SVG = `
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
   <path d="M15.25 5.5L8.75 12L15.25 18.5" stroke="#231815" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -176,6 +189,11 @@ const INFO_SHEET_FALLBACK_CONFIG: InfoOverlayConfig = {
 const SHARE_ICON_SVG = `
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
   <path d="M18.332 21.2057H5.39898C3.97063 21.2057 2.81152 20.0466 2.81152 18.6183V5.6844C2.81152 4.25605 4.01466 2.79468 5.44301 2.79468H12.6737V4.11042H5.44301C4.72756 4.11042 4.12726 4.71072 4.12726 5.42616L4.1061 18.6183C4.1061 19.3337 4.68607 19.9112 5.39898 19.9112L18.5928 19.89C19.3057 19.89 19.906 19.2897 19.906 18.5743V11.3436H21.2217V18.5743C21.2226 20.0043 19.7629 21.2057 18.332 21.2057ZM20.5656 8.71213C20.1922 8.71382 19.9068 8.41156 19.9068 8.0551L19.8882 4.91307L9.8813 14.456C9.61883 14.7066 9.19295 14.7066 8.93048 14.456C8.6697 14.2054 8.6697 13.799 8.93048 13.5492L18.8519 4.08925L15.9622 4.11042C15.5888 4.11042 15.3051 3.80815 15.3051 3.4534C15.3051 3.09694 15.5888 2.79637 15.9622 2.79468H20.5512C20.9246 2.79468 21.2226 3.08001 21.2226 3.43646V8.0551C21.2226 8.41156 20.9364 8.71213 20.5656 8.71213Z" fill="#231815"/>
+</svg>
+`
+const SHARE_ICON_WHITE_SVG = `
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <path d="M18.332 21.2057H5.39898C3.97063 21.2057 2.81152 20.0466 2.81152 18.6183V5.6844C2.81152 4.25605 4.01466 2.79468 5.44301 2.79468H12.6737V4.11042H5.44301C4.72756 4.11042 4.12726 4.71072 4.12726 5.42616L4.1061 18.6183C4.1061 19.3337 4.68607 19.9112 5.39898 19.9112L18.5928 19.89C19.3057 19.89 19.906 19.2897 19.906 18.5743V11.3436H21.2217V18.5743C21.2226 20.0043 19.7629 21.2057 18.332 21.2057ZM20.5656 8.71213C20.1922 8.71382 19.9068 8.41156 19.9068 8.0551L19.8882 4.91307L9.8813 14.456C9.61883 14.7066 9.19295 14.7066 8.93048 14.456C8.6697 14.2054 8.6697 13.799 8.93048 13.5492L18.8519 4.08925L15.9622 4.11042C15.5888 4.11042 15.3051 3.80815 15.3051 3.4534C15.3051 3.09694 15.5888 2.79637 15.9622 2.79468H20.5512C20.9246 2.79468 21.2226 3.08001 21.2226 3.43646V8.0551C21.2226 8.41156 20.9364 8.71213 20.5656 8.71213Z" fill="#FFFFFF"/>
 </svg>
 `
 const SURFACE_MARKER_SVG = `
@@ -260,6 +278,11 @@ export class PlayerHost {
   private bottomSheetCardsDragState: SheetCardDragState | null = null
   private ignoreBottomSheetCardClick = false
   private shareDependencyPrimed = false
+  private pageExposureReported = false
+  private pageVisibleStartedAt: number | null = null
+  private pageTrackedVisibleSeconds = 0
+  private pageStayReportedSeconds = 0
+  private pageStayTimerId: number | null = null
   private pinchState: TouchPinchState = {
     active: false,
     startDistance: 0,
@@ -291,6 +314,7 @@ export class PlayerHost {
     this.bindEvents()
     this.buildChrome()
     this.primeShareDependency()
+    this.startPageTracking()
     this.applyBaseStyles()
     this.emitState()
   }
@@ -923,13 +947,18 @@ export class PlayerHost {
       pointerEvents: 'none',
       fontFamily: '"Noto Sans SC", "Noto Sans S Chinese", "PingFang SC", "Microsoft YaHei", sans-serif',
     })
+    this.chromeRoot.style.setProperty('--player-safe-area-top', 'env(safe-area-inset-top, 0px)')
+    this.chromeRoot.style.setProperty('--player-header-content-height', '44px')
+    this.chromeRoot.style.setProperty('--player-header-backdrop-height', 'calc(var(--player-safe-area-top) + var(--player-header-content-height))')
+    this.chromeRoot.style.setProperty('--player-header-control-top', 'calc(var(--player-safe-area-top) + 10px)')
+    this.chromeRoot.style.setProperty('--player-back-control-top', 'calc(var(--player-safe-area-top) + 6px)')
 
     Object.assign(this.headerBackdropEl.style, {
       position: 'absolute',
       left: '0',
       right: '0',
       top: '0',
-      height: '56px',
+      height: 'var(--player-header-backdrop-height)',
       display: 'none',
       background: 'rgba(255, 255, 255, 0.96)',
       borderBottom: '1px solid rgba(15, 23, 42, 0.08)',
@@ -942,7 +971,7 @@ export class PlayerHost {
     Object.assign(this.backControlEl.style, {
       position: 'absolute',
       left: '16px',
-      top: '6px',
+      top: 'var(--player-back-control-top)',
       display: 'none',
       alignItems: 'center',
       justifyContent: 'center',
@@ -977,7 +1006,7 @@ export class PlayerHost {
     Object.assign(this.headerCenterEl.style, {
       position: 'absolute',
       left: '50%',
-      top: '14px',
+      top: 'var(--player-header-control-top)',
       transform: 'translateX(-50%)',
       display: 'none',
       alignItems: 'center',
@@ -1022,7 +1051,7 @@ export class PlayerHost {
       ...topIconButtonStyle,
       position: 'absolute',
       right: '16px',
-      top: '14px',
+      top: 'var(--player-header-control-top)',
       display: 'none',
       opacity: '0',
       transition: 'opacity 220ms ease',
@@ -1452,24 +1481,25 @@ export class PlayerHost {
     const currentNode = state.currentNode
     const manifestTitle = state.manifest?.title ?? ''
     const nodeKind = this.getNodeKind(currentNode)
+    const isHtmlNode = nodeKind === 'html'
     const showHorizontalDragHint = nodeKind === 'surface'
       ? true
       : currentNode?.imageFitMode === 'fitHeight'
     const chromeVisible = !!currentNode && !state.transitioning && !state.preloading
     const canShare = chromeVisible && this.canUseShareAction()
-    const canShowInfo = chromeVisible && !!this.getInfoOverlayConfig(state.manifest)
-    const showHtmlHeaderBackdrop = chromeVisible && nodeKind === 'html'
+    const canShowInfo = chromeVisible && !isHtmlNode && !!this.getInfoOverlayConfig(state.manifest)
 
-    this.headerBackdropEl.style.display = showHtmlHeaderBackdrop ? 'block' : 'none'
-    this.headerBackdropEl.style.opacity = showHtmlHeaderBackdrop ? '1' : '0'
-    this.headerCenterEl.style.display = chromeVisible ? 'flex' : 'none'
-    this.headerCenterEl.style.opacity = chromeVisible ? '1' : '0'
+    this.headerBackdropEl.style.display = 'none'
+    this.headerBackdropEl.style.opacity = '0'
+    this.headerCenterEl.style.display = chromeVisible && !isHtmlNode ? 'flex' : 'none'
+    this.headerCenterEl.style.opacity = chromeVisible && !isHtmlNode ? '1' : '0'
     this.infoButtonEl.style.display = canShowInfo ? 'flex' : 'none'
     this.infoButtonEl.style.pointerEvents = canShowInfo ? 'auto' : 'none'
     this.shareButtonEl.style.display = canShare ? 'flex' : 'none'
     this.shareButtonEl.style.opacity = canShare ? '1' : '0'
     this.shareButtonEl.style.pointerEvents = canShare ? 'auto' : 'none'
     this.packageTitleEl.textContent = manifestTitle
+    this.applyShareButtonTheme(isHtmlNode)
     this.renderBottomSheet(currentNode, chromeVisible)
     this.renderFloatingBackButton(currentNode, chromeVisible)
     this.renderInfoSheet(state.manifest, chromeVisible)
@@ -1478,6 +1508,19 @@ export class PlayerHost {
     this.dragHintBackdropEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
     this.dragHintEl.style.display = showHorizontalDragHint ? 'block' : 'none'
     this.dragHintEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
+  }
+
+  private applyShareButtonTheme(useLightTheme: boolean): void {
+    const nextMarkup = useLightTheme ? SHARE_ICON_WHITE_SVG : SHARE_ICON_SVG
+    if (this.shareButtonEl.innerHTML !== nextMarkup) {
+      this.shareButtonEl.innerHTML = nextMarkup
+    }
+    const svg = this.shareButtonEl.querySelector('svg')
+    if (svg) {
+      ;(svg as SVGElement).style.width = '24px'
+      ;(svg as SVGElement).style.height = '24px'
+      ;(svg as SVGElement).style.display = 'block'
+    }
   }
 
   private renderBottomSheet(currentNode: PublishNode | null, chromeVisible: boolean): void {
@@ -1767,6 +1810,7 @@ export class PlayerHost {
   }
 
   private async handleShareAction(): Promise<void> {
+    await this.reportShareClick()
     const sharePayload = {
       title: this.engine.getManifest()?.title ?? '',
       text: this.engine.getManifest()?.title ?? '',
@@ -2847,8 +2891,166 @@ export class PlayerHost {
   private primeShareDependency(): void {
     if (this.shareDependencyPrimed) return
     this.shareDependencyPrimed = true
+    void this.ensureWeblogLoaded()
     if (!this.canUseFalconShareAction()) return
     void this.ensureF10ShareUtilsLoaded()
+  }
+
+  private startPageTracking(): void {
+    void this.reportPageExposure()
+    this.resumePageStayTracking()
+    document.addEventListener('visibilitychange', this.handleTrackingVisibilityChange)
+    window.addEventListener('pagehide', this.handleTrackingPageHide)
+    this.destroyers.push(() => document.removeEventListener('visibilitychange', this.handleTrackingVisibilityChange))
+    this.destroyers.push(() => window.removeEventListener('pagehide', this.handleTrackingPageHide))
+    this.destroyers.push(() => this.stopPageStayTracking())
+  }
+
+  private handleTrackingVisibilityChange = (): void => {
+    if (document.visibilityState === 'visible') {
+      this.resumePageStayTracking()
+      return
+    }
+    this.pausePageStayTracking()
+  }
+
+  private handleTrackingPageHide = (): void => {
+    this.pausePageStayTracking()
+  }
+
+  private resumePageStayTracking(): void {
+    if (document.visibilityState === 'hidden') {
+      return
+    }
+    if (this.pageVisibleStartedAt === null) {
+      this.pageVisibleStartedAt = Date.now()
+    }
+    if (this.pageStayTimerId !== null) {
+      return
+    }
+    this.pageStayTimerId = window.setInterval(() => {
+      void this.flushPageStayTracking(false)
+    }, 1000)
+  }
+
+  private pausePageStayTracking(): void {
+    if (this.pageStayTimerId !== null) {
+      window.clearInterval(this.pageStayTimerId)
+      this.pageStayTimerId = null
+    }
+    void this.flushPageStayTracking(true)
+  }
+
+  private stopPageStayTracking(): void {
+    if (this.pageStayTimerId !== null) {
+      window.clearInterval(this.pageStayTimerId)
+      this.pageStayTimerId = null
+    }
+    this.pageVisibleStartedAt = null
+  }
+
+  private async reportPageExposure(): Promise<void> {
+    if (this.pageExposureReported) {
+      return
+    }
+    this.pageExposureReported = true
+    await this.reportTrackingPayload({
+      id: 'ths_f10_f10detail',
+      action: 'show',
+      logmap: {
+        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
+        name: INDUSTRY_TRACKING_NAME,
+        source: INDUSTRY_TRACKING_SOURCE,
+        modId: '全景',
+      },
+    })
+  }
+
+  private async flushPageStayTracking(resetVisibleStart: boolean): Promise<void> {
+    if (this.pageVisibleStartedAt !== null) {
+      const visibleDeltaSeconds = Math.floor((Date.now() - this.pageVisibleStartedAt) / 1000)
+      if (visibleDeltaSeconds > 0) {
+        this.pageTrackedVisibleSeconds += visibleDeltaSeconds
+        this.pageVisibleStartedAt += visibleDeltaSeconds * 1000
+      }
+    }
+    if (resetVisibleStart) {
+      this.pageVisibleStartedAt = null
+    }
+    const reportTargetSeconds = Math.floor(this.pageTrackedVisibleSeconds / 5) * 5
+    if (reportTargetSeconds <= 0 || reportTargetSeconds <= this.pageStayReportedSeconds) {
+      return
+    }
+    this.pageStayReportedSeconds = reportTargetSeconds
+    await this.reportTrackingPayload({
+      id: 'ths_f10_f10detail_page_stayTime',
+      action: 'show',
+      logmap: {
+        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
+        name: INDUSTRY_TRACKING_NAME,
+        source: INDUSTRY_TRACKING_SOURCE,
+        value: String(reportTargetSeconds / 5),
+      },
+    })
+  }
+
+  private async reportTrackingPayload(payload: Record<string, unknown>): Promise<void> {
+    try {
+      const weblog = await this.ensureWeblogLoaded()
+      if (typeof weblog?.report !== 'function') {
+        return
+      }
+      weblog.report(payload)
+    } catch {
+      // Ignore tracking failures and keep the runtime interactive.
+    }
+  }
+
+  private async reportShareClick(): Promise<void> {
+    await this.reportTrackingPayload({
+      id: 'ths_f10_f10detail_module_share',
+      action: 'click',
+      logmap: {
+        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
+        name: INDUSTRY_TRACKING_NAME,
+      },
+    })
+  }
+
+  private async ensureWeblogLoaded(): Promise<WeblogApi | null> {
+    const hostWindow = window as PlayerHostWindow
+    if (hostWindow.weblog) {
+      this.configureWeblog(hostWindow.weblog)
+      return hostWindow.weblog
+    }
+    if (hostWindow.__interactiveGuideWeblogPromise) {
+      return hostWindow.__interactiveGuideWeblogPromise
+    }
+    hostWindow.__interactiveGuideWeblogPromise = this.ensureExternalScriptLoaded(
+      THSC_WEBLOG_SCRIPT_ATTR,
+      THSC_WEBLOG_CDN_URL,
+    ).then(() => {
+      const weblog = hostWindow.weblog ?? null
+      this.configureWeblog(weblog)
+      return weblog
+    })
+    return hostWindow.__interactiveGuideWeblogPromise
+  }
+
+  private configureWeblog(weblog: WeblogApi | null | undefined): void {
+    const hostWindow = window as PlayerHostWindow
+    if (!weblog || typeof weblog.setConfig !== 'function' || hostWindow.__interactiveGuideWeblogConfigured) {
+      return
+    }
+    try {
+      weblog.setConfig({
+        appKey: 'ce19ea099b',
+        debug: false,
+      })
+      hostWindow.__interactiveGuideWeblogConfigured = true
+    } catch {
+      // Ignore tracking initialization failures.
+    }
   }
 
   private async ensureF10ShareUtilsLoaded(): Promise<F10ShareUtils | null> {

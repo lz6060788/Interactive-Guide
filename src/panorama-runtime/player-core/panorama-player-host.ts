@@ -388,11 +388,11 @@ export class PanoramaPlayerHost {
     this.currentListGroupId = null
     this.listEl.style.display = 'none'
     this.hintFadeEl.style.display = 'none'
-    this.hintTextEl.style.display = 'none'
     this.resetFocusOverlayState()
 
     this.htmlLayerEl.style.display = 'block'
     const entryUrl = group.htmlAsset.entryUrl.trim()
+    this.hintTextEl.style.display = entryUrl ? 'block' : 'none'
     this.htmlEmptyEl.style.display = entryUrl ? 'none' : 'flex'
     this.htmlFrameEl.style.display = entryUrl ? 'block' : 'none'
 
@@ -1091,7 +1091,23 @@ export class PanoramaPlayerHost {
   private openStandaloneProduct(): void {
     const targetUrl = this.buildStandaloneProductUrl()
     if (!targetUrl) return
-    window.open(targetUrl, '_blank', 'noopener,noreferrer')
+    this.openInBestAvailableWindow(targetUrl)
+  }
+
+  private openInBestAvailableWindow(targetUrl: string): void {
+    const features = 'noopener,noreferrer'
+    try {
+      const topWindow = window.top
+      if (topWindow && typeof topWindow.open === 'function') {
+        const openedByTop = topWindow.open(targetUrl, '_blank', features)
+        if (openedByTop) {
+          return
+        }
+      }
+    } catch {
+      // Fall back to the current browsing context when top-level open is blocked.
+    }
+    window.open(targetUrl, '_blank', features)
   }
 
   private buildStandaloneProductUrl(): string | null {
@@ -1166,8 +1182,8 @@ const hostStyles = `
   height: 100%;
   overflow: hidden;
   --panorama-side-inset: clamp(10px, 3.6%, 16px);
-  --panorama-hint-bottom: 32px;
-  --panorama-bottom-alignment: clamp(10px, 3.6%, 16px);
+  --panorama-hint-bottom: 12px;
+  --panorama-bottom-alignment: calc(clamp(10px, 3.6%, 16px) - 4px);
   --panorama-floating-action-size: 16px;
   border-radius: 10px;
   background: #1d1d1d;

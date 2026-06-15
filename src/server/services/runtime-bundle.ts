@@ -123,6 +123,11 @@ export class RuntimeBundleGenerator {
     })
     if (htmlAssetsUsingThree.length === 0) return
 
+    // If workspace lib files already exist (copied by copyHtmlReferencedAssetDirectories),
+    // use them instead of node_modules to preserve the author's Three.js version.
+    const bundledThreeModule = `${bundleNodesDir}/lib/three.module.js`
+    if (this.repo.fileExists(bundledThreeModule)) return
+
     const projectRoot = process.cwd()
     const threeRoot = path.join(projectRoot, 'node_modules', 'three')
     const copiedSourceFiles = new Set<string>()
@@ -172,7 +177,7 @@ export class RuntimeBundleGenerator {
       const referencedDirs = new Set<string>()
       for (const match of html.matchAll(/\.\/([A-Za-z0-9_-]+)\//g)) {
         const dirName = match[1]
-        if (!dirName || dirName === 'lib') continue
+        if (!dirName) continue
         referencedDirs.add(dirName)
       }
       for (const dirName of referencedDirs) {
@@ -540,8 +545,8 @@ export class RuntimeBundleGenerator {
       '<html lang="zh-CN">',
       '<head>',
       '  <meta charset="UTF-8" />',
-      '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
-      `  <title>${this.escapeHtml(title)} - Runtime Bundle</title>`,
+      '  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />',
+      `  <title>${this.escapeHtml(title)}</title>`,
       '  <link rel="stylesheet" href="./styles.css" />',
       '</head>',
       '<body>',
@@ -737,7 +742,7 @@ export class RuntimeBundleGenerator {
       '  host.loadManifest(manifest)',
       '  host.applyRouteSelection(window.location.search)',
       '',
-      '  document.title = `${manifest.title} - Runtime Bundle`',
+      '  document.title = `${manifest.title}`',
       '  render(host.getState())',
       '  postReadyMessage()',
       '}',
