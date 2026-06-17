@@ -25,6 +25,16 @@ export interface PanoramaPlayerHostOptions {
 
 type InteractionMode = PanoramaRuntimeState['interactionMode']
 
+type F10ShareUtils = {
+  jumpTofullScreenPage?: (url: string) => void | Promise<void>
+}
+
+type PanoramaPlayerHostWindow = Window & typeof globalThis & {
+  F10Utils?: F10ShareUtils
+  _f?: F10ShareUtils
+  __panoramaPlayerHostF10UtilsPromise?: Promise<F10ShareUtils | null>
+}
+
 interface ProjectedFocusRect {
   x: number
   y: number
@@ -58,6 +68,8 @@ interface SceneGeometry {
 }
 
 const STANDALONE_PRODUCT_BASE_URL = 'http://o.thsi.cn/datav.narrative-vision/interactive-guide'
+const THSC_F10_UTILS_CDN_URL = 'https://s.thsi.cn/cb?cd/website-thsc-f10-utils/1.6.3/;thsc-f10-utils.js;js/m/common/;basic.js'
+const THSC_F10_UTILS_SCRIPT_ATTR = 'data-panorama-player-host-f10-utils'
 
 export class PanoramaPlayerHost {
   private static readonly LIST_SCROLL_SMOOTH_LOCK_MS = 720
@@ -212,7 +224,7 @@ export class PanoramaPlayerHost {
     this.floatingActionButtonEl.addEventListener('click', event => {
       event.preventDefault()
       event.stopPropagation()
-      this.openStandaloneProduct()
+      void this.openStandaloneProduct()
     })
 
     this.overlayLayerEl.appendChild(this.overlayCanvasEl)
@@ -1088,10 +1100,77 @@ export class PanoramaPlayerHost {
     )
   }
 
-  private openStandaloneProduct(): void {
+  private async openStandaloneProduct(): Promise<void> {
     const targetUrl = this.buildStandaloneProductUrl()
     if (!targetUrl) return
+
+    const f10Utils = await this.ensureF10ShareUtilsLoaded()
+    if (f10Utils?.jumpTofullScreenPage) {
+      await f10Utils.jumpTofullScreenPage(targetUrl)
+      return
+    }
+
     this.openInBestAvailableWindow(targetUrl)
+  }
+
+  private async ensureF10ShareUtilsLoaded(): Promise<F10ShareUtils | null> {
+    const hostWindow = window as PanoramaPlayerHostWindow
+    const resolvedUtils = this.resolveF10ShareUtils(hostWindow)
+    if (resolvedUtils) return resolvedUtils
+    if (hostWindow.__panoramaPlayerHostF10UtilsPromise) {
+      return hostWindow.__panoramaPlayerHostF10UtilsPromise
+    }
+
+    hostWindow.__panoramaPlayerHostF10UtilsPromise = this.ensureExternalScriptLoaded(
+      THSC_F10_UTILS_SCRIPT_ATTR,
+      THSC_F10_UTILS_CDN_URL,
+    ).then(() => this.resolveF10ShareUtils(hostWindow))
+
+    return hostWindow.__panoramaPlayerHostF10UtilsPromise
+  }
+
+  private async ensureExternalScriptLoaded(
+    scriptAttr: string,
+    src: string,
+  ): Promise<void> {
+    await new Promise<void>(resolve => {
+      const complete = () => resolve()
+      const existingScript = document.querySelector(
+        `script[${scriptAttr}="true"]`,
+      ) as HTMLScriptElement | null
+      if (existingScript) {
+        if (existingScript.dataset.loaded === 'true' || existingScript.dataset.failed === 'true') {
+          complete()
+          return
+        }
+        existingScript.addEventListener('load', complete, { once: true })
+        existingScript.addEventListener('error', complete, { once: true })
+        return
+      }
+
+      const script = document.createElement('script')
+      script.src = src
+      script.async = true
+      script.crossOrigin = 'anonymous'
+      script.setAttribute(scriptAttr, 'true')
+      script.addEventListener('load', () => {
+        script.dataset.loaded = 'true'
+        complete()
+      }, { once: true })
+      script.addEventListener('error', () => {
+        script.dataset.failed = 'true'
+        complete()
+      }, { once: true })
+      document.head.appendChild(script)
+    })
+  }
+
+  private resolveF10ShareUtils(hostWindow: PanoramaPlayerHostWindow): F10ShareUtils | null {
+    const utils = hostWindow.F10Utils ?? hostWindow._f ?? null
+    if (utils && !hostWindow.F10Utils) {
+      hostWindow.F10Utils = utils
+    }
+    return utils
   }
 
   private openInBestAvailableWindow(targetUrl: string): void {
