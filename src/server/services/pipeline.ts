@@ -1020,13 +1020,23 @@ export class BuildPipeline {
 
   // ─── Manifest Builders ──────────────────────────────────────
 
+  private static readonly IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'jfif', 'webp', 'gif', 'bmp', 'svg']
+
+  private resolveNodeImageFileName(guide: KnowledgePackage, nodeId: string): string | null {
+    for (const ext of BuildPipeline.IMAGE_EXTENSIONS) {
+      if (this.repo.fileExists(`workspace/${guide.id}/nodes/${nodeId}.${ext}`)) return `${nodeId}.${ext}`
+    }
+    return null
+  }
+
   private buildManifest(guide: KnowledgePackage, generateId: string): PublishManifest {
     const mediaBase = `/api/media/${guide.id}/${guide.version}`
 
     const nodes = guide.nodes.map(n => {
       const summary = this.promptBuilder.getNodeSummary(n)
       const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
-      const hasHtmlPreviewImage = this.repo.fileExists(`workspace/${guide.id}/nodes/${n.id}.png`)
+      const imageFileName = this.resolveNodeImageFileName(guide, n.id)
+      const hasHtmlPreviewImage = imageFileName !== null
 
       const nodeKind = n.nodeKind ?? (n.contentType === 'html' ? 'html' : 'image')
       if (nodeKind === 'html') {
@@ -1039,12 +1049,12 @@ export class BuildPipeline {
           sourceText: n.sourceText?.trim() || undefined,
           contentType: 'html' as const,
           htmlUrl: `${mediaBase}/assets/nodes/${n.id}.html`,
-          imageUrl: hasHtmlPreviewImage ? `${mediaBase}/assets/nodes/${n.id}.png` : undefined,
+          imageUrl: hasHtmlPreviewImage ? `${mediaBase}/assets/nodes/${imageFileName}` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
           nodeKind,
           surfaceConfig: n.surfaceConfig
-            ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/assets/nodes/${n.id}.png` }
+            ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/assets/nodes/${imageFileName ?? `${n.id}.png`}` }
             : undefined,
           surfaceLayers: n.surfaceLayers,
           hotspots: [] as Array<{
@@ -1063,11 +1073,11 @@ export class BuildPipeline {
         keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
         topicType: n.topicType,
         sourceText: n.sourceText?.trim() || undefined,
-        imageUrl: `${mediaBase}/assets/nodes/${n.id}.png`,
+        imageUrl: `${mediaBase}/assets/nodes/${imageFileName ?? `${n.id}.png`}`,
         imageFitMode: n.imageFitMode,
         nodeKind,
         surfaceConfig: n.surfaceConfig
-          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/assets/nodes/${n.id}.png` }
+          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/assets/nodes/${imageFileName ?? `${n.id}.png`}` }
           : undefined,
         surfaceLayers: n.surfaceLayers,
         hotspots: (n.hotspots ?? []).map(hs => ({
@@ -1131,7 +1141,8 @@ export class BuildPipeline {
     const nodes = guide.nodes.map(n => {
       const summary = this.promptBuilder.getNodeSummary(n)
       const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
-      const hasHtmlPreviewImage = this.repo.fileExists(`workspace/${guide.id}/nodes/${n.id}.png`)
+      const imageFileName = this.resolveNodeImageFileName(guide, n.id)
+      const hasHtmlPreviewImage = imageFileName !== null
 
       const nodeKind = n.nodeKind ?? (n.contentType === 'html' ? 'html' : 'image')
       if (nodeKind === 'html') {
@@ -1152,12 +1163,12 @@ export class BuildPipeline {
           contentType: 'html' as const,
           htmlSource: n.htmlSource,
           htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
-          imageUrl: hasHtmlPreviewImage ? `${mediaBase}/nodes/${n.id}.png` : undefined,
+          imageUrl: hasHtmlPreviewImage ? `${mediaBase}/nodes/${imageFileName}` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
           nodeKind,
           surfaceConfig: n.surfaceConfig
-            ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${n.id}.png` }
+            ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${imageFileName ?? `${n.id}.png`}` }
             : undefined,
           surfaceLayers: n.surfaceLayers,
           hotspots: [] as Array<{
@@ -1180,14 +1191,14 @@ export class BuildPipeline {
         visualIntent: n.visualIntent,
         hotspotHints: n.hotspotHints,
         presentationIntent: n.presentationIntent,
-        imageUrl: `${mediaBase}/nodes/${n.id}.png`,
+        imageUrl: `${mediaBase}/nodes/${imageFileName ?? `${n.id}.png`}`,
         imageStatus: n.imageStatus,
         status: n.status,
         extensions: n.extensions,
         imageFitMode: n.imageFitMode,
         nodeKind,
         surfaceConfig: n.surfaceConfig
-          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${n.id}.png` }
+          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${imageFileName ?? `${n.id}.png`}` }
           : undefined,
         surfaceLayers: n.surfaceLayers,
         hotspots: (n.hotspots ?? []).map(hs => ({

@@ -352,12 +352,30 @@ export class RuntimeBundleGenerator {
   }
 
 
+  private resolveNodeImageFileName(guideId: string, nodeId: string): string | null {
+    for (const ext of RuntimeBundleGenerator.IMAGE_EXTENSIONS) {
+      const candidate = `${guideId}/nodes/${nodeId}.${ext}`
+      if (this.repo.fileExists(`workspace/${candidate}`)) return `${nodeId}.${ext}`
+    }
+    // Fallback: check publish assets
+    const guides = this.repo.loadAllGuides()
+    const guide = guides.get(guideId)
+    if (guide) {
+      for (const ext of RuntimeBundleGenerator.IMAGE_EXTENSIONS) {
+        const candidate = `publish/${guideId}/${guide.version}/assets/nodes/${nodeId}.${ext}`
+        if (this.repo.fileExists(candidate)) return `${nodeId}.${ext}`
+      }
+    }
+    return null
+  }
+
   private buildManifestFromWorkspace(guide: KnowledgePackage): PublishManifest {
     const mediaBase = `/api/media/workspace/${guide.id}`
 
     const nodes = guide.nodes.map(n => {
       const nodeKind = n.nodeKind ?? (n.contentType === 'html' ? 'html' : 'image')
-      const hasImage = this.repo.fileExists(`workspace/${guide.id}/nodes/${n.id}.png`)
+      const imageFileName = this.resolveNodeImageFileName(guide.id, n.id)
+      const hasImage = imageFileName !== null
       if (nodeKind === 'html') {
         return {
           id: n.id,
@@ -366,7 +384,7 @@ export class RuntimeBundleGenerator {
           nodeKind,
           contentType: 'html' as const,
           htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
-          imageUrl: hasImage ? `${mediaBase}/nodes/${n.id}.png` : undefined,
+          imageUrl: hasImage ? `${mediaBase}/nodes/${imageFileName}` : undefined,
           hotspotEdgeIds: n.hotspotEdgeIds,
           imageFitMode: n.imageFitMode,
           surfaceConfig: n.surfaceConfig,
@@ -388,10 +406,10 @@ export class RuntimeBundleGenerator {
         title: n.title,
         extensions: n.extensions,
         nodeKind,
-        imageUrl: `${mediaBase}/nodes/${n.id}.png`,
+        imageUrl: `${mediaBase}/nodes/${imageFileName ?? `${n.id}.png`}`,
         imageFitMode: n.imageFitMode,
         surfaceConfig: n.surfaceConfig
-          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${n.id}.png` }
+          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${imageFileName ?? `${n.id}.png`}` }
           : undefined,
         surfaceLayers: n.surfaceLayers,
         hotspots: (n.hotspots ?? []).map(hs => ({
@@ -453,15 +471,20 @@ export class RuntimeBundleGenerator {
     return this.findNodeAssetPath(guide, fileNames, workspaceFallback)
   }
 
+  private static readonly IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'jfif', 'webp', 'gif', 'bmp', 'svg']
+
   private resolveNodeImageAssetPath(
     guide: KnowledgePackage,
     node: PublishManifest['nodes'][number],
     workspaceFallback: boolean,
   ): string | null {
-    const fileNames = this.buildCandidateFileNames(
-      node.imageUrl,
-      [`${node.id}.png`],
-    )
+    const fromUrl = this.extractAssetFileName(node.imageUrl)
+    const fileNames: string[] = []
+    if (fromUrl) fileNames.push(fromUrl)
+    for (const ext of RuntimeBundleGenerator.IMAGE_EXTENSIONS) {
+      const candidate = `${node.id}.${ext}`
+      if (!fileNames.includes(candidate)) fileNames.push(candidate)
+    }
     return this.findNodeAssetPath(guide, fileNames, workspaceFallback)
   }
 

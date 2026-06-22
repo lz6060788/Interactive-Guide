@@ -94,6 +94,7 @@ function getContentType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase()
   const map: Record<string, string> = {
     '.png': 'image/png',
+    'jfif': 'image/pjpeg',
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.webp': 'image/webp',

@@ -149,14 +149,36 @@ type PlayerHostWindow = Window & typeof globalThis & {
 
 const HOTSPOT_SIZE = 28
 const THSC_F10_UTILS_CDN_URL = 'https://s.thsi.cn/cb?cd/website-thsc-f10-utils/1.6.0/thsc-f10-utils.js'
-const THSC_WEBLOG_CDN_URL = 'https://s.thsi.cn/cd/weblog/0.0.5/weblog.js'
+const THSC_WEBLOG_CDN_URL = 'https://s.thsi.cn/cd/weblog/0.0.8/weblog.js'
 const KINGFISHER_BRIDGE_SCRIPT_ATTR = 'data-interactive-guide-kingfisher-bridge'
 const KINGFISHER_FALCON_SCRIPT_ATTR = 'data-interactive-guide-kingfisher-falcon'
 const THSC_F10_UTILS_SCRIPT_ATTR = 'data-interactive-guide-f10-utils'
 const THSC_WEBLOG_SCRIPT_ATTR = 'data-interactive-guide-weblog'
-const INDUSTRY_TRACKING_PAGE_TYPE = 'visIndustry'
+const INDUSTRY_TRACKING_PAGE_TYPE = 'visindustry'
 const INDUSTRY_TRACKING_NAME = '商业航天'
-const INDUSTRY_TRACKING_SOURCE = ''
+const INDUSTRY_TRACKING_DEFAULT_SOURCE = 'industry'
+const TRACKING_BACKFLOW_URL_PARAM = 'from'
+const TRACKING_BACKFLOW_SHARE_VALUE = 'share'
+const TRACKING_SOURCE_URL_PARAM = 'source'
+
+function resolveIndustryTrackingSource(): string {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return INDUSTRY_TRACKING_DEFAULT_SOURCE
+  }
+  const params = new URLSearchParams(window.location.search)
+  const sourceFromUrl = params.get(TRACKING_SOURCE_URL_PARAM)?.trim()
+  return sourceFromUrl && sourceFromUrl.length > 0
+    ? sourceFromUrl
+    : INDUSTRY_TRACKING_DEFAULT_SOURCE
+}
+
+function shouldReportBackflow(): boolean {
+  if (typeof window === 'undefined' || !window.location?.search) {
+    return false
+  }
+  return new URLSearchParams(window.location.search).get(TRACKING_BACKFLOW_URL_PARAM) === TRACKING_BACKFLOW_SHARE_VALUE
+}
+
 const BACK_ICON_SVG = `
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
   <path d="M15.25 5.5L8.75 12L15.25 18.5" stroke="#231815" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -279,6 +301,7 @@ export class PlayerHost {
   private ignoreBottomSheetCardClick = false
   private shareDependencyPrimed = false
   private pageExposureReported = false
+  private backflowReported = false
   private pageVisibleStartedAt: number | null = null
   private pageTrackedVisibleSeconds = 0
   private pageStayReportedSeconds = 0
@@ -1811,13 +1834,17 @@ export class PlayerHost {
 
   private async handleShareAction(): Promise<void> {
     await this.reportShareClick()
+    const shareUrl = new URL(window.location.href)
+    shareUrl.searchParams.set('from', 'share')
+    const shareUrlString = shareUrl.href
+    const title = this.engine.getManifest()?.title ?? ''
     const sharePayload = {
-      title: this.engine.getManifest()?.title ?? '',
-      text: this.engine.getManifest()?.title ?? '',
-      url: window.location.href,
-      shareUrl: window.location.href,
-      content: this.engine.getManifest()?.title ?? '',
-      description: this.engine.getManifest()?.title ?? '',
+      title,
+      text: title,
+      url: shareUrlString,
+      shareUrl: shareUrlString,
+      content: title,
+      description: title,
     }
     if (this.canUseFalconShareAction()) {
       const sharedByF10 = await this.tryShareWithF10(sharePayload)
@@ -2674,6 +2701,7 @@ export class PlayerHost {
   }
 
   private handleSurfaceHotspotNavigation(hotspot: SurfaceHotspot, currentNode: PublishNode): void {
+    void this.reportPageClick()
     if (hotspot.target.type === 'edge') {
       this.navigateByEdge(hotspot.target.edgeId)
       return
@@ -2898,6 +2926,7 @@ export class PlayerHost {
 
   private startPageTracking(): void {
     void this.reportPageExposure()
+    void this.reportBackflowIfNeeded()
     this.resumePageStayTracking()
     document.addEventListener('visibilitychange', this.handleTrackingVisibilityChange)
     window.addEventListener('pagehide', this.handleTrackingPageHide)
@@ -2958,10 +2987,27 @@ export class PlayerHost {
       id: 'ths_f10_f10detail',
       action: 'show',
       logmap: {
+        stock: '',
+        marketId: '',
         pageType: INDUSTRY_TRACKING_PAGE_TYPE,
         name: INDUSTRY_TRACKING_NAME,
-        source: INDUSTRY_TRACKING_SOURCE,
-        modId: '全景',
+        source: resolveIndustryTrackingSource(),
+        modId: '',
+      },
+    })
+  }
+
+  private async reportPageClick(): Promise<void> {
+    await this.reportTrackingPayload({
+      id: 'ths_f10_f10detail',
+      action: 'click',
+      logmap: {
+        stock: '',
+        marketId: '',
+        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
+        name: INDUSTRY_TRACKING_NAME,
+        source: resolveIndustryTrackingSource(),
+        modId: '',
       },
     })
   }
@@ -2988,7 +3034,7 @@ export class PlayerHost {
       logmap: {
         pageType: INDUSTRY_TRACKING_PAGE_TYPE,
         name: INDUSTRY_TRACKING_NAME,
-        source: INDUSTRY_TRACKING_SOURCE,
+        source: resolveIndustryTrackingSource(),
         value: String(reportTargetSeconds / 5),
       },
     })
@@ -3011,6 +3057,28 @@ export class PlayerHost {
       id: 'ths_f10_f10detail_module_share',
       action: 'click',
       logmap: {
+        stock: '',
+        marketId: '',
+        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
+        name: INDUSTRY_TRACKING_NAME,
+      },
+    })
+  }
+
+  private async reportBackflowIfNeeded(): Promise<void> {
+    if (!shouldReportBackflow()) {
+      return
+    }
+    if (this.backflowReported) {
+      return
+    }
+    this.backflowReported = true
+    await this.reportTrackingPayload({
+      id: 'ths_f10_f10detail_module_backflow',
+      action: 'click',
+      logmap: {
+        stock: '',
+        marketId: '',
         pageType: INDUSTRY_TRACKING_PAGE_TYPE,
         name: INDUSTRY_TRACKING_NAME,
       },
@@ -3265,6 +3333,7 @@ export class PlayerHost {
   }
 
   private handleHotspotNavigation(hotspot: PublishHotspot): void {
+    void this.reportPageClick()
     this.primeHtmlIframeForNodeId(hotspot.targetNodeId)
     this.engine.handleHotspotClick(hotspot)
   }
