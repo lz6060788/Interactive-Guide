@@ -2,9 +2,16 @@
 // Standalone Bundle Uploader
 // ============================================================
 // Uploads a runtime bundle directory to S3-compatible object storage.
+//
+// Supports two product kinds, distinguished by bundle.json:
+//   - Interactive Guide  (no `productId` in bundle.json)
+//       key: interactive-guide/{guideId}/{version}/...
+//   - Other product      (has `productId` in bundle.json, e.g. panorama)
+//       key: interactive-guide/{productId}/{version}/...
+//
 // Usage:
 //   node upload-bundle.mjs <bundle-dir>
-//   node upload-bundle.mjs ./data/runtime-bundles/guide_xxx-yyy
+//   node upload-bundle.mjs <bundle-dir> --prefix interactive-guide/foo/1.0.0
 //
 // Config via env vars (or .env in cwd):
 //   OBJECT_STORAGE_ENDPOINT, OBJECT_STORAGE_BUCKET,
@@ -27,7 +34,7 @@ interface Config {
   protocol: string
   prefix: string
   publicBaseUrl: string
-  OBJECT_STORAGE_ADDRESSING_STYLE: string
+  addressingStyle: string
 }
 
 function loadConfig(): Config {
@@ -56,7 +63,7 @@ function loadConfig(): Config {
     protocol: env.OBJECT_STORAGE_PROTOCOL ?? 'https',
     prefix: (env.OBJECT_STORAGE_PREFIX ?? '').replace(/^\/+|\/+$/g, ''),
     publicBaseUrl: (env.BUNDLE_PUBLIC_BASE_URL ?? '').replace(/\/+$/, ''),
-    OBJECT_STORAGE_ADDRESSING_STYLE: env.OBJECT_STORAGE_ADDRESSING_STYLE ?? 'path',
+    addressingStyle: env.OBJECT_STORAGE_ADDRESSING_STYLE ?? 'auto',
   }
 }
 
@@ -86,7 +93,7 @@ function createClient(config: Config): S3Client {
       accessKeyId: config.accessKey,
       secretAccessKey: config.secretKey,
     },
-    forcePathStyle: config.OBJECT_STORAGE_ADDRESSING_STYLE === 'path',
+    forcePathStyle: config.addressingStyle === 'path' ? true : false,
   })
 }
 
@@ -94,7 +101,7 @@ function getContentType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase()
   const map: Record<string, string> = {
     '.png': 'image/png',
-    'jfif': 'image/pjpeg',
+    '.jfif': 'image/pjpeg',
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.webp': 'image/webp',
@@ -150,9 +157,15 @@ function resolvePublicBaseUrl(config: Config): string {
 async function main() {
   const args = process.argv.slice(2)
   if (args.length === 0 || args.includes('--help') || args.includes('-h')) {
-    console.log('Usage: node upload-bundle.mjs <bundle-dir>')
+    console.log('Usage: node upload-bundle.mjs <bundle-dir> [--prefix <key-prefix>]')
     console.log('')
     console.log('Uploads all files in a runtime bundle directory to S3-compatible OSS.')
+    console.log('')
+    console.log('The OSS key prefix is auto-derived from bundle.json:')
+    console.log('  - Interactive Guide: interactive-guide/{guideId}/{version}/')
+    console.log('  - Other product (has productId): interactive-guide/{productId}/{version}/')
+    console.log('Use --prefix to override.')
+    console.log('')
     console.log('Configure via env vars or .env file:')
     console.log('  OBJECT_STORAGE_ENDPOINT, OBJECT_STORAGE_BUCKET,')
     console.log('  OBJECT_STORAGE_ACCESS_KEY, OBJECT_STORAGE_SECRET_KEY,')
@@ -161,6 +174,8 @@ async function main() {
   }
 
   const bundleDir = path.resolve(args[0])
+  const prefixIdx = args.indexOf('--prefix')
+  const overridePrefix = prefixIdx > 0 ? args[prefixIdx + 1] : undefined
 
   if (!fs.existsSync(bundleDir)) {
     console.error(`Error: bundle directory not found: ${bundleDir}`)
@@ -177,12 +192,15 @@ async function main() {
   validateConfig(config)
 
   const bundleMeta = JSON.parse(fs.readFileSync(bundleJsonPath, 'utf-8'))
-  const { guideId, version, bundleId } = bundleMeta
+  const { guideId, version, bundleId, productId } = bundleMeta
   const publicBaseUrl = resolvePublicBaseUrl(config)
-  const keyPrefix = `interactive-guide/${guideId}/${version}`
+  const topLevelId = productId ?? guideId
+  const keyPrefix = overridePrefix
+    ? overridePrefix.replace(/^\/+|\/+$/g, '')
+    : `interactive-guide/${topLevelId}/${version}`
 
   console.log(`Bundle:    ${bundleId}`)
-  console.log(`Guide:     ${guideId} v${version}`)
+  console.log(`Product:   ${productId ? `${productId} (${guideId})` : guideId} v${version}`)
   console.log(`Endpoint:  ${config.endpoint}`)
   console.log(`Bucket:    ${config.bucket}`)
   console.log(`Key prefix: ${keyPrefix}`)

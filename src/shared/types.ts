@@ -1,4 +1,4 @@
-import type { PanoramaEditorDocument } from './panorama-types.js'
+import type { PanoramaEditorDocument, PanoramaHtmlBridgeConfig } from './panorama-types.js'
 
 // ============================================================
 // Interactive Guide - Shared Type Definitions
@@ -420,6 +420,8 @@ export interface PublishNode {
   surfaceConfig?: SurfaceConfig
   /** Surface content layers that appear at different zoom levels. */
   surfaceLayers?: SurfaceFocusLayer[]
+  /** HTML node bridge config for cross-origin iframe messaging. */
+  htmlBridge?: PanoramaHtmlBridgeConfig
 }
 
 export interface PublishEdge {

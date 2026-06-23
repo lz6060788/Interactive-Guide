@@ -1,18 +1,10 @@
 import type {
-  HtmlIframePreloadStrategy,
   PublishManifest,
   PublishHotspot,
   PublishNode,
   CameraState,
-  SurfaceCard,
-  SurfaceConfig,
-  SurfaceFocusLayer,
-  SurfaceHotspot,
-  InfoOverlayConfig,
-  RuntimeAction,
   RuntimeConfig,
 } from '../../shared/types.js'
-import { getResolutionDimensions } from '../../shared/utils.js'
 import {
   HtmlNodeBridge,
   type HtmlNodeBackRequestPayload,
@@ -23,16 +15,27 @@ import {
   type HtmlNodeRouteResponsePayload,
 } from './html-node-bridge.js'
 import PlayerCore from './player-core.js'
-import {
-  clampSurfaceCamera,
-  interpolateCamera,
-  projectSurfacePoint,
-  resolveVisibleSurfaceAnnotations,
-  resolveSurfaceCameraLayout,
-  type SurfaceCameraLayout,
-} from './surface-camera.js'
+import type { SurfaceCameraLayout } from './surface-camera.js'
 import kingfisherBridgeUmdScript from './vendor/kingfisher-bridge.umd.js?raw'
 import kingfisherFalconUmdScript from './vendor/kingfisher-falcon.umd.js?raw'
+import { PageTracker, resolveIndustryTrackingSource, TRACKING_SOURCE_URL_PARAM, shouldReportBackflow } from './player-host-tracking.js'
+import { SurfaceController, type SurfaceControllerEnv } from './player-host-surface.js'
+import { HtmlIframeManager, type HtmlIframeManagerEnv, type HtmlIframeEntry } from './player-host-html.js'
+import { AnnotationRenderer, type AnnotationRendererEnv } from './player-host-annotation-renderer.js'
+import { NodeRenderer, type NodeRendererEnv } from './player-host-node-renderer.js'
+import { EventManager, type EventManagerEnv } from './player-host-event-manager.js'
+import { NavigationHandler, type NavigationEnv } from './player-host-navigation.js'
+import { ChromeRenderer, type ChromeRendererEnv, buildChromeStructure } from './player-host-chrome-render.js'
+import { ShareManager, type F10ShareUtils, type BrowserNavigatorWithShare } from './player-host-share.js'
+import { applyBaseStyles } from './player-host-styles.js'
+import type { ChromeElements } from './player-host-styles.js'
+import {
+  toAbsoluteUrl,
+  parseRuntimeRouteSelection,
+  type RuntimeRouteSelection,
+} from './player-host-routing.js'
+import { ensureExternalScriptLoaded, confirmHostVisualCommitIfReady } from './player-host-utils.js'
+import { applyStageLayout } from './player-host-stage-layout.js'
 
 export interface PlayerHostRefs {
   viewport: HTMLElement
@@ -53,7 +56,7 @@ export interface PlayerHostState {
   history: string[]
 }
 
-interface PlayerHostOptions {
+export interface PlayerHostOptions {
   onStateChange?: (state: PlayerHostState) => void
   onError?: (error: Error) => void
   onHtmlRouteRequest?: (payload: {
@@ -69,7 +72,7 @@ interface PlayerHostOptions {
   runtimeConfig?: RuntimeConfig
 }
 
-type DragState = {
+export type DragState = {
   active: boolean
   pointerId: number | null
   startX: number
@@ -79,14 +82,6 @@ type DragState = {
   maxOffsetX: number
   maxOffsetY: number
   moved: boolean
-}
-
-type HtmlIframeEntry = {
-  iframe: HTMLIFrameElement
-  ready: boolean
-  readyPromise: Promise<void>
-  preloadSettled: boolean
-  cleanup: () => void
 }
 
 type TouchPinchState = {
@@ -99,42 +94,19 @@ type TouchPinchState = {
   baseHeight: number
 }
 
-type SheetCardDragState = {
+export type SheetCardDragState = {
   pointerId: number
   startX: number
   startScrollLeft: number
   moved: boolean
 }
 
-type RuntimeRouteSelection = {
-  focusName: string
-}
-
-type RuntimeRouteTarget =
-  | {
-      kind: 'surface'
-      nodeId: string
-      cardId: string
-    }
-  | {
-      kind: 'html'
-      nodeId: string
-    }
-
-type BrowserNavigatorWithShare = Navigator & {
-  share?: (data: { title?: string, text?: string, url?: string }) => Promise<void>
-}
-
-type F10ShareUtils = {
-  shareUrlCard?: (payload?: Record<string, unknown>) => void | Promise<void>
-}
-
-type WeblogApi = {
+export type WeblogApi = {
   report?: (payload?: Record<string, unknown>) => void
   setConfig?: (payload?: Record<string, unknown>) => void
 }
 
-type PlayerHostWindow = Window & typeof globalThis & {
+export type PlayerHostWindow = Window & typeof globalThis & {
   F10Utils?: F10ShareUtils
   _f?: F10ShareUtils
   weblog?: WeblogApi
@@ -147,93 +119,7 @@ type PlayerHostWindow = Window & typeof globalThis & {
   FalconJavaInterface?: unknown
 }
 
-const HOTSPOT_SIZE = 28
-const THSC_F10_UTILS_CDN_URL = 'https://s.thsi.cn/cb?cd/website-thsc-f10-utils/1.6.0/thsc-f10-utils.js'
-const THSC_WEBLOG_CDN_URL = 'https://s.thsi.cn/cd/weblog/0.0.8/weblog.js'
-const KINGFISHER_BRIDGE_SCRIPT_ATTR = 'data-interactive-guide-kingfisher-bridge'
-const KINGFISHER_FALCON_SCRIPT_ATTR = 'data-interactive-guide-kingfisher-falcon'
-const THSC_F10_UTILS_SCRIPT_ATTR = 'data-interactive-guide-f10-utils'
-const THSC_WEBLOG_SCRIPT_ATTR = 'data-interactive-guide-weblog'
-const INDUSTRY_TRACKING_PAGE_TYPE = 'visindustry'
-const INDUSTRY_TRACKING_NAME = '商业航天'
-const INDUSTRY_TRACKING_DEFAULT_SOURCE = 'industry'
-const TRACKING_BACKFLOW_URL_PARAM = 'from'
-const TRACKING_BACKFLOW_SHARE_VALUE = 'share'
-const TRACKING_SOURCE_URL_PARAM = 'source'
-
-function resolveIndustryTrackingSource(): string {
-  if (typeof window === 'undefined' || !window.location?.search) {
-    return INDUSTRY_TRACKING_DEFAULT_SOURCE
-  }
-  const params = new URLSearchParams(window.location.search)
-  const sourceFromUrl = params.get(TRACKING_SOURCE_URL_PARAM)?.trim()
-  return sourceFromUrl && sourceFromUrl.length > 0
-    ? sourceFromUrl
-    : INDUSTRY_TRACKING_DEFAULT_SOURCE
-}
-
-function shouldReportBackflow(): boolean {
-  if (typeof window === 'undefined' || !window.location?.search) {
-    return false
-  }
-  return new URLSearchParams(window.location.search).get(TRACKING_BACKFLOW_URL_PARAM) === TRACKING_BACKFLOW_SHARE_VALUE
-}
-
-const BACK_ICON_SVG = `
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M15.25 5.5L8.75 12L15.25 18.5" stroke="#231815" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-`
-const SHEET_BACK_ICON_SVG = `
-<svg width="16" height="13" viewBox="0 0 16 13" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M10.5065 2.13333H7.11988V0L2.50655 3.46339L7.11988 6.33333V4.2H10.4799C12.7999 4.2 13.5 4.35339 13.6665 7.38667C13.6665 9.70667 12.7999 10.5733 10.4799 10.5733H0.826546C0.533213 10.5733 0 10.5733 0 11.3534C0 12.8534 0.5 12.64 0.826546 12.64H10.5065C13.4132 12.64 15.7599 10.8534 15.7599 7.38667C15.7599 3.35339 13.3865 2.13333 10.5065 2.13333Z" fill="black" fill-opacity="0.84"/>
-</svg>
-`
-const INFO_ICON_SVG = `
-<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M7.00977 0.00878906C10.5322 0.187363 13.333 3.10017 13.333 6.66699L13.3242 7.00977C13.1456 10.5321 10.2337 13.3328 6.66699 13.333L6.32324 13.3242C2.91459 13.1512 0.181596 10.4185 0.00878906 7.00977L0 6.66699C0 2.98509 2.98509 0 6.66699 0L7.00977 0.00878906ZM6.66699 1C3.53738 1 1 3.53738 1 6.66699C1.00018 9.79646 3.53749 12.333 6.66699 12.333C9.79635 12.3328 12.3328 9.79635 12.333 6.66699C12.333 3.53749 9.79646 1.00018 6.66699 1ZM7.16699 5.33301V10H6.16699V5.33301H7.16699ZM6.66699 3.33301C7.03503 3.33318 7.33301 3.63192 7.33301 4C7.33301 4.36808 7.03503 4.66682 6.66699 4.66699C6.2988 4.66699 6 4.36819 6 4C6 3.63181 6.2988 3.33301 6.66699 3.33301Z" fill="black" fill-opacity="0.4"/>
-</svg>
-`
-const INFO_SHEET_DEFAULT_TITLE = '说明'
-const INFO_SHEET_FALLBACK_CONFIG: InfoOverlayConfig = {
-  title: INFO_SHEET_DEFAULT_TITLE,
-  sections: [
-    {
-      heading: '资料来源',
-      body: '本产业链图谱基于民生证券、华泰证券、国信证券等公开研报，以及行业公开资料、网络公开信息整理。节点分类、层级关系、说明文案及部分可视化形式由 AI 辅助归纳、生成和编辑，可能存在遗漏、简化或不准确之处。',
-    },
-    {
-      heading: '免责声明',
-      body: '相关内容仅用于产业链结构理解和产品功能展示，不构成投资建议、采购建议、技术选型建议或商业决策依据。如需用于正式研究或决策，请以权威机构、企业公告、原始研报及人工核验结果为准。页面中的场景图、设备图和空间关系为 AI 生成示意图，不代表真实基地、设备比例或企业布局。',
-    },
-  ],
-}
-const SHARE_ICON_SVG = `
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M18.332 21.2057H5.39898C3.97063 21.2057 2.81152 20.0466 2.81152 18.6183V5.6844C2.81152 4.25605 4.01466 2.79468 5.44301 2.79468H12.6737V4.11042H5.44301C4.72756 4.11042 4.12726 4.71072 4.12726 5.42616L4.1061 18.6183C4.1061 19.3337 4.68607 19.9112 5.39898 19.9112L18.5928 19.89C19.3057 19.89 19.906 19.2897 19.906 18.5743V11.3436H21.2217V18.5743C21.2226 20.0043 19.7629 21.2057 18.332 21.2057ZM20.5656 8.71213C20.1922 8.71382 19.9068 8.41156 19.9068 8.0551L19.8882 4.91307L9.8813 14.456C9.61883 14.7066 9.19295 14.7066 8.93048 14.456C8.6697 14.2054 8.6697 13.799 8.93048 13.5492L18.8519 4.08925L15.9622 4.11042C15.5888 4.11042 15.3051 3.80815 15.3051 3.4534C15.3051 3.09694 15.5888 2.79637 15.9622 2.79468H20.5512C20.9246 2.79468 21.2226 3.08001 21.2226 3.43646V8.0551C21.2226 8.41156 20.9364 8.71213 20.5656 8.71213Z" fill="#231815"/>
-</svg>
-`
-const SHARE_ICON_WHITE_SVG = `
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M18.332 21.2057H5.39898C3.97063 21.2057 2.81152 20.0466 2.81152 18.6183V5.6844C2.81152 4.25605 4.01466 2.79468 5.44301 2.79468H12.6737V4.11042H5.44301C4.72756 4.11042 4.12726 4.71072 4.12726 5.42616L4.1061 18.6183C4.1061 19.3337 4.68607 19.9112 5.39898 19.9112L18.5928 19.89C19.3057 19.89 19.906 19.2897 19.906 18.5743V11.3436H21.2217V18.5743C21.2226 20.0043 19.7629 21.2057 18.332 21.2057ZM20.5656 8.71213C20.1922 8.71382 19.9068 8.41156 19.9068 8.0551L19.8882 4.91307L9.8813 14.456C9.61883 14.7066 9.19295 14.7066 8.93048 14.456C8.6697 14.2054 8.6697 13.799 8.93048 13.5492L18.8519 4.08925L15.9622 4.11042C15.5888 4.11042 15.3051 3.80815 15.3051 3.4534C15.3051 3.09694 15.5888 2.79637 15.9622 2.79468H20.5512C20.9246 2.79468 21.2226 3.08001 21.2226 3.43646V8.0551C21.2226 8.41156 20.9364 8.71213 20.5656 8.71213Z" fill="#FFFFFF"/>
-</svg>
-`
-const SURFACE_MARKER_SVG = `
-<svg width="21" height="21" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <circle cx="10.5" cy="10.5" r="10.25" fill="white" fill-opacity="0.1" stroke="white" stroke-width="0.5"/>
-  <circle cx="10.5" cy="10.5" r="4.5" fill="white"/>
-</svg>
-`
-const SURFACE_MARKER_SELECTED_SVG = `
-<svg width="21" height="21" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <circle cx="10.5" cy="10.5" r="10.25" fill="#FF2436" fill-opacity="0.1" stroke="#FF2436" stroke-width="0.5"/>
-  <circle cx="10.5" cy="10.5" r="5.5" fill="#FF2436" stroke="white"/>
-</svg>
-`
 export class PlayerHost {
-  private static readonly SURFACE_CARD_SCROLL_SETTLE_MS = 140
-  private static readonly SURFACE_CARD_SCROLL_LOCK_MS = 420
-  private static readonly FLOATING_BACK_BUTTON_OFFSET_PX = 24
   private engine: PlayerCore
   private htmlNodeBridge: HtmlNodeBridge
   private dragState: DragState = {
@@ -273,48 +159,55 @@ export class PlayerHost {
   private dragHintBackdropEl = document.createElement('div')
   private dragHintEl = document.createElement('div')
   private activeContentType: 'image' | 'html' = 'image'
-  private activeSurfaceLayout: SurfaceCameraLayout | null = null
-  private activeSurfaceNodeId: string | null = null
-  private activeSurfaceLayerId: string | null = null
-  private activeSurfaceCardId: string | null = null
-  private surfaceSheetOpen = false
+  private get activeSurfaceLayout(): SurfaceCameraLayout | null { return this.surface.activeLayout }
+  private set activeSurfaceLayout(v: SurfaceCameraLayout | null) { this.surface.activeLayout = v }
+  private get activeSurfaceNodeId(): string | null { return this.surface.activeNodeId }
+  private set activeSurfaceNodeId(v: string | null) { this.surface.activeNodeId = v }
+  private get activeSurfaceLayerId(): string | null { return this.surface.activeLayerId }
+  private set activeSurfaceLayerId(v: string | null) { this.surface.activeLayerId = v }
+  private get activeSurfaceCardId(): string | null { return this.surface.activeCardId }
+  private set activeSurfaceCardId(v: string | null) { this.surface.activeCardId = v }
+  private get surfaceSheetOpen(): boolean { return this.surface.sheetOpen }
+  private set surfaceSheetOpen(v: boolean) { this.surface.sheetOpen = v }
   private infoSheetOpen = false
-  private currentSurfaceCamera: CameraState | null = null
-  private surfaceAnimationFrameId: number | null = null
+  private get currentSurfaceCamera(): CameraState | null { return this.surface.currentCamera }
+  private set currentSurfaceCamera(v: CameraState | null) { this.surface.currentCamera = v }
+  private get surfaceAnimationFrameId(): number | null { return this.surface.animationFrameId }
+  private set surfaceAnimationFrameId(v: number | null) { this.surface.animationFrameId = v }
   private htmlIframeLayer = document.createElement('div')
-  private htmlIframeEntries = new Map<string, HtmlIframeEntry>()
-  private htmlIframePreloading = false
-  private htmlIframePreloadedScopes = new Set<string>()
-  private htmlIframeWarmupQueue: Promise<void> = Promise.resolve()
-  private activeHtmlIframeUrl = ''
+  private get htmlIframeEntries(): Map<string, HtmlIframeEntry> { return this.htmlIframe.entries }
+  private get htmlIframePreloading(): boolean { return this.htmlIframe.preloading }
+  private set htmlIframePreloading(v: boolean) { this.htmlIframe.preloading = v }
+  private get htmlIframePreloadedScopes(): Set<string> { return this.htmlIframe.preloadedScopes }
+  private get htmlIframeWarmupQueue(): Promise<void> { return this.htmlIframe.warmupQueue }
+  private set htmlIframeWarmupQueue(v: Promise<void>) { this.htmlIframe.warmupQueue = v }
+  private get activeHtmlIframeUrl(): string { return this.htmlIframe.activeUrl }
+  private set activeHtmlIframeUrl(v: string) { this.htmlIframe.activeUrl = v }
   private activeHtmlRouteSelection: RuntimeRouteSelection | null = null
   private pendingRouteSelection: RuntimeRouteSelection | null = null
   private renderedBottomSheetNodeId: string | null = null
   private renderedBottomSheetLayerId: string | null = null
   private renderedBottomSheetCardId: string | null = null
   private viewportPointerDownTarget: EventTarget | null = null
-  private hotspotViewportFrameId: number | null = null
-  private surfaceCardScrollSettleTimer: number | null = null
-  private surfaceCardScrollSyncTimer: number | null = null
-  private surfaceCardScrollSyncLocked = false
+  private get surfaceCardScrollSettleTimer(): number | null { return this.surface.cardScrollSettleTimer }
+  private set surfaceCardScrollSettleTimer(v: number | null) { this.surface.cardScrollSettleTimer = v }
+  private get surfaceCardScrollSyncTimer(): number | null { return this.surface.cardScrollSyncTimer }
+  private set surfaceCardScrollSyncTimer(v: number | null) { this.surface.cardScrollSyncTimer = v }
+  private get surfaceCardScrollSyncLocked(): boolean { return this.surface.cardScrollSyncLocked }
+  private set surfaceCardScrollSyncLocked(v: boolean) { this.surface.cardScrollSyncLocked = v }
   private bottomSheetCardsDragState: SheetCardDragState | null = null
   private ignoreBottomSheetCardClick = false
-  private shareDependencyPrimed = false
-  private pageExposureReported = false
-  private backflowReported = false
-  private pageVisibleStartedAt: number | null = null
-  private pageTrackedVisibleSeconds = 0
-  private pageStayReportedSeconds = 0
-  private pageStayTimerId: number | null = null
-  private pinchState: TouchPinchState = {
-    active: false,
-    startDistance: 0,
-    startCamera: null,
-    anchorNormX: 0.5,
-    anchorNormY: 0.5,
-    baseWidth: 1,
-    baseHeight: 1,
-  }
+  private pageTracker = new PageTracker()
+  private shareManager = new ShareManager()
+  private surface!: SurfaceController
+  private htmlIframe!: HtmlIframeManager
+  private chrome!: ChromeRenderer
+  private annotations!: AnnotationRenderer
+  private nodeRenderer!: NodeRenderer
+  private events!: EventManager
+  private navigation!: NavigationHandler
+  private get pinchState(): TouchPinchState { return this.surface.pinchState }
+  private set pinchState(v: TouchPinchState) { this.surface.pinchState = v }
 
   constructor(
     private refs: PlayerHostRefs,
@@ -327,17 +220,209 @@ export class PlayerHost {
       video: refs.video,
     })
     const htmlNodeBridgeHostPort: HtmlNodeBridgeHostPort = {
-      getRuntimeSnapshot: this.getHtmlNodeBridgeRuntimeSnapshot,
+      getRuntimeSnapshot: () => this.navigation.getHtmlNodeBridgeRuntimeSnapshot(),
       handleBackRequest: this.handleHtmlNodeBackRequest,
       handleRouteRequest: this.handleHtmlNodeRouteRequest,
       handleLegacyHotspotClick: edgeId => this.engine.handleHotspotById(edgeId),
     }
     this.htmlNodeBridge = new HtmlNodeBridge(htmlNodeBridgeHostPort)
 
-    this.bindEvents()
+    this.pageTracker.ensureExternalScriptLoaded = this.ensureExternalScriptLoaded
+
+    this.shareManager.ensureExternalScriptLoaded = this.ensureExternalScriptLoaded
+    this.shareManager.getInlineScriptText = (name) =>
+      name === 'kingfisher-bridge' ? kingfisherBridgeUmdScript : kingfisherFalconUmdScript
+    this.shareManager.getManifestTitle = () => this.engine.getManifest()?.title ?? ''
+    this.shareManager.reportShare = () => this.pageTracker.reportShare()
+
+    const surfaceEnv: SurfaceControllerEnv = {
+      refs: this.refs,
+      engine: this.engine,
+      pageTracker: this.pageTracker,
+      getNodeKind: (node) => this.getNodeKind(node),
+      getNodeAspectRatio: (node) => this.getNodeAspectRatio(node),
+      dragState: this.dragState,
+      cancelPointerDrag: () => this.cancelSurfacePointerDrag(),
+      navigateByEdge: (edgeId) => this.navigateByEdge(edgeId),
+      applySurfaceImageLayout: (node) => this.nodeRenderer.applySurfaceImageLayout(node),
+      requestRender: () => this.render(),
+      renderChrome: () => this.renderChrome(this.getState()),
+      emitState: () => this.emitState(),
+      renderAnnotations: (node, transitioning) => this.annotations.renderAnnotations(node, transitioning),
+      updateHotspotViewport: () => this.annotations.updateHotspotViewport(),
+      getBottomSheetCardsEl: () => this.bottomSheetCardsEl,
+    }
+    this.surface = new SurfaceController(surfaceEnv)
+
+    const htmlIframeEnv: HtmlIframeManagerEnv = {
+      refs: this.refs,
+      engine: this.engine,
+      getNodeKind: (node) => this.getNodeKind(node),
+      toAbsoluteUrl,
+      htmlIframeLayer: this.htmlIframeLayer,
+      requestRender: () => this.render(),
+      updateHotspotViewport: () => this.annotations.updateHotspotViewport(),
+      confirmHostVisualCommitIfReady: (reason) => this.confirmHostVisualCommitIfReady(reason),
+      postHtmlNodeRouteSelection: (node) => this.navigation.postHtmlNodeRouteSelection(node),
+      getRuntimeConfig: () => this.options.runtimeConfig,
+    }
+    this.htmlIframe = new HtmlIframeManager(htmlIframeEnv)
+
+    const self = this
+    const chromeEnv: ChromeRendererEnv = {
+      chromeRoot: this.chromeRoot,
+      headerBackdropEl: this.headerBackdropEl,
+      headerCenterEl: this.headerCenterEl,
+      packageTitleEl: this.packageTitleEl,
+      infoButtonEl: this.infoButtonEl,
+      shareButtonEl: this.shareButtonEl,
+      bottomSheetEl: this.bottomSheetEl,
+      bottomSheetBreadcrumbEl: this.bottomSheetBreadcrumbEl,
+      bottomSheetCardsEl: this.bottomSheetCardsEl,
+      bottomSheetResetButtonEl: this.bottomSheetResetButtonEl,
+      infoSheetBackdropEl: this.infoSheetBackdropEl,
+      infoSheetEl: this.infoSheetEl,
+      infoSheetTitleEl: this.infoSheetTitleEl,
+      infoSheetContentEl: this.infoSheetContentEl,
+      dragHintBackdropEl: this.dragHintBackdropEl,
+      dragHintEl: this.dragHintEl,
+      get infoSheetOpen() { return self.infoSheetOpen },
+      set infoSheetOpen(v: boolean) { self.infoSheetOpen = v },
+      get surfaceSheetOpen() { return self.surfaceSheetOpen },
+      set surfaceSheetOpen(v: boolean) { self.surfaceSheetOpen = v },
+      get activeSurfaceCardId() { return self.activeSurfaceCardId },
+      set activeSurfaceCardId(v: string | null) { self.activeSurfaceCardId = v },
+      get renderedBottomSheetNodeId() { return self.renderedBottomSheetNodeId },
+      set renderedBottomSheetNodeId(v: string | null) { self.renderedBottomSheetNodeId = v },
+      get renderedBottomSheetLayerId() { return self.renderedBottomSheetLayerId },
+      set renderedBottomSheetLayerId(v: string | null) { self.renderedBottomSheetLayerId = v },
+      get renderedBottomSheetCardId() { return self.renderedBottomSheetCardId },
+      set renderedBottomSheetCardId(v: string | null) { self.renderedBottomSheetCardId = v },
+      get bottomSheetCardsDragState() { return self.bottomSheetCardsDragState },
+      set bottomSheetCardsDragState(v: SheetCardDragState | null) { self.bottomSheetCardsDragState = v },
+      get ignoreBottomSheetCardClick() { return self.ignoreBottomSheetCardClick },
+      set ignoreBottomSheetCardClick(v: boolean) { self.ignoreBottomSheetCardClick = v },
+      get surfaceCardScrollSyncLocked() { return self.surfaceCardScrollSyncLocked },
+      set surfaceCardScrollSyncLocked(v: boolean) { self.surfaceCardScrollSyncLocked = v },
+      getNodeKind: (node) => this.getNodeKind(node),
+      getActiveSurfaceLayer: (node) => this.surface.getActiveLayer(node),
+      canShare: () => this.shareManager.canShare(),
+      focusSurfaceCard: (cardId, moveCamera) => this.focusSurfaceCard(cardId, moveCamera),
+      scrollActiveSheetCardIntoView: () => this.surface.scrollActiveCardIntoView(),
+      scheduleSurfaceCardScrollCommit: () => this.scheduleSurfaceCardScrollCommit(),
+      clearSurfaceCardScrollSettleTimer: () => this.clearSurfaceCardScrollSettleTimer(),
+      getManifest: () => this.engine.getManifest(),
+      onChromeStateChanged: () => {
+        this.renderChrome(this.getState())
+        this.emitState()
+      },
+    }
+    this.chrome = new ChromeRenderer(chromeEnv)
+
+    const annotationRendererEnv: AnnotationRendererEnv = {
+      refs: this.refs,
+      engine: this.engine,
+      getNodeKind: (node) => this.getNodeKind(node),
+      getCurrentSurfaceCamera: () => this.surface.currentCamera,
+      getActiveSurfaceLayout: () => this.surface.activeLayout,
+      getActiveSurfaceCardId: () => this.surface.activeCardId,
+      getActiveContentType: () => this.activeContentType,
+      focusSurfaceCard: (cardId, moveCamera) => this.focusSurfaceCard(cardId, moveCamera),
+      handleSurfaceHotspotNavigation: (hotspot, currentNode) => this.surface.handleHotspotNavigation(hotspot, currentNode),
+      handleHotspotNavigation: (hotspot) => {
+        void this.pageTracker.reportClick()
+        this.htmlIframe.primeForNodeId(hotspot.targetNodeId)
+        this.engine.handleHotspotClick(hotspot)
+      },
+      requestHotspotViewportUpdate: () => this.annotations.scheduleHotspotViewportUpdate(),
+    }
+    this.annotations = new AnnotationRenderer(annotationRendererEnv)
+
+    const nodeRendererEnv: NodeRendererEnv = {
+      refs: this.refs,
+      engine: this.engine,
+      surface: this.surface,
+      htmlIframe: this.htmlIframe,
+      annotations: this.annotations,
+      htmlNodeBridge: this.htmlNodeBridge,
+      getNodeKind: (node) => this.getNodeKind(node),
+      getNodeImageSource: (node) => this.getNodeImageSource(node),
+      getNodeAspectRatio: (node) => this.getNodeAspectRatio(node),
+      applyPendingRouteSelection: (node) => this.navigation.applyPendingRouteSelection(node),
+      get imageOffset() { return self.imageOffset },
+      set imageOffset(v) { self.imageOffset = v },
+      get activeContentType() { return self.activeContentType },
+      set activeContentType(v) { self.activeContentType = v },
+      get activeHtmlIframeUrl() { return self.activeHtmlIframeUrl },
+      set activeHtmlIframeUrl(v) { self.activeHtmlIframeUrl = v },
+    }
+    this.nodeRenderer = new NodeRenderer(nodeRendererEnv)
+
+    const eventManagerEnv: EventManagerEnv = {
+      engine: this.engine,
+      refs: this.refs,
+      surface: this.surface,
+      annotations: this.annotations,
+      nodeRenderer: this.nodeRenderer,
+      htmlNodeBridge: this.htmlNodeBridge,
+      get dragState() { return self.dragState },
+      set dragState(v) { self.dragState = v },
+      get viewportPointerDownTarget() { return self.viewportPointerDownTarget },
+      set viewportPointerDownTarget(v) { self.viewportPointerDownTarget = v },
+      get infoSheetOpen() { return self.infoSheetOpen },
+      set infoSheetOpen(v) { self.infoSheetOpen = v },
+      get bottomSheetCardsDragState() { return self.bottomSheetCardsDragState },
+      set bottomSheetCardsDragState(v) { self.bottomSheetCardsDragState = v },
+      get ignoreBottomSheetCardClick() { return self.ignoreBottomSheetCardClick },
+      set ignoreBottomSheetCardClick(v) { self.ignoreBottomSheetCardClick = v },
+      get pinchState() { return self.pinchState },
+      get imageOffset() { return self.imageOffset },
+      get bottomSheetCardsEl() { return self.bottomSheetCardsEl },
+      get activeSurfaceLayout() { return self.activeSurfaceLayout },
+      get currentSurfaceCamera() { return self.currentSurfaceCamera },
+      get activeSurfaceCardId() { return self.activeSurfaceCardId },
+      get surfaceSheetOpen() { return self.surfaceSheetOpen },
+      get surfaceCardScrollSyncLocked() { return self.surfaceCardScrollSyncLocked },
+      options: this.options,
+      getNodeKind: (node) => this.getNodeKind(node),
+      getNodeAspectRatio: (node) => this.getNodeAspectRatio(node),
+      getHtmlNodeBridgeRuntimeSnapshot: () => this.navigation.getHtmlNodeBridgeRuntimeSnapshot(),
+      render: () => this.render(),
+      emitState: () => this.emitState(),
+      updateLayout: () => this.updateLayout(),
+      confirmHostVisualCommitIfReady: (reason) => this.confirmHostVisualCommitIfReady(reason),
+      tryHandleBackAction: () => this.navigation.tryHandleBackAction(),
+      setSurfaceCamera: (camera, animated) => this.surface.setCamera(camera, animated),
+      setActiveSurfaceCard: (cardId) => this.surface.setActiveCard(cardId),
+      scheduleSurfaceCardScrollCommit: () => this.scheduleSurfaceCardScrollCommit(),
+      clearSurfaceCardScrollSettleTimer: () => this.clearSurfaceCardScrollSettleTimer(),
+      clearSurfaceCardScrollSyncTimer: () => this.clearSurfaceCardScrollSyncTimer(),
+      maybeStartHtmlIframePreload: () => this.maybeStartHtmlIframePreload(),
+    }
+    this.events = new EventManager(eventManagerEnv)
+
+    const navigationEnv: NavigationEnv = {
+      engine: this.engine,
+      getNodeKind: (node) => this.getNodeKind(node),
+      focusSurfaceCard: (cardId, moveCamera) => this.focusSurfaceCard(cardId, moveCamera),
+      isActiveHtmlIframeReady: () => this.isActiveHtmlIframeReady(),
+      closeInfoSheet: () => this.closeInfoSheet(),
+      navigateByEdge: (edgeId) => this.navigateByEdge(edgeId),
+      getNodeIframeContentWindow: () => this.refs.nodeIframe.contentWindow,
+      resetSurfaceFocus: (animated) => this.surface.resetFocus(animated),
+      hasActiveSurfaceFocus: (node) => this.surface.hasActiveFocus(node),
+      get pendingRouteSelection() { return self.pendingRouteSelection },
+      set pendingRouteSelection(v) { self.pendingRouteSelection = v },
+      get activeHtmlRouteSelection() { return self.activeHtmlRouteSelection },
+      set activeHtmlRouteSelection(v) { self.activeHtmlRouteSelection = v },
+      get infoSheetOpen() { return self.infoSheetOpen },
+    }
+    this.navigation = new NavigationHandler(navigationEnv)
+
+    this.events.bindEvents(this.destroyers)
     this.buildChrome()
-    this.primeShareDependency()
-    this.startPageTracking()
+    this.shareManager.prime()
+    this.pageTracker.start()
     this.applyBaseStyles()
     this.emitState()
   }
@@ -391,7 +476,7 @@ export class PlayerHost {
   }
 
   handleBack(): void {
-    this.handleBackAction()
+    this.navigation.handleBackAction()
   }
 
   handleHotspotById(edgeId: string): void {
@@ -431,16 +516,16 @@ export class PlayerHost {
     this.applyStageLayout()
     const currentNode = this.engine.getCurrentNode()
     if (currentNode && this.getNodeKind(currentNode) === 'surface') {
-      this.applySurfaceImageLayout(currentNode)
-      this.renderAnnotations(currentNode, this.engine.isTransitioning())
+      this.nodeRenderer.applySurfaceImageLayout(currentNode)
+      this.annotations.renderAnnotations(currentNode, this.engine.isTransitioning())
     }
-    this.updateHotspotViewport()
+    this.annotations.updateHotspotViewport()
   }
 
   destroy(): void {
-    if (this.hotspotViewportFrameId !== null) {
-      cancelAnimationFrame(this.hotspotViewportFrameId)
-      this.hotspotViewportFrameId = null
+    if (this.annotations.hotspotViewportFrameId !== null) {
+      cancelAnimationFrame(this.annotations.hotspotViewportFrameId)
+      this.annotations.hotspotViewportFrameId = null
     }
     if (this.surfaceAnimationFrameId !== null) {
       cancelAnimationFrame(this.surfaceAnimationFrameId)
@@ -451,401 +536,23 @@ export class PlayerHost {
     this.destroyers.forEach(dispose => dispose())
     this.destroyers = []
     this.htmlNodeBridge.destroy()
-    this.htmlIframeEntries.forEach(entry => {
-      entry.cleanup()
-      entry.iframe.remove()
-    })
-    this.htmlIframeEntries.clear()
+    this.htmlIframe.destroy()
     this.htmlIframeLayer.remove()
+    this.pageTracker.destroy()
     this.chromeRoot.remove()
     this.engine.destroy()
   }
 
-  private bindEvents(): void {
-    this.engine.on('stateChange', this.handleEngineStateChange)
-    this.engine.on('error', this.handleEngineError)
-    this.destroyers.push(() => this.engine.off('stateChange', this.handleEngineStateChange))
-    this.destroyers.push(() => this.engine.off('error', this.handleEngineError))
-
-    this.refs.nodeImage.addEventListener('load', this.handleNodeImageLoad)
-    this.refs.nodeImage.addEventListener('pointerdown', this.handleNodeImagePointerDown)
-    window.addEventListener('resize', this.handleWindowResize)
-    this.refs.viewport.addEventListener('pointerdown', this.handleViewportPointerDown)
-    this.refs.viewport.addEventListener('click', this.handleViewportClick)
-    this.refs.viewport.addEventListener('wheel', this.handleViewportWheel, { passive: false })
-    this.refs.viewport.addEventListener('touchstart', this.handleViewportTouchStart, { passive: false })
-    this.refs.viewport.addEventListener('touchmove', this.handleViewportTouchMove, { passive: false })
-    this.refs.viewport.addEventListener('touchend', this.handleViewportTouchEnd)
-    this.refs.viewport.addEventListener('touchcancel', this.handleViewportTouchEnd)
-
-    this.destroyers.push(() => this.refs.nodeImage.removeEventListener('load', this.handleNodeImageLoad))
-    this.destroyers.push(() => this.refs.nodeImage.removeEventListener('pointerdown', this.handleNodeImagePointerDown))
-    this.destroyers.push(() => window.removeEventListener('resize', this.handleWindowResize))
-    this.destroyers.push(() => this.refs.viewport.removeEventListener('pointerdown', this.handleViewportPointerDown))
-    this.destroyers.push(() => this.refs.viewport.removeEventListener('click', this.handleViewportClick))
-    this.destroyers.push(() => this.refs.viewport.removeEventListener('wheel', this.handleViewportWheel))
-    this.destroyers.push(() => this.refs.viewport.removeEventListener('touchstart', this.handleViewportTouchStart))
-    this.destroyers.push(() => this.refs.viewport.removeEventListener('touchmove', this.handleViewportTouchMove))
-    this.destroyers.push(() => this.refs.viewport.removeEventListener('touchend', this.handleViewportTouchEnd))
-    this.destroyers.push(() => this.refs.viewport.removeEventListener('touchcancel', this.handleViewportTouchEnd))
-    this.destroyers.push(() => this.detachDragListeners())
-  }
-
-  private handleEngineStateChange = (): void => {
-    this.infoSheetOpen = false
-    this.maybeStartHtmlIframePreload()
-    this.render()
-    requestAnimationFrame(() => {
-      this.confirmHostVisualCommitIfReady('engine:stateChange:next-frame')
-    })
-  }
-
-  private handleEngineError = (error: Error): void => {
-    this.options.onError?.(error)
-  }
-
-  private handleNodeImageLoad = (): void => {
-    this.updateHotspotViewport()
-    requestAnimationFrame(() => {
-      this.confirmHostVisualCommitIfReady('node-image:onLoad:next-frame')
-    })
-  }
-
-  private handleWindowResize = (): void => {
-    this.updateLayout()
-  }
-
-  private handleViewportPointerDown = (event: PointerEvent): void => {
-    this.viewportPointerDownTarget = event.target
-  }
-
-  private handleViewportClick = (event: MouseEvent): void => {
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode || this.getNodeKind(currentNode) !== 'surface') return
-    if (this.engine.isTransitioning()) return
-    if (this.dragState.moved) {
-      this.dragState.moved = false
-      return
-    }
-
-    const pointerDownTarget = this.viewportPointerDownTarget
-    this.viewportPointerDownTarget = null
-    if (this.isInteractiveSurfaceTarget(pointerDownTarget) || this.isInteractiveSurfaceTarget(event.target)) {
-      return
-    }
-    if (this.activeSurfaceCardId) {
-      this.setActiveSurfaceCard(null)
-    }
-  }
-
-  private handleViewportWheel = (event: WheelEvent): void => {
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode || this.getNodeKind(currentNode) !== 'surface' || !this.currentSurfaceCamera) return
-    if (this.engine.isTransitioning()) return
-    event.preventDefault()
-
-    const surfaceConfig = currentNode.surfaceConfig
-    const layout = this.activeSurfaceLayout
-    if (!surfaceConfig || !layout) return
-
-    const rect = this.refs.container.getBoundingClientRect()
-    const pointerX = event.clientX - rect.left
-    const pointerY = event.clientY - rect.top
-    const imageNormX = (pointerX - layout.originX - layout.translateX) / Math.max(layout.scaledWidth, 1)
-    const imageNormY = (pointerY - layout.originY - layout.translateY) / Math.max(layout.scaledHeight, 1)
-    const zoomFactor = event.deltaY < 0 ? 1.12 : 1 / 1.12
-    const nextZoom = this.currentSurfaceCamera.zoom * zoomFactor
-    const nextCamera = clampSurfaceCamera(
-      {
-        centerX: imageNormX - (pointerX - rect.width / 2) / Math.max(layout.baseWidth * nextZoom, 1),
-        centerY: imageNormY - (pointerY - rect.height / 2) / Math.max(layout.baseHeight * nextZoom, 1),
-        zoom: nextZoom,
-      },
-      rect.width,
-      rect.height,
-      this.getNodeAspectRatio(currentNode) ?? 1,
-      surfaceConfig.bounds,
-    )
-
-    this.setSurfaceCamera(nextCamera, false)
-  }
-
-  private handleViewportTouchStart = (event: TouchEvent): void => {
-    if (event.touches.length < 2) return
-    if (!this.canHandleSurfacePinch()) return
-    event.preventDefault()
-    this.beginSurfacePinch(event.touches)
-  }
-
-  private handleViewportTouchMove = (event: TouchEvent): void => {
-    if (event.touches.length < 2) return
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode || this.getNodeKind(currentNode) !== 'surface' || !currentNode.surfaceConfig) return
-    if (!this.canHandleSurfacePinch()) return
-
-    if (!this.pinchState.active) {
-      this.beginSurfacePinch(event.touches)
-    }
-    if (!this.pinchState.active || !this.pinchState.startCamera) return
-
-    event.preventDefault()
-    const first = event.touches[0]
-    const second = event.touches[1]
-    const distance = Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY)
-    const nextZoom = this.pinchState.startCamera.zoom * (distance / Math.max(this.pinchState.startDistance, 1))
-    const rect = this.refs.container.getBoundingClientRect()
-    const midpointX = (first.clientX + second.clientX) / 2 - rect.left
-    const midpointY = (first.clientY + second.clientY) / 2 - rect.top
-    const nextCamera = clampSurfaceCamera(
-      {
-        centerX: this.pinchState.anchorNormX - (midpointX - rect.width / 2) / Math.max(this.pinchState.baseWidth * nextZoom, 1),
-        centerY: this.pinchState.anchorNormY - (midpointY - rect.height / 2) / Math.max(this.pinchState.baseHeight * nextZoom, 1),
-        zoom: nextZoom,
-      },
-      rect.width,
-      rect.height,
-      this.getNodeAspectRatio(currentNode) ?? 1,
-      currentNode.surfaceConfig.bounds,
-    )
-
-    this.dragState.moved = true
-    this.setSurfaceCamera(nextCamera, false)
-  }
-
-  private handleViewportTouchEnd = (event: TouchEvent): void => {
-    if (!this.pinchState.active) return
-    if (event.touches.length >= 2) {
-      this.beginSurfacePinch(event.touches)
-      return
-    }
-    this.pinchState.active = false
-    if (this.getNodeKind(this.engine.getCurrentNode()) === 'surface') {
-      this.refs.nodeImage.style.cursor = 'grab'
-    }
-  }
-
   private handleHtmlNodeBackRequest = (
     _payload: HtmlNodeBackRequestPayload | undefined,
-  ): HtmlNodeBackResponsePayload => {
-    const handled = this.tryHandleBackAction()
-    return {
-      handled,
-      runtime: this.getHtmlNodeBridgeRuntimeSnapshot(),
-    }
-  }
+  ): HtmlNodeBackResponsePayload => this.events.handleHtmlNodeBackRequest(_payload)
 
   private handleHtmlNodeRouteRequest = (
     payload: HtmlNodeRouteRequestPayload | undefined,
-  ): HtmlNodeRouteResponsePayload => {
-    const route = payload?.route?.trim()
-    if (!route) {
-      throw new Error('缺少可跳转的 route')
-    }
-
-    const openMode = payload?.openMode === 'new-tab' ? 'new-tab' : 'current-tab'
-    const resolvedUrl = this.resolveHtmlRouteUrl(route)
-
-    let handled = false
-    const callbackResult = this.options.onHtmlRouteRequest?.({
-      route,
-      reason: payload?.reason,
-      openMode,
-      resolvedUrl,
-    })
-
-    if (typeof callbackResult === 'boolean') {
-      handled = callbackResult
-    } else if (this.options.onHtmlRouteRequest) {
-      handled = true
-    } else {
-      handled = this.performDefaultHtmlRouteNavigation(resolvedUrl, openMode)
-    }
-
-    return {
-      handled,
-      route: resolvedUrl,
-      openMode,
-    }
-  }
-
-  private handleNodeImagePointerDown = (event: PointerEvent): void => {
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode) return
-
-    if (this.getNodeKind(currentNode) === 'surface') {
-      if (this.pinchState.active) return
-      if (!event.isPrimary || !this.currentSurfaceCamera) return
-      event.preventDefault()
-      this.dragState = {
-        active: true,
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        startOffsetX: this.currentSurfaceCamera.centerX,
-        startOffsetY: this.currentSurfaceCamera.centerY,
-        maxOffsetX: 0,
-        maxOffsetY: 0,
-        moved: false,
-      }
-      this.refs.nodeImage.style.cursor = 'grabbing'
-      this.refs.nodeImage.setPointerCapture?.(event.pointerId)
-      document.addEventListener('pointermove', this.handleDragMove)
-      document.addEventListener('pointerup', this.handleDragEnd)
-      document.addEventListener('pointercancel', this.handleDragEnd)
-      return
-    }
-
-    const fitMode = currentNode.imageFitMode ?? 'fill'
-    if (fitMode === 'fill') return
-    if (!event.isPrimary) return
-
-    event.preventDefault()
-    const containerRect = this.refs.container.getBoundingClientRect()
-    const imageRect = this.refs.nodeImage.getBoundingClientRect()
-    const maxOffsetX = imageRect.width > containerRect.width
-      ? (imageRect.width - containerRect.width) / 2
-      : 0
-    const maxOffsetY = imageRect.height > containerRect.height
-      ? (imageRect.height - containerRect.height) / 2
-      : 0
-    this.dragState = {
-      active: true,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startOffsetX: this.imageOffset.x,
-      startOffsetY: this.imageOffset.y,
-      maxOffsetX,
-      maxOffsetY,
-      moved: false,
-    }
-
-    this.refs.nodeImage.style.cursor = 'grabbing'
-    this.refs.nodeImage.setPointerCapture?.(event.pointerId)
-    document.addEventListener('pointermove', this.handleDragMove)
-    document.addEventListener('pointerup', this.handleDragEnd)
-    document.addEventListener('pointercancel', this.handleDragEnd)
-  }
-
-  private handleDragMove = (event: PointerEvent): void => {
-    if (this.pinchState.active) return
-    if (!this.dragState.active) return
-    if (this.dragState.pointerId !== null && event.pointerId !== this.dragState.pointerId) return
-
-    if (
-      Math.abs(event.clientX - this.dragState.startX) > 3
-      || Math.abs(event.clientY - this.dragState.startY) > 3
-    ) {
-      this.dragState.moved = true
-    }
-
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode) return
-
-    if (this.getNodeKind(currentNode) === 'surface' && this.activeSurfaceLayout && this.currentSurfaceCamera && currentNode.surfaceConfig) {
-      const rect = this.refs.container.getBoundingClientRect()
-      const nextCamera = clampSurfaceCamera(
-        {
-          centerX: this.dragState.startOffsetX - (event.clientX - this.dragState.startX) / Math.max(this.activeSurfaceLayout.baseWidth * this.currentSurfaceCamera.zoom, 1),
-          centerY: this.dragState.startOffsetY - (event.clientY - this.dragState.startY) / Math.max(this.activeSurfaceLayout.baseHeight * this.currentSurfaceCamera.zoom, 1),
-          zoom: this.currentSurfaceCamera.zoom,
-        },
-        rect.width,
-        rect.height,
-        this.getNodeAspectRatio(currentNode) ?? 1,
-        currentNode.surfaceConfig.bounds,
-      )
-      this.setSurfaceCamera(nextCamera, false)
-      return
-    }
-
-    const fitMode = currentNode.imageFitMode ?? 'fill'
-
-    let nextX = this.dragState.startOffsetX
-    let nextY = this.dragState.startOffsetY
-
-    if (fitMode === 'fitHeight') {
-      nextX += event.clientX - this.dragState.startX
-      nextX = this.dragState.maxOffsetX > 0
-        ? Math.max(-this.dragState.maxOffsetX, Math.min(this.dragState.maxOffsetX, nextX))
-        : 0
-      nextY = 0
-    } else if (fitMode === 'fitWidth') {
-      nextY += event.clientY - this.dragState.startY
-      nextY = this.dragState.maxOffsetY > 0
-        ? Math.max(-this.dragState.maxOffsetY, Math.min(this.dragState.maxOffsetY, nextY))
-        : 0
-      nextX = 0
-    }
-
-    this.applyImageTransform(nextX, nextY)
-    this.scheduleHotspotViewportUpdate()
-  }
-
-  private handleDragEnd = (): void => {
-    const pointerId = this.dragState.pointerId
-    this.dragState.active = false
-    this.dragState.pointerId = null
-    this.detachDragListeners()
-    if (pointerId !== null && this.refs.nodeImage.hasPointerCapture?.(pointerId)) {
-      this.refs.nodeImage.releasePointerCapture(pointerId)
-    }
-
-    const currentNode = this.engine.getCurrentNode()
-    if (this.getNodeKind(currentNode) === 'surface') {
-      this.refs.nodeImage.style.cursor = 'grab'
-      return
-    }
-
-    const fitMode = currentNode?.imageFitMode ?? 'fill'
-    this.refs.nodeImage.style.cursor = fitMode === 'fill' ? 'default' : 'grab'
-  }
-
-  private canHandleSurfacePinch(): boolean {
-    const currentNode = this.engine.getCurrentNode()
-    return !!currentNode
-      && this.getNodeKind(currentNode) === 'surface'
-      && !!currentNode.surfaceConfig
-      && !!this.currentSurfaceCamera
-      && !!this.activeSurfaceLayout
-      && !this.engine.isTransitioning()
-  }
-
-  private beginSurfacePinch(touches: TouchList): void {
-    if (touches.length < 2 || !this.currentSurfaceCamera || !this.activeSurfaceLayout) return
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode || this.getNodeKind(currentNode) !== 'surface') return
-
-    const first = touches[0]
-    const second = touches[1]
-    const rect = this.refs.container.getBoundingClientRect()
-    const midpointX = (first.clientX + second.clientX) / 2 - rect.left
-    const midpointY = (first.clientY + second.clientY) / 2 - rect.top
-    const layout = this.activeSurfaceLayout
-
-    this.cancelSurfacePointerDrag()
-    this.pinchState = {
-      active: true,
-      startDistance: Math.max(Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY), 1),
-      startCamera: { ...this.currentSurfaceCamera },
-      anchorNormX: (midpointX - layout.originX - layout.translateX) / Math.max(layout.scaledWidth, 1),
-      anchorNormY: (midpointY - layout.originY - layout.translateY) / Math.max(layout.scaledHeight, 1),
-      baseWidth: layout.baseWidth,
-      baseHeight: layout.baseHeight,
-    }
-    this.dragState.moved = true
-    this.refs.nodeImage.style.cursor = 'grabbing'
-  }
+  ): HtmlNodeRouteResponsePayload => this.events.handleHtmlNodeRouteRequest(payload)
 
   private cancelSurfacePointerDrag(): void {
-    if (!this.dragState.active) return
-    const pointerId = this.dragState.pointerId
-    this.dragState.active = false
-    this.dragState.pointerId = null
-    this.detachDragListeners()
-    if (pointerId !== null && this.refs.nodeImage.hasPointerCapture?.(pointerId)) {
-      this.refs.nodeImage.releasePointerCapture(pointerId)
-    }
+    this.events.cancelSurfacePointerDrag()
   }
 
   private emitState(): void {
@@ -853,535 +560,18 @@ export class PlayerHost {
   }
 
   private buildChrome(): void {
-    this.chromeRoot.dataset.playerHostChrome = 'true'
-    this.chromeRoot.setAttribute('aria-hidden', 'false')
-
-    this.backButtonEl.type = 'button'
-    this.backButtonEl.setAttribute('aria-label', '返回上一页')
-    this.backButtonEl.innerHTML = BACK_ICON_SVG
-    this.backButtonEl.addEventListener('click', () => this.handleBackAction())
-
-    this.infoButtonEl.type = 'button'
-    this.infoButtonEl.setAttribute('aria-label', '提示信息')
-    this.infoButtonEl.innerHTML = INFO_ICON_SVG
-    this.infoButtonEl.addEventListener('click', event => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.toggleInfoSheet()
+    buildChromeStructure(this as unknown as ChromeElements, {
+      onBack: () => this.navigation.handleBackAction(),
+      onToggleInfo: () => this.toggleInfoSheet(),
+      onShare: () => { void this.shareManager.share() },
+      onCloseSheet: () => this.surface.closeSheet(),
+      onCloseInfo: () => this.closeInfoSheet(),
     })
-
-    this.shareButtonEl.type = 'button'
-    this.shareButtonEl.setAttribute('aria-label', '分享')
-    this.shareButtonEl.innerHTML = SHARE_ICON_SVG
-    this.shareButtonEl.addEventListener('click', event => {
-      event.preventDefault()
-      event.stopPropagation()
-      void this.handleShareAction()
-    })
-    this.bottomSheetResetButtonEl.type = 'button'
-    this.bottomSheetResetButtonEl.setAttribute('aria-label', '返回总图')
-    this.bottomSheetResetButtonEl.innerHTML = SHEET_BACK_ICON_SVG
-    this.bottomSheetResetButtonEl.addEventListener('click', event => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.handleBackAction()
-    })
-    this.bottomSheetCloseButtonEl.type = 'button'
-    this.bottomSheetCloseButtonEl.setAttribute('aria-label', '关闭底部浮层')
-    this.bottomSheetCloseButtonEl.textContent = '×'
-    this.bottomSheetCloseButtonEl.addEventListener('click', event => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.closeSurfaceSheet()
-    })
-    this.bottomSheetCardsEl.addEventListener('scroll', this.handleBottomSheetCardsScroll, { passive: true })
-    this.bottomSheetCardsEl.addEventListener('pointerdown', this.handleBottomSheetCardsPointerDown)
-    this.bottomSheetCardsEl.addEventListener('pointermove', this.handleBottomSheetCardsPointerMove)
-    this.bottomSheetCardsEl.addEventListener('pointerup', this.handleBottomSheetCardsPointerUp)
-    this.bottomSheetCardsEl.addEventListener('pointercancel', this.handleBottomSheetCardsPointerCancel)
-    this.infoSheetCloseButtonEl.type = 'button'
-    this.infoSheetCloseButtonEl.setAttribute('aria-label', '关闭说明弹窗')
-    this.infoSheetCloseButtonEl.textContent = '×'
-    this.infoSheetCloseButtonEl.addEventListener('click', event => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.closeInfoSheet()
-    })
-    this.infoSheetBackdropEl.addEventListener('click', event => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.closeInfoSheet()
-    })
-
-    this.headerCenterEl.appendChild(this.packageTitleEl)
-    this.headerCenterEl.appendChild(this.infoButtonEl)
-    this.bottomSheetActionsEl.appendChild(this.bottomSheetCloseButtonEl)
-    this.bottomSheetHeaderEl.appendChild(this.bottomSheetBreadcrumbEl)
-    this.bottomSheetHeaderEl.appendChild(this.bottomSheetActionsEl)
-    this.bottomSheetEl.appendChild(this.bottomSheetHeaderEl)
-    this.bottomSheetEl.appendChild(this.bottomSheetCardsEl)
-    this.infoSheetHeaderEl.appendChild(this.infoSheetTitleEl)
-    this.infoSheetHeaderEl.appendChild(this.infoSheetCloseButtonEl)
-    this.infoSheetEl.appendChild(this.infoSheetHeaderEl)
-    this.infoSheetEl.appendChild(this.infoSheetContentEl)
-    this.chromeRoot.appendChild(this.headerBackdropEl)
-    this.chromeRoot.appendChild(this.headerCenterEl)
-    this.chromeRoot.appendChild(this.shareButtonEl)
-    this.chromeRoot.appendChild(this.bottomSheetResetButtonEl)
-    this.chromeRoot.appendChild(this.bottomSheetEl)
-    this.chromeRoot.appendChild(this.infoSheetBackdropEl)
-    this.chromeRoot.appendChild(this.infoSheetEl)
-    this.chromeRoot.appendChild(this.dragHintBackdropEl)
-    this.chromeRoot.appendChild(this.dragHintEl)
+    this.events.bindBottomSheetEvents()
   }
 
   private applyBaseStyles(): void {
-    const { viewport, stage, container, nodeImage, nodeIframe, video, hotspots } = this.refs
-
-    Object.assign(viewport.style, {
-      position: 'relative',
-      overflow: 'hidden',
-      background: '#000',
-    })
-
-    Object.assign(stage.style, {
-      position: 'absolute',
-      overflow: 'hidden',
-      background: '#000',
-    })
-
-    Object.assign(this.htmlIframeLayer.style, {
-      position: 'absolute',
-      inset: '0',
-      zIndex: '1',
-      pointerEvents: 'none',
-    })
-
-    this.mountChrome()
-
-    Object.assign(this.chromeRoot.style, {
-      position: 'absolute',
-      left: '0',
-      top: '0',
-      width: '100%',
-      height: '100%',
-      zIndex: '50',
-      overflow: 'hidden',
-      pointerEvents: 'none',
-      fontFamily: '"Noto Sans SC", "Noto Sans S Chinese", "PingFang SC", "Microsoft YaHei", sans-serif',
-    })
-    this.chromeRoot.style.setProperty('--player-safe-area-top', 'env(safe-area-inset-top, 0px)')
-    this.chromeRoot.style.setProperty('--player-header-content-height', '44px')
-    this.chromeRoot.style.setProperty('--player-header-backdrop-height', 'calc(var(--player-safe-area-top) + var(--player-header-content-height))')
-    this.chromeRoot.style.setProperty('--player-header-control-top', 'calc(var(--player-safe-area-top) + 10px)')
-    this.chromeRoot.style.setProperty('--player-back-control-top', 'calc(var(--player-safe-area-top) + 6px)')
-
-    Object.assign(this.headerBackdropEl.style, {
-      position: 'absolute',
-      left: '0',
-      right: '0',
-      top: '0',
-      height: 'var(--player-header-backdrop-height)',
-      display: 'none',
-      background: 'rgba(255, 255, 255, 0.96)',
-      borderBottom: '1px solid rgba(15, 23, 42, 0.08)',
-      pointerEvents: 'none',
-      opacity: '0',
-      transition: 'opacity 220ms ease',
-      zIndex: '0',
-    })
-
-    Object.assign(this.backControlEl.style, {
-      position: 'absolute',
-      left: '16px',
-      top: 'var(--player-back-control-top)',
-      display: 'none',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: '32px',
-      height: '32px',
-      pointerEvents: 'auto',
-      opacity: '0',
-      transition: 'opacity 220ms ease',
-    })
-
-    Object.assign(this.backButtonEl.style, {
-      width: '32px',
-      height: '32px',
-      minWidth: '32px',
-      borderRadius: '0',
-      border: 'none',
-      background: 'transparent',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '0',
-      cursor: 'pointer',
-      pointerEvents: 'auto',
-    })
-    const backIcon = this.backButtonEl.querySelector('svg')
-    if (backIcon) {
-      ;(backIcon as SVGElement).style.width = '24px'
-      ;(backIcon as SVGElement).style.height = '24px'
-      ;(backIcon as SVGElement).style.display = 'block'
-    }
-
-    Object.assign(this.headerCenterEl.style, {
-      position: 'absolute',
-      left: '50%',
-      top: 'var(--player-header-control-top)',
-      transform: 'translateX(-50%)',
-      display: 'none',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '4px',
-      maxWidth: 'calc(100% - 120px)',
-      pointerEvents: 'auto',
-      opacity: '0',
-      transition: 'opacity 220ms ease',
-    })
-
-    Object.assign(this.packageTitleEl.style, {
-      minHeight: '24px',
-      maxWidth: '220px',
-      fontStyle: 'normal',
-      fontWeight: '700',
-      fontSize: '17px',
-      lineHeight: '24px',
-      color: 'rgba(0, 0, 0, 0.84)',
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-      pointerEvents: 'none',
-    })
-
-    const topIconButtonStyle = {
-      width: '24px',
-      height: '24px',
-      minWidth: '24px',
-      borderRadius: '0',
-      border: 'none',
-      background: 'transparent',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '0',
-      cursor: 'pointer',
-      pointerEvents: 'auto',
-    } as const
-    Object.assign(this.infoButtonEl.style, topIconButtonStyle)
-    Object.assign(this.shareButtonEl.style, {
-      ...topIconButtonStyle,
-      position: 'absolute',
-      right: '16px',
-      top: 'var(--player-header-control-top)',
-      display: 'none',
-      opacity: '0',
-      transition: 'opacity 220ms ease',
-    })
-    for (const iconButton of [this.infoButtonEl, this.shareButtonEl]) {
-      const svg = iconButton.querySelector('svg')
-      if (svg) {
-        ;(svg as SVGElement).style.width = iconButton === this.shareButtonEl ? '24px' : '14px'
-        ;(svg as SVGElement).style.height = iconButton === this.shareButtonEl ? '24px' : '14px'
-        ;(svg as SVGElement).style.display = 'block'
-      }
-    }
-    Object.assign(this.bottomSheetEl.style, {
-      position: 'absolute',
-      left: '0',
-      right: '0',
-      bottom: '0',
-      display: 'none',
-      flexDirection: 'column',
-      gap: '14px',
-      padding: '14px 16px 18px',
-      borderTopLeftRadius: '8px',
-      borderTopRightRadius: '8px',
-      borderBottomLeftRadius: '0',
-      borderBottomRightRadius: '0',
-      background: 'linear-gradient(360deg, #F5F5F5 0%, rgba(255, 255, 255, 0.64) 100%)',
-      backdropFilter: 'blur(6px)',
-      boxShadow: '0 -10px 36px rgba(15, 23, 42, 0.12)',
-      pointerEvents: 'none',
-      opacity: '0',
-      transform: 'translateY(calc(100% + 20px))',
-      transition: 'transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease',
-      willChange: 'transform, opacity',
-      zIndex: '2',
-    })
-    Object.assign(this.bottomSheetHeaderEl.style, {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: '12px',
-    })
-    Object.assign(this.bottomSheetBreadcrumbEl.style, {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-      flex: '1',
-      minWidth: '0',
-      fontSize: '14px',
-      lineHeight: '18px',
-      fontWeight: '400',
-      color: 'rgba(0, 0, 0, 0.6)',
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-    })
-    Object.assign(this.bottomSheetActionsEl.style, {
-      display: 'flex',
-      alignItems: 'center',
-      gap: '6px',
-      flexShrink: '0',
-    })
-    Object.assign(this.bottomSheetResetButtonEl.style, {
-      position: 'absolute',
-      right: '16px',
-      bottom: '210px',
-      width: '32px',
-      height: '32px',
-      minWidth: '32px',
-      border: 'none',
-      borderRadius: '6.85714px',
-      background: 'rgba(255, 255, 255, 0.8)',
-      display: 'none',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '0',
-      cursor: 'pointer',
-      pointerEvents: 'none',
-      opacity: '0',
-      transition: 'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease',
-      zIndex: '3',
-    })
-    const sheetBackIcon = this.bottomSheetResetButtonEl.querySelector('svg')
-    if (sheetBackIcon) {
-      ;(sheetBackIcon as SVGElement).style.width = '16px'
-      ;(sheetBackIcon as SVGElement).style.height = '13px'
-      ;(sheetBackIcon as SVGElement).style.display = 'block'
-    }
-    Object.assign(this.bottomSheetCloseButtonEl.style, {
-      width: '28px',
-      height: '28px',
-      minWidth: '28px',
-      border: 'none',
-      borderRadius: '999px',
-      background: 'transparent',
-      color: 'rgba(0, 0, 0, 0.72)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '0',
-      fontSize: '26px',
-      lineHeight: '1',
-      cursor: 'pointer',
-    })
-    Object.assign(this.bottomSheetCardsEl.style, {
-      display: 'flex',
-      flexDirection: 'row',
-      gap: '12px',
-      overflowX: 'auto',
-      overflowY: 'hidden',
-      scrollSnapType: 'x proximity',
-      paddingBottom: '4px',
-      scrollbarWidth: 'none',
-      pointerEvents: 'auto',
-    })
-    Object.assign(this.infoSheetBackdropEl.style, {
-      position: 'absolute',
-      inset: '0',
-      display: 'none',
-      background: 'rgba(0, 0, 0, 0.8)',
-      opacity: '0',
-      transition: 'opacity 220ms ease',
-      pointerEvents: 'none',
-      zIndex: '2',
-    })
-    Object.assign(this.infoSheetEl.style, {
-      position: 'absolute',
-      left: '0',
-      right: '0',
-      bottom: '0',
-      display: 'none',
-      flexDirection: 'column',
-      gap: '16px',
-      padding: '18px 22px 24px',
-      borderTopLeftRadius: '8px',
-      borderTopRightRadius: '8px',
-      background: '#FFFFFF',
-      boxShadow: '0 -10px 36px rgba(15, 23, 42, 0.12)',
-      pointerEvents: 'auto',
-      opacity: '0',
-      transition: 'opacity 220ms ease',
-      maxHeight: '50vh',
-      overflow: 'hidden',
-      boxSizing: 'border-box',
-      zIndex: '3',
-    })
-    Object.assign(this.infoSheetHeaderEl.style, {
-      position: 'relative',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '28px',
-      flexShrink: '0',
-    })
-    Object.assign(this.infoSheetTitleEl.style, {
-      fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-      fontStyle: 'normal',
-      fontWeight: '600',
-      fontSize: '16px',
-      lineHeight: '22px',
-      color: 'rgba(0, 0, 0, 0.84)',
-      textAlign: 'center',
-    })
-    Object.assign(this.infoSheetCloseButtonEl.style, {
-      position: 'absolute',
-      right: '0',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      width: '28px',
-      height: '28px',
-      minWidth: '28px',
-      border: 'none',
-      borderRadius: '999px',
-      background: 'transparent',
-      color: 'rgba(0, 0, 0, 0.36)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '0',
-      cursor: 'pointer',
-      fontSize: '24px',
-      lineHeight: '1',
-    })
-    Object.assign(this.infoSheetContentEl.style, {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '18px',
-      overflowY: 'auto',
-      minHeight: '0',
-      paddingRight: '2px',
-    })
-
-    Object.assign(this.dragHintBackdropEl.style, {
-      position: 'absolute',
-      left: '0',
-      right: '0',
-      bottom: '0',
-      height: '86px',
-      display: 'none',
-      background: 'linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.6) 100%)',
-      pointerEvents: 'none',
-      opacity: '0',
-      transition: 'opacity 220ms ease',
-      zIndex: '0',
-    })
-
-    Object.assign(this.dragHintEl.style, {
-      position: 'absolute',
-      left: '50%',
-      bottom: '24px',
-      transform: 'translateX(-50%)',
-      display: 'none',
-      fontFamily: '"MiSans", "PingFang SC", "Microsoft YaHei", sans-serif',
-      fontStyle: 'normal',
-      fontWeight: '500',
-      fontSize: '13px',
-      lineHeight: '18px',
-      textAlign: 'center',
-      color: '#FFFFFF',
-      whiteSpace: 'nowrap',
-      pointerEvents: 'none',
-      opacity: '0',
-      transition: 'opacity 220ms ease',
-      zIndex: '1',
-    })
-    this.dragHintEl.innerHTML = [
-      '<span data-drag-hint-arrow="left-1" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.28)">&lt;</span>',
-      '<span data-drag-hint-arrow="left-2" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.48)">&lt;</span>',
-      '<span data-drag-hint-arrow="left-3" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.78)">&lt;</span>',
-      '<span style="display:inline-block;padding:0 8px;color:#FFFFFF;letter-spacing:0.2px;">左右滑动查看完整场景</span>',
-      '<span data-drag-hint-arrow="right-1" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.78)">&gt;</span>',
-      '<span data-drag-hint-arrow="right-2" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.48)">&gt;</span>',
-      '<span data-drag-hint-arrow="right-3" style="display:inline-block;min-width:10px;color:rgba(255,255,255,0.28)">&gt;</span>',
-    ].join('')
-    ensureChromeAnimationStyle()
-    const arrowDelayMap: Record<string, string> = {
-      'left-3': '0ms',
-      'right-1': '0ms',
-      'left-2': '180ms',
-      'right-2': '180ms',
-      'left-1': '360ms',
-      'right-3': '360ms',
-    }
-    const arrowShiftMap: Record<string, string> = {
-      'left-1': '-3px',
-      'left-2': '-2px',
-      'left-3': '-1px',
-      'right-1': '1px',
-      'right-2': '2px',
-      'right-3': '3px',
-    }
-    Array.from(this.dragHintEl.querySelectorAll<HTMLElement>('[data-drag-hint-arrow]')).forEach(arrowEl => {
-      const arrowKey = arrowEl.dataset.dragHintArrow ?? ''
-      arrowEl.style.setProperty('--drag-hint-shift', arrowShiftMap[arrowKey] ?? '0px')
-      arrowEl.style.animation = `drag-hint-arrow-glow 1.8s ease-in-out ${arrowDelayMap[arrowKey] ?? '0ms'} infinite`
-    })
-
-    container.style.position = 'relative'
-    container.style.width = '100%'
-    container.style.height = '100%'
-    container.style.overflow = 'hidden'
-
-    Object.assign(nodeImage.style, {
-      position: 'absolute',
-      inset: '0',
-      width: '100%',
-      height: '100%',
-      background: '#000',
-      userSelect: 'none',
-      visibility: 'visible',
-      opacity: '1',
-      pointerEvents: 'auto',
-      willChange: 'transform',
-    })
-
-    this.applyManagedIframeBaseStyle(nodeIframe)
-
-    Object.assign(video.style, {
-      position: 'absolute',
-      inset: '0',
-      width: '100%',
-      height: '100%',
-      objectFit: 'contain',
-      zIndex: '20',
-      opacity: '0',
-      pointerEvents: 'none',
-    })
-
-    Object.assign(hotspots.style, {
-      position: 'absolute',
-      zIndex: '10',
-      left: '0px',
-      top: '0px',
-      width: '100%',
-      height: '100%',
-      opacity: '1',
-      pointerEvents: 'none',
-      transition: 'opacity 180ms ease',
-      willChange: 'transform,left,top,width,height',
-    })
-
-    if (this.htmlIframeLayer.parentElement !== container) {
-      this.htmlIframeLayer.remove()
-      container.appendChild(this.htmlIframeLayer)
-    }
-    if (nodeIframe.parentElement !== this.htmlIframeLayer) {
-      this.htmlIframeLayer.appendChild(nodeIframe)
-    }
+    applyBaseStyles(this.refs, this as unknown as ChromeElements, this.htmlIframeLayer, () => this.mountChrome(), (iframe) => this.applyManagedIframeBaseStyle(iframe))
   }
 
   private mountChrome(): void {
@@ -1394,81 +584,12 @@ export class PlayerHost {
   private applyStageLayout(): void {
     const manifest = this.engine.getManifest()
     if (!manifest) return
-
-    const viewportSize = this.resolveViewportSize()
-    if (viewportSize.width <= 0 || viewportSize.height <= 0) return
-
-    const { width: designWidth, height: designHeight } = getResolutionDimensions(manifest.resolution)
-    const designAspect = designWidth / Math.max(designHeight, 1)
-    const viewportAspect = viewportSize.width / Math.max(viewportSize.height, 1)
-    const layoutMode = this.options.layout?.mode ?? 'immersive-mobile'
-
-    let stageWidth = viewportSize.width
-    let stageHeight = viewportSize.width / Math.max(designAspect, 0.0001)
-    let stageLeft = 0
-    let stageTop = 0
-
-    if (layoutMode === 'contain-center') {
-      if (viewportAspect > designAspect) {
-        stageHeight = viewportSize.height
-        stageWidth = stageHeight * designAspect
-      }
-      stageLeft = (viewportSize.width - stageWidth) / 2
-      stageTop = (viewportSize.height - stageHeight) / 2
-    } else if (viewportAspect > designAspect) {
-      // On wider screens, keep the stage aligned to the full content area.
-      // The scene itself handles horizontal overflow through image/surface panning.
-      stageWidth = viewportSize.width
-      stageHeight = viewportSize.height
-      stageLeft = 0
-      stageTop = 0
-    } else {
-      stageTop = (viewportSize.height - stageHeight) / 2
-    }
-
-    Object.assign(this.refs.stage.style, {
-      left: `${stageLeft}px`,
-      top: `${stageTop}px`,
-      width: `${stageWidth}px`,
-      height: `${stageHeight}px`,
-      aspectRatio: `${designWidth} / ${designHeight}`,
-    })
-    this.updateChromeFrame(viewportSize.width, viewportSize.height, stageLeft, stageTop, stageWidth, stageHeight)
-  }
-
-  private resolveViewportSize(): { width: number; height: number } {
-    const customViewport = this.options.layout?.getViewport?.()
-    if (customViewport) {
-      return customViewport
-    }
-    const rect = this.refs.viewport.getBoundingClientRect()
-    return {
-      width: rect.width,
-      height: rect.height,
-    }
-  }
-
-  private updateChromeFrame(
-    viewportWidth: number,
-    viewportHeight: number,
-    stageLeft: number,
-    stageTop: number,
-    stageWidth: number,
-    stageHeight: number,
-  ): void {
-    const visibleLeft = Math.max(stageLeft, 0)
-    const visibleTop = Math.max(stageTop, 0)
-    const visibleRight = Math.min(stageLeft + stageWidth, viewportWidth)
-    const visibleBottom = Math.min(stageTop + stageHeight, viewportHeight)
-    const visibleWidth = Math.max(visibleRight - visibleLeft, 0)
-    const visibleHeight = Math.max(visibleBottom - visibleTop, 0)
-
-    Object.assign(this.chromeRoot.style, {
-      left: `${visibleLeft}px`,
-      top: `${visibleTop}px`,
-      width: `${visibleWidth}px`,
-      height: `${visibleHeight}px`,
-      overflow: 'hidden',
+    applyStageLayout({
+      manifest,
+      viewport: this.refs.viewport,
+      stage: this.refs.stage,
+      chromeRoot: this.chromeRoot,
+      layout: this.options.layout,
     })
   }
 
@@ -1485,11 +606,11 @@ export class PlayerHost {
 
     const nodeKind = this.getNodeKind(currentNode)
     if (nodeKind === 'html') {
-      this.renderHtmlNode(currentNode, transitioning)
+      this.nodeRenderer.renderHtmlNode(currentNode, transitioning)
     } else if (nodeKind === 'surface') {
-      this.renderSurfaceNode(currentNode, transitioning)
+      this.nodeRenderer.renderSurfaceNode(currentNode, transitioning)
     } else {
-      this.renderImageNode(currentNode, transitioning)
+      this.nodeRenderer.renderImageNode(currentNode, transitioning)
     }
 
     requestAnimationFrame(() => {
@@ -1501,977 +622,34 @@ export class PlayerHost {
   }
 
   private renderChrome(state: PlayerHostState): void {
-    const currentNode = state.currentNode
-    const manifestTitle = state.manifest?.title ?? ''
-    const nodeKind = this.getNodeKind(currentNode)
-    const isHtmlNode = nodeKind === 'html'
-    const showHorizontalDragHint = nodeKind === 'surface'
-      ? true
-      : currentNode?.imageFitMode === 'fitHeight'
-    const chromeVisible = !!currentNode && !state.transitioning && !state.preloading
-    const canShare = chromeVisible && this.canUseShareAction()
-    const canShowInfo = chromeVisible && !isHtmlNode && !!this.getInfoOverlayConfig(state.manifest)
-
-    this.headerBackdropEl.style.display = 'none'
-    this.headerBackdropEl.style.opacity = '0'
-    this.headerCenterEl.style.display = chromeVisible && !isHtmlNode ? 'flex' : 'none'
-    this.headerCenterEl.style.opacity = chromeVisible && !isHtmlNode ? '1' : '0'
-    this.infoButtonEl.style.display = canShowInfo ? 'flex' : 'none'
-    this.infoButtonEl.style.pointerEvents = canShowInfo ? 'auto' : 'none'
-    this.shareButtonEl.style.display = canShare ? 'flex' : 'none'
-    this.shareButtonEl.style.opacity = canShare ? '1' : '0'
-    this.shareButtonEl.style.pointerEvents = canShare ? 'auto' : 'none'
-    this.packageTitleEl.textContent = manifestTitle
-    this.applyShareButtonTheme(isHtmlNode)
-    this.renderBottomSheet(currentNode, chromeVisible)
-    this.renderFloatingBackButton(currentNode, chromeVisible)
-    this.renderInfoSheet(state.manifest, chromeVisible)
-
-    this.dragHintBackdropEl.style.display = showHorizontalDragHint ? 'block' : 'none'
-    this.dragHintBackdropEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
-    this.dragHintEl.style.display = showHorizontalDragHint ? 'block' : 'none'
-    this.dragHintEl.style.opacity = showHorizontalDragHint && chromeVisible ? '1' : '0'
-  }
-
-  private applyShareButtonTheme(useLightTheme: boolean): void {
-    const nextMarkup = useLightTheme ? SHARE_ICON_WHITE_SVG : SHARE_ICON_SVG
-    if (this.shareButtonEl.innerHTML !== nextMarkup) {
-      this.shareButtonEl.innerHTML = nextMarkup
-    }
-    const svg = this.shareButtonEl.querySelector('svg')
-    if (svg) {
-      ;(svg as SVGElement).style.width = '24px'
-      ;(svg as SVGElement).style.height = '24px'
-      ;(svg as SVGElement).style.display = 'block'
-    }
-  }
-
-  private renderBottomSheet(currentNode: PublishNode | null, chromeVisible: boolean): void {
-    const layer = this.getActiveSurfaceLayer(currentNode)
-    const shouldMount = !!layer && chromeVisible && !this.infoSheetOpen
-    const shouldShow = shouldMount && this.surfaceSheetOpen
-    this.bottomSheetEl.style.display = shouldMount ? 'flex' : 'none'
-    this.bottomSheetEl.style.opacity = shouldMount ? '1' : '0'
-    this.bottomSheetEl.style.transform = shouldShow ? 'translateY(0)' : 'translateY(calc(100% + 20px))'
-    this.bottomSheetEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
-    if (!shouldMount || !layer) {
-      this.renderedBottomSheetNodeId = null
-      this.renderedBottomSheetLayerId = null
-      this.renderedBottomSheetCardId = null
-      this.bottomSheetBreadcrumbEl.replaceChildren()
-      this.bottomSheetCardsEl.replaceChildren()
-      return
-    }
-
-    const currentNodeId = currentNode?.id ?? null
-    const shouldRebuild = this.renderedBottomSheetNodeId !== currentNodeId
-      || this.renderedBottomSheetLayerId !== layer.id
-      || this.bottomSheetCardsEl.childElementCount !== layer.cards.length
-    if (shouldRebuild) {
-      this.bottomSheetBreadcrumbEl.replaceChildren()
-      if (layer.primaryCategory?.trim()) {
-        const primaryEl = document.createElement('span')
-        primaryEl.textContent = layer.primaryCategory
-        Object.assign(primaryEl.style, {
-          fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-          fontStyle: 'normal',
-          fontWeight: '600',
-          fontSize: '14px',
-          lineHeight: '18px',
-          color: 'rgba(0, 0, 0, 0.84)',
-          flexShrink: '0',
-        })
-        const separatorEl = document.createElement('span')
-        separatorEl.textContent = '>'
-        Object.assign(separatorEl.style, {
-          fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-          fontStyle: 'normal',
-          fontWeight: '600',
-          fontSize: '14px',
-          lineHeight: '18px',
-          color: 'rgba(0, 0, 0, 0.84)',
-          flexShrink: '0',
-        })
-        this.bottomSheetBreadcrumbEl.appendChild(primaryEl)
-        this.bottomSheetBreadcrumbEl.appendChild(separatorEl)
-      }
-      const titleEl = document.createElement('span')
-      titleEl.textContent = layer.title
-      Object.assign(titleEl.style, {
-        minWidth: '0',
-        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-        fontStyle: 'normal',
-        fontWeight: '400',
-        fontSize: '14px',
-        lineHeight: '18px',
-        color: 'rgba(0, 0, 0, 0.6)',
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-      })
-      this.bottomSheetBreadcrumbEl.appendChild(titleEl)
-      this.bottomSheetCardsEl.replaceChildren()
-
-      for (const card of layer.cards) {
-        const cardEl = document.createElement('button')
-        const titleEl = document.createElement('div')
-        const descEl = document.createElement('div')
-        cardEl.type = 'button'
-        cardEl.dataset.surfaceSheetCardId = card.id
-        Object.assign(cardEl.style, {
-          flex: '0 0 260px',
-          minHeight: '108px',
-          padding: '14px 16px',
-          borderRadius: '12px',
-          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.06)',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'flex-start',
-          justifyContent: 'flex-start',
-          gap: '8px',
-          textAlign: 'left',
-          cursor: 'pointer',
-          scrollSnapAlign: 'start',
-        })
-        Object.assign(titleEl.style, {
-          fontSize: '16px',
-          lineHeight: '22px',
-          fontWeight: '700',
-          color: 'rgba(0, 0, 0, 0.88)',
-        })
-        titleEl.textContent = card.title
-        Object.assign(descEl.style, {
-          fontSize: '14px',
-          lineHeight: '22px',
-          color: 'rgba(0, 0, 0, 0.72)',
-        })
-        descEl.textContent = card.description ?? ''
-        cardEl.appendChild(titleEl)
-        cardEl.appendChild(descEl)
-        cardEl.addEventListener('click', event => {
-          if (this.ignoreBottomSheetCardClick) {
-            event.preventDefault()
-            event.stopPropagation()
-            this.ignoreBottomSheetCardClick = false
-            return
-          }
-          event.preventDefault()
-          event.stopPropagation()
-          this.focusSurfaceCard(card.id, true)
-        })
-        this.bottomSheetCardsEl.appendChild(cardEl)
-      }
-      this.renderedBottomSheetNodeId = currentNodeId
-      this.renderedBottomSheetLayerId = layer.id
-    }
-    this.syncBottomSheetCardSelection()
-    if (this.renderedBottomSheetCardId !== this.activeSurfaceCardId) {
-      this.renderedBottomSheetCardId = this.activeSurfaceCardId
-      this.scrollActiveSheetCardIntoView()
-    }
-  }
-
-  private syncBottomSheetCardSelection(): void {
-    const cards = Array.from(this.bottomSheetCardsEl.querySelectorAll<HTMLElement>('[data-surface-sheet-card-id]'))
-    for (const cardEl of cards) {
-      const selected = cardEl.dataset.surfaceSheetCardId === this.activeSurfaceCardId
-      cardEl.style.border = selected ? '2px solid #3366FF' : '1px solid rgba(15, 23, 42, 0.08)'
-      cardEl.style.background = selected ? 'rgba(51, 102, 255, 0.10)' : '#FFFFFF'
-    }
-  }
-
-  private renderFloatingBackButton(
-    currentNode: PublishNode | null,
-    chromeVisible: boolean,
-  ): void {
-    const nodeKind = this.getNodeKind(currentNode)
-    const layer = this.getActiveSurfaceLayer(currentNode)
-    const showForSurface = !!layer && chromeVisible && !this.infoSheetOpen
-    const showForHtml = nodeKind === 'html' && chromeVisible && !this.infoSheetOpen
-    const shouldShow = showForSurface || showForHtml
-    this.bottomSheetResetButtonEl.style.display = shouldShow ? 'flex' : 'none'
-    this.bottomSheetResetButtonEl.style.opacity = shouldShow ? '1' : '0'
-    this.bottomSheetResetButtonEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
-    this.bottomSheetResetButtonEl.style.bottom = showForSurface && this.surfaceSheetOpen
-      ? `${this.bottomSheetEl.offsetHeight + PlayerHost.FLOATING_BACK_BUTTON_OFFSET_PX}px`
-      : `${PlayerHost.FLOATING_BACK_BUTTON_OFFSET_PX}px`
-  }
-
-  private readonly handleBottomSheetCardsScroll = (): void => {
-    if (this.surfaceCardScrollSyncLocked || !this.surfaceSheetOpen) return
-    if (!this.bottomSheetCardsDragState?.moved) return
-    this.scheduleSurfaceCardScrollCommit()
-  }
-
-  private readonly handleBottomSheetCardsPointerDown = (event: PointerEvent): void => {
-    if (!this.surfaceSheetOpen || event.button !== 0) return
-    this.bottomSheetCardsDragState = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startScrollLeft: this.bottomSheetCardsEl.scrollLeft,
-      moved: false,
-    }
-    this.ignoreBottomSheetCardClick = false
-    this.bottomSheetCardsEl.setPointerCapture?.(event.pointerId)
-  }
-
-  private readonly handleBottomSheetCardsPointerMove = (event: PointerEvent): void => {
-    const dragState = this.bottomSheetCardsDragState
-    if (!dragState || dragState.pointerId !== event.pointerId) return
-    const deltaX = event.clientX - dragState.startX
-    if (Math.abs(deltaX) < 4) return
-    dragState.moved = true
-    this.ignoreBottomSheetCardClick = true
-    this.bottomSheetCardsEl.scrollLeft = dragState.startScrollLeft - deltaX
-    event.preventDefault()
-  }
-
-  private readonly handleBottomSheetCardsPointerUp = (event: PointerEvent): void => {
-    const dragState = this.bottomSheetCardsDragState
-    if (!dragState || dragState.pointerId !== event.pointerId) return
-    this.bottomSheetCardsDragState = null
-    if (this.bottomSheetCardsEl.hasPointerCapture?.(event.pointerId)) {
-      this.bottomSheetCardsEl.releasePointerCapture(event.pointerId)
-    }
-    if (!dragState.moved) return
-    this.scheduleSurfaceCardScrollCommit()
-  }
-
-  private readonly handleBottomSheetCardsPointerCancel = (event: PointerEvent): void => {
-    const dragState = this.bottomSheetCardsDragState
-    if (!dragState || dragState.pointerId !== event.pointerId) return
-    this.bottomSheetCardsDragState = null
-    if (this.bottomSheetCardsEl.hasPointerCapture?.(event.pointerId)) {
-      this.bottomSheetCardsEl.releasePointerCapture(event.pointerId)
-    }
-    this.clearSurfaceCardScrollSettleTimer()
-  }
-
-  private renderInfoSheet(manifest: PublishManifest | null, chromeVisible: boolean): void {
-    const infoOverlay = this.getInfoOverlayConfig(manifest)
-    const shouldShow = !!infoOverlay && chromeVisible && this.infoSheetOpen
-    this.infoSheetBackdropEl.style.display = shouldShow ? 'block' : 'none'
-    this.infoSheetBackdropEl.style.opacity = shouldShow ? '1' : '0'
-    this.infoSheetBackdropEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
-    this.infoSheetEl.style.display = shouldShow ? 'flex' : 'none'
-    this.infoSheetEl.style.opacity = shouldShow ? '1' : '0'
-    this.infoSheetEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
-    if (!shouldShow || !infoOverlay) {
-      this.infoSheetContentEl.replaceChildren()
-      return
-    }
-
-    this.infoSheetTitleEl.textContent = infoOverlay.title?.trim() || INFO_SHEET_DEFAULT_TITLE
-    this.infoSheetContentEl.replaceChildren()
-
-    for (const section of infoOverlay.sections) {
-      const sectionEl = document.createElement('section')
-      const headingEl = document.createElement('div')
-      const bodyEl = document.createElement('div')
-      headingEl.textContent = section.heading
-      bodyEl.textContent = section.body
-      Object.assign(sectionEl.style, {
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '10px',
-      })
-      Object.assign(headingEl.style, {
-        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-        fontStyle: 'normal',
-        fontWeight: '600',
-        fontSize: '16px',
-        lineHeight: '22px',
-        color: 'rgba(0, 0, 0, 0.84)',
-      })
-      Object.assign(bodyEl.style, {
-        fontFamily: '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif',
-        fontStyle: 'normal',
-        fontWeight: '400',
-        fontSize: '14px',
-        lineHeight: '20px',
-        color: 'rgba(0, 0, 0, 0.6)',
-        whiteSpace: 'pre-wrap',
-      })
-      sectionEl.appendChild(headingEl)
-      sectionEl.appendChild(bodyEl)
-      this.infoSheetContentEl.appendChild(sectionEl)
-    }
-  }
-
-  private getInfoOverlayConfig(manifest: PublishManifest | null | undefined): InfoOverlayConfig | null {
-    const title = manifest?.infoOverlay?.title
-    const sections = manifest?.infoOverlay?.sections?.filter(section => {
-      return typeof section?.heading === 'string' && section.heading.trim()
-        && typeof section?.body === 'string' && section.body.trim()
-    }) ?? []
-    if (sections.length === 0) {
-      return INFO_SHEET_FALLBACK_CONFIG
-    }
-    return {
-      title: typeof title === 'string' ? title : undefined,
-      sections,
-    }
+    this.chrome.render(state)
   }
 
   private toggleInfoSheet(): void {
-    if (this.infoSheetOpen) {
-      this.closeInfoSheet()
-      return
-    }
-    const manifest = this.engine.getManifest()
-    if (!this.getInfoOverlayConfig(manifest)) return
-    this.surfaceSheetOpen = false
-    this.activeSurfaceCardId = null
-    this.infoSheetOpen = true
-    this.renderChrome(this.getState())
+    this.chrome.toggleInfoSheet()
   }
 
   private closeInfoSheet(): void {
-    if (!this.infoSheetOpen) return
-    this.infoSheetOpen = false
-    this.renderChrome(this.getState())
-  }
-
-  private async handleShareAction(): Promise<void> {
-    await this.reportShareClick()
-    const shareUrl = new URL(window.location.href)
-    shareUrl.searchParams.set('from', 'share')
-    const shareUrlString = shareUrl.href
-    const title = this.engine.getManifest()?.title ?? ''
-    const sharePayload = {
-      title,
-      text: title,
-      url: shareUrlString,
-      shareUrl: shareUrlString,
-      content: title,
-      description: title,
-    }
-    if (this.canUseFalconShareAction()) {
-      const sharedByF10 = await this.tryShareWithF10(sharePayload)
-      if (sharedByF10) {
-        return
-      }
-    }
-    await this.shareWithNavigator(sharePayload)
-  }
-
-  private renderHtmlNode(currentNode: PublishNode, transitioning: boolean): void {
-    this.pinchState.active = false
-    this.clearSurfaceCardScrollSettleTimer()
-    this.activeSurfaceLayout = null
-    this.activeSurfaceNodeId = null
-    this.activeSurfaceLayerId = null
-    this.activeSurfaceCardId = null
-    this.surfaceSheetOpen = false
-    this.currentSurfaceCamera = null
-    this.activeContentType = 'html'
-    const htmlUrl = currentNode.htmlUrl ?? ''
-    const entry = this.ensureHtmlIframe(htmlUrl)
-    this.activateHtmlIframe(htmlUrl)
-
-    this.refs.nodeImage.style.visibility = 'hidden'
-    this.refs.nodeImage.style.opacity = '0'
-    this.refs.nodeImage.style.pointerEvents = 'none'
-    this.refs.nodeIframe.style.visibility = entry.ready && !transitioning ? 'visible' : 'hidden'
-    this.refs.nodeIframe.style.opacity = entry.ready && !transitioning ? '1' : '0'
-    this.refs.nodeIframe.style.pointerEvents = entry.ready && !transitioning ? 'auto' : 'none'
-    this.htmlIframeLayer.style.pointerEvents = entry.ready && !transitioning ? 'auto' : 'none'
-    if (entry.ready && !transitioning) {
-      this.htmlNodeBridge.activateNode({
-        iframe: entry.iframe,
-        node: currentNode,
-      })
-    } else {
-      this.htmlNodeBridge.deactivateNode()
-    }
-
-    this.renderAnnotations(currentNode, transitioning)
-    this.refs.hotspots.style.left = '0px'
-    this.refs.hotspots.style.top = '0px'
-    this.refs.hotspots.style.width = '100%'
-    this.refs.hotspots.style.height = '100%'
-    this.refs.hotspots.style.opacity = transitioning ? '0' : '1'
-    requestAnimationFrame(() => {
-      this.updateHotspotViewport()
-    })
-    this.applyPendingRouteSelection(currentNode)
-  }
-
-  private renderImageNode(currentNode: PublishNode, transitioning: boolean): void {
-    const fitMode = currentNode.imageFitMode ?? 'fill'
-    this.pinchState.active = false
-    this.activeSurfaceLayout = null
-    this.activeSurfaceNodeId = null
-    this.activeSurfaceLayerId = null
-    this.activeSurfaceCardId = null
-    this.surfaceSheetOpen = false
-    this.currentSurfaceCamera = null
-    this.activeContentType = 'image'
-    this.activeHtmlIframeUrl = ''
-    this.htmlNodeBridge.deactivateNode()
-
-    this.refs.nodeImage.style.visibility = 'visible'
-    this.refs.nodeImage.style.pointerEvents = transitioning ? 'none' : 'auto'
-    this.hideAllManagedIframes()
-    this.refs.nodeImage.src = currentNode.imageUrl ?? ''
-    this.refs.nodeImage.alt = currentNode.title ?? currentNode.id
-    this.refs.nodeImage.style.opacity = transitioning ? '0' : '1'
-
-    this.applyImageFitMode(fitMode)
-
-    this.renderAnnotations(currentNode, transitioning)
-    this.refs.hotspots.style.left = '0px'
-    this.refs.hotspots.style.top = '0px'
-    this.refs.hotspots.style.width = '100%'
-    this.refs.hotspots.style.height = '100%'
-    this.refs.hotspots.style.opacity = transitioning ? '0' : '1'
-
-    requestAnimationFrame(() => {
-      if (fitMode !== 'fill') {
-        this.applyImageTransform(0, 0)
-      }
-      this.updateHotspotViewport()
-    })
-  }
-
-  private renderSurfaceNode(currentNode: PublishNode, transitioning: boolean): void {
-    if (!currentNode.surfaceConfig) {
-      this.renderImageNode(currentNode, transitioning)
-      return
-    }
-    this.activeContentType = 'image'
-    this.activeHtmlIframeUrl = ''
-    this.htmlNodeBridge.deactivateNode()
-    this.hideAllManagedIframes()
-    const previousSurfaceNodeId = this.activeSurfaceNodeId
-    this.activeSurfaceNodeId = currentNode.id
-    if (!this.currentSurfaceCamera || previousSurfaceNodeId !== currentNode.id) {
-      this.currentSurfaceCamera = currentNode.surfaceConfig.initialCamera
-    }
-    if (previousSurfaceNodeId !== currentNode.id) {
-      this.activeSurfaceLayerId = null
-      this.activeSurfaceCardId = null
-      this.surfaceSheetOpen = false
-    }
-
-    this.refs.nodeImage.style.visibility = 'visible'
-    this.refs.nodeImage.style.pointerEvents = transitioning ? 'none' : 'auto'
-    this.refs.nodeImage.src = currentNode.surfaceConfig.sourceImageUrl
-    this.refs.nodeImage.alt = currentNode.title ?? currentNode.id
-    this.refs.nodeImage.style.opacity = transitioning ? '0' : '1'
-    this.applySurfaceImageLayout(currentNode)
-    this.renderAnnotations(currentNode, transitioning)
-
-    this.refs.hotspots.style.opacity = transitioning ? '0' : '1'
-    requestAnimationFrame(() => {
-      this.updateHotspotViewport()
-    })
-    this.applyPendingRouteSelection(currentNode)
-  }
-
-  private applyImageFitMode(fitMode: string): void {
-    const { nodeImage, container } = this.refs
-    this.imageOffset = { x: 0, y: 0 }
-
-    nodeImage.style.maxWidth = 'none'
-    nodeImage.style.maxHeight = 'none'
-    nodeImage.style.cursor = fitMode === 'fill' ? 'default' : 'grab'
-    nodeImage.style.touchAction = fitMode === 'fill' ? 'auto' : 'none'
-    nodeImage.style.position = 'absolute'
-    nodeImage.style.left = ''
-    nodeImage.style.top = ''
-    nodeImage.style.width = '100%'
-    nodeImage.style.height = '100%'
-    nodeImage.style.objectFit = 'fill'
-    nodeImage.style.objectPosition = '50% 50%'
-    nodeImage.style.transform = ''
-    nodeImage.style.clipPath = ''
-    container.style.overflow = fitMode === 'fill' ? 'visible' : 'hidden'
-
-    if (fitMode === 'fitHeight') {
-      nodeImage.style.left = '50%'
-      nodeImage.style.top = '50%'
-      nodeImage.style.width = 'auto'
-      nodeImage.style.height = '100%'
-      nodeImage.style.objectFit = ''
-      nodeImage.style.objectPosition = ''
-      nodeImage.style.transform = 'translate(-50%, -50%)'
-    } else if (fitMode === 'fitWidth') {
-      nodeImage.style.left = '50%'
-      nodeImage.style.top = '50%'
-      nodeImage.style.width = '100%'
-      nodeImage.style.height = 'auto'
-      nodeImage.style.objectFit = ''
-      nodeImage.style.objectPosition = ''
-      nodeImage.style.transform = 'translate(-50%, -50%)'
-    }
-  }
-
-  private applySurfaceImageLayout(currentNode: PublishNode): void {
-    const surfaceConfig = currentNode.surfaceConfig
-    if (!surfaceConfig || !this.currentSurfaceCamera) return
-    const { nodeImage, container } = this.refs
-    const layout = resolveSurfaceCameraLayout({
-      viewportWidth: container.clientWidth,
-      viewportHeight: container.clientHeight,
-      sourceAspect: this.getNodeAspectRatio(currentNode) ?? 1,
-      camera: this.currentSurfaceCamera,
-      bounds: surfaceConfig.bounds,
-    })
-    this.activeSurfaceLayout = layout
-    this.currentSurfaceCamera = layout.camera
-    this.imageOffset = { x: layout.translateX + layout.originX, y: layout.translateY + layout.originY }
-
-    container.style.overflow = 'hidden'
-    nodeImage.style.position = 'absolute'
-    nodeImage.style.left = '0'
-    nodeImage.style.top = '0'
-    nodeImage.style.width = `${layout.scaledWidth}px`
-    nodeImage.style.height = `${layout.scaledHeight}px`
-    nodeImage.style.maxWidth = 'none'
-    nodeImage.style.maxHeight = 'none'
-    nodeImage.style.objectFit = 'fill'
-    nodeImage.style.objectPosition = '50% 50%'
-    nodeImage.style.transform = `translate(${layout.translateX + layout.originX}px, ${layout.translateY + layout.originY}px)`
-    nodeImage.style.clipPath = ''
-    nodeImage.style.cursor = 'grab'
-    nodeImage.style.touchAction = 'none'
-  }
-
-  private applyImageTransform(offsetX: number, offsetY: number): void {
-    const currentNode = this.engine.getCurrentNode()
-    const fitMode = currentNode?.imageFitMode ?? 'fill'
-    const nextX = fitMode === 'fitHeight' ? offsetX : 0
-    const nextY = fitMode === 'fitWidth' ? offsetY : 0
-    this.imageOffset = { x: nextX, y: nextY }
-    this.refs.nodeImage.style.transform = `translate(-50%, -50%) translate(${nextX}px, ${nextY}px)`
-  }
-
-  private getImageHorizontalPanRange(): { min: number; max: number } {
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode || (currentNode.imageFitMode ?? 'fill') !== 'fitHeight') {
-      return { min: 0, max: 0 }
-    }
-
-    const containerRect = this.refs.container.getBoundingClientRect()
-    const imageRect = this.refs.nodeImage.getBoundingClientRect()
-    if (imageRect.width <= containerRect.width) {
-      return { min: 0, max: 0 }
-    }
-
-    const maxOffsetX = (imageRect.width - containerRect.width) / 2
-    return {
-      min: -maxOffsetX,
-      max: maxOffsetX,
-    }
-  }
-
-  private detachDragListeners(): void {
-    document.removeEventListener('pointermove', this.handleDragMove)
-    document.removeEventListener('pointerup', this.handleDragEnd)
-    document.removeEventListener('pointercancel', this.handleDragEnd)
-  }
-
-  private scheduleHotspotViewportUpdate(): void {
-    if (this.hotspotViewportFrameId !== null) return
-    this.hotspotViewportFrameId = requestAnimationFrame(() => {
-      this.hotspotViewportFrameId = null
-      this.updateHotspotViewport()
-    })
-  }
-
-  private renderAnnotations(currentNode: PublishNode | null, transitioning: boolean): void {
-    this.refs.hotspots.innerHTML = ''
-    if (!currentNode) return
-
-    if (this.getNodeKind(currentNode) === 'surface') {
-      const annotations = resolveVisibleSurfaceAnnotations(
-        currentNode.surfaceLayers,
-        this.currentSurfaceCamera ?? currentNode.surfaceConfig?.initialCamera ?? { centerX: 0.5, centerY: 0.5, zoom: 1 },
-      )
-      for (const hotspot of annotations.hotspots) {
-        this.refs.hotspots.appendChild(this.createSurfaceHotspotButton(hotspot, currentNode))
-      }
-      if (!transitioning) {
-        for (const card of annotations.cards) {
-          this.refs.hotspots.appendChild(this.createSurfaceCard(card))
-        }
-      }
-      requestAnimationFrame(() => {
-        this.updateHotspotViewport()
-      })
-      return
-    }
-
-    for (const hotspot of currentNode.hotspots ?? []) {
-      this.refs.hotspots.appendChild(this.createHotspotButton(hotspot, currentNode))
-    }
-    requestAnimationFrame(() => {
-      this.updateHotspotViewport()
-    })
-  }
-
-  private ensureHotspotAnimationStyle(): void {
-    const styleId = 'hotspot-pulse-animation'
-    if (document.getElementById(styleId)) return
-    const style = document.createElement('style')
-    style.id = styleId
-    style.textContent = `
-      @keyframes annotation-marker-breathe {
-        0%, 100% {
-          transform: scale(1);
-          opacity: 0.96;
-        }
-        50% {
-          transform: scale(1.06);
-          opacity: 1;
-        }
-      }
-    `
-    document.head.appendChild(style)
-  }
-
-  private createHotspotButton(
-    hotspot: PublishHotspot,
-    _node?: PublishNode | null,
-    onClick?: () => void,
-  ): HTMLElement {
-    this.ensureHotspotAnimationStyle()
-
-    const root = this.createAnchoredAnnotationRoot(hotspot.normalizedX, hotspot.normalizedY)
-    const button = document.createElement('button')
-    const label = document.createElement('span')
-
-    button.type = 'button'
-    button.title = hotspot.label
-    this.applyAnnotationChipStyles(button, false)
-
-    label.textContent = hotspot.label
-    label.style.display = 'block'
-    label.style.overflow = 'hidden'
-    label.style.textOverflow = 'ellipsis'
-    label.style.fontFamily = '"PingFang SC", "Noto Sans SC", "Noto Sans S Chinese", "Microsoft YaHei", sans-serif'
-    label.style.fontStyle = 'normal'
-    label.style.fontWeight = '600'
-    label.style.fontSize = '16px'
-    label.style.lineHeight = '20px'
-    label.style.textAlign = 'center'
-    label.style.color = 'inherit'
-    button.appendChild(label)
-
-    if (hotspot.style?.trim()) {
-      button.style.cssText += `;${hotspot.style}`
-    }
-
-    const markerConfig = this.resolveMarkerConfig(hotspot.style)
-    this.appendMarkerAndButton(root, button, this.createAnnotationMarker(false), markerConfig)
-
-    button.addEventListener('click', () => {
-      if (onClick) {
-        onClick()
-      } else {
-        this.handleHotspotNavigation(hotspot)
-      }
-    })
-
-    return root
-  }
-
-  private createSurfaceCard(card: SurfaceCard): HTMLDivElement {
-    const root = this.createAnchoredAnnotationRoot(card.anchor.x, card.anchor.y)
-    const button = document.createElement('button')
-    const label = document.createElement('span')
-    const selected = this.activeSurfaceCardId === card.id
-
-    root.dataset.surfaceCard = 'true'
-
-    this.applyAnnotationChipStyles(button, selected)
-    button.type = 'button'
-    button.style.minWidth = '88px'
-    button.style.maxWidth = '240px'
-    button.style.height = '36px'
-    button.style.minHeight = '36px'
-    button.style.whiteSpace = 'nowrap'
-    button.style.contain = 'layout paint style'
-    button.style.willChange = 'left,top'
-
-    label.textContent = card.title
-    label.style.display = 'block'
-    label.style.maxWidth = '100%'
-    label.style.overflow = 'hidden'
-    label.style.textOverflow = 'ellipsis'
-    label.style.fontFamily = '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif'
-    label.style.fontStyle = 'normal'
-    label.style.fontWeight = '600'
-    label.style.fontSize = '16px'
-    label.style.lineHeight = '20px'
-    label.style.textAlign = 'center'
-    label.style.color = 'inherit'
-    label.style.whiteSpace = 'nowrap'
-    button.appendChild(label)
-
-    this.appendMarkerAndButton(root, button, this.createAnnotationMarker(selected), {
-      visible: true,
-      position: 'top',
-      gapPx: 6,
-    })
-    root.style.zIndex = selected ? '3' : '2'
-
-    button.addEventListener('click', event => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.focusSurfaceCard(card.id, false)
-    })
-    return root
-  }
-
-  private createSurfaceHotspotButton(hotspot: SurfaceHotspot, currentNode: PublishNode): HTMLElement {
-    const button = this.createHotspotButton({
-      edgeId: hotspot.target.type === 'edge' ? hotspot.target.edgeId : hotspot.id,
-      targetNodeId: hotspot.target.type === 'edge'
-        ? this.engine.getManifest()?.edgeMap[hotspot.target.edgeId]?.toNodeId ?? currentNode.id
-        : currentNode.id,
-      label: hotspot.label,
-      normalizedX: hotspot.anchor.x,
-      normalizedY: hotspot.anchor.y,
-      radius: 12,
-      markerType: 'dot',
-      style: hotspot.style,
-    }, currentNode, () => this.handleSurfaceHotspotNavigation(hotspot, currentNode))
-    ;(button as HTMLElement).dataset.surfaceAnchorX = String(hotspot.anchor.x)
-    ;(button as HTMLElement).dataset.surfaceAnchorY = String(hotspot.anchor.y)
-    return button
-  }
-
-  private updateHotspotViewport(): void {
-    const { container, nodeImage, nodeIframe, hotspots, stage } = this.refs
-    if (stage.hidden) return
-
-    const currentNode = this.engine.getCurrentNode()
-    if (currentNode && this.getNodeKind(currentNode) === 'surface' && this.activeSurfaceLayout) {
-      hotspots.style.left = '0px'
-      hotspots.style.top = '0px'
-      hotspots.style.width = '100%'
-      hotspots.style.height = '100%'
-      hotspots.style.clipPath = ''
-      this.positionSurfaceAnnotations(hotspots, this.activeSurfaceLayout)
-      return
-    }
-
-    const mediaRect = container.getBoundingClientRect()
-    const contentEl = this.activeContentType === 'html' ? nodeIframe : nodeImage
-    const contentRect = contentEl.getBoundingClientRect()
-
-    if (!mediaRect.width || !mediaRect.height || !contentRect.width || !contentRect.height) {
-      return
-    }
-
-    hotspots.style.left = `${contentRect.left - mediaRect.left}px`
-    hotspots.style.top = `${contentRect.top - mediaRect.top}px`
-    hotspots.style.width = `${contentRect.width}px`
-    hotspots.style.height = `${contentRect.height}px`
-    hotspots.style.clipPath = ''
+    this.chrome.closeInfoSheet()
   }
 
   private confirmHostVisualCommitIfReady(reason: string): void {
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode) return
-
-    const pendingKind = this.engine.getPendingVisualCommitKind()
-    if (this.engine.isTransitioning() && !pendingKind) return
-    if (
-      pendingKind === 'builtin'
-      && reason !== 'node-image:onLoad:next-frame'
-      && reason !== 'node-iframe:onLoad:next-frame'
-    ) {
-      if (this.getNodeKind(currentNode) !== 'html' || !this.isActiveHtmlIframeReady()) {
-        return
-      }
-    }
-
-    if (this.getNodeKind(currentNode) === 'html') {
-      if (!this.isActiveHtmlIframeReady()) return
-    } else {
-      const expectedNode = currentNode
-      const expectedSrc = this.toAbsoluteUrl(this.getNodeImageSource(expectedNode) ?? '')
-      const actualSrc = this.refs.nodeImage.currentSrc || this.refs.nodeImage.src
-      if (!this.refs.nodeImage.complete || actualSrc !== expectedSrc) return
-    }
-
-    this.engine.confirmHostVisualCommitted()
-  }
-
-  private toAbsoluteUrl(url: string): string {
-    return new URL(url, window.location.href).href
-  }
-
-  private isInteractiveSurfaceTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof Element)) return false
-    return !!target.closest('[data-surface-card="true"], [data-surface-stock="true"], button')
-  }
-
-  private resolveHtmlRouteUrl(route: string): string {
-    if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(route)) {
-      return new URL(route).toString()
-    }
-
-    if (route.startsWith('/')) {
-      return new URL(route, window.location.origin).toString()
-    }
-
-    if (
-      route.startsWith('./')
-      || route.startsWith('../')
-      || route.startsWith('?')
-      || route.startsWith('#')
-    ) {
-      return new URL(route, window.location.href).toString()
-    }
-
-    return new URL(`/${route.replace(/^\/+/, '')}`, window.location.origin).toString()
-  }
-
-  private performDefaultHtmlRouteNavigation(
-    resolvedUrl: string,
-    openMode: HtmlNodeBridgeHtmlRouteOpenMode,
-  ): boolean {
-    if (openMode === 'new-tab') {
-      return !!window.open(resolvedUrl, '_blank', 'noopener,noreferrer')
-    }
-
-    window.open(resolvedUrl, '_self')
-    return true
+    confirmHostVisualCommitIfReady(
+      reason,
+      this.engine,
+      this.refs.nodeImage,
+      (node) => this.getNodeKind(node),
+      () => this.isActiveHtmlIframeReady(),
+      (node) => this.getNodeImageSource(node),
+    )
   }
 
   private applyManagedIframeBaseStyle(iframe: HTMLIFrameElement): void {
-    Object.assign(iframe.style, {
-      position: 'absolute',
-      inset: '0',
-      width: '100%',
-      height: '100%',
-      border: 'none',
-      background: '#000',
-      display: 'block',
-      visibility: 'hidden',
-      opacity: '0',
-      pointerEvents: 'none',
-    })
-  }
-
-  private hideAllManagedIframes(): void {
-    this.htmlIframeEntries.forEach(entry => {
-      entry.iframe.style.visibility = 'hidden'
-      entry.iframe.style.opacity = '0'
-      entry.iframe.style.pointerEvents = 'none'
-    })
-    this.htmlIframeLayer.style.pointerEvents = 'none'
-  }
-
-  private activateHtmlIframe(htmlUrl: string): void {
-    const absoluteUrl = this.toAbsoluteUrl(htmlUrl)
-    const entry = this.htmlIframeEntries.get(absoluteUrl)
-    if (!entry) return
-    this.activeHtmlIframeUrl = absoluteUrl
-    this.refs.nodeIframe = entry.iframe
-    this.hideAllManagedIframes()
+    this.htmlIframe.applyBaseStyle(iframe)
   }
 
   private isActiveHtmlIframeReady(): boolean {
-    const entry = this.htmlIframeEntries.get(this.activeHtmlIframeUrl)
-    return !!entry?.ready
-  }
-
-  private applyPendingRouteSelection(currentNode: PublishNode | null): void {
-    const selection = this.pendingRouteSelection
-    if (!selection || !currentNode) return
-    const target = this.resolveRuntimeRouteTarget(selection.focusName)
-    if (!target) {
-      this.pendingRouteSelection = null
-      this.activeHtmlRouteSelection = null
-      return
-    }
-
-    if (currentNode.id !== target.nodeId) {
-      this.engine.switchNode(target.nodeId)
-      return
-    }
-
-    if (target.kind === 'surface' && this.getNodeKind(currentNode) === 'surface') {
-      this.pendingRouteSelection = null
-      this.focusSurfaceCard(target.cardId, true)
-      return
-    }
-
-    if (target.kind === 'html' && this.getNodeKind(currentNode) === 'html') {
-      this.activeHtmlRouteSelection = selection
-      this.pendingRouteSelection = null
-      this.postHtmlNodeRouteSelection(currentNode)
-      return
-    }
-
-    this.pendingRouteSelection = null
-  }
-
-  private postHtmlNodeRouteSelection(currentNode: PublishNode): void {
-    if (this.getNodeKind(currentNode) !== 'html' || !this.isActiveHtmlIframeReady()) return
-    if (!this.refs.nodeIframe.contentWindow) return
-    const selection = this.activeHtmlRouteSelection
-    if (!selection) return
-    this.refs.nodeIframe.contentWindow.postMessage({
-      source: 'panorama-player-host',
-      namespace: currentNode.htmlBridge?.namespace ?? 'panorama-runtime',
-      type: 'switchView',
-      payload: {
-        targetName: selection.focusName,
-      },
-    }, currentNode.htmlBridge?.targetOrigin || '*')
-    this.activeHtmlRouteSelection = null
-  }
-
-  private resolveRuntimeRouteTarget(focusName: string): RuntimeRouteTarget | null {
-    const manifest = this.engine.getManifest()
-    if (!manifest) return null
-    const normalizedFocusName = normalizeRuntimeRouteFocusName(focusName)
-    if (!normalizedFocusName) return null
-    for (const node of manifest.nodes) {
-      if (this.getNodeKind(node) !== 'surface') continue
-      for (const layer of node.surfaceLayers ?? []) {
-        const matchedCard = layer.cards.find(card => normalizeRuntimeRouteFocusName(card.title) === normalizedFocusName)
-        if (matchedCard) {
-          return {
-            kind: 'surface',
-            nodeId: node.id,
-            cardId: matchedCard.id,
-          }
-        }
-      }
-    }
-    for (const node of manifest.nodes) {
-      if (this.getNodeKind(node) !== 'html' || !node.htmlUrl) continue
-      if (!matchesKnownHtmlRouteFocus(node.htmlUrl, normalizedFocusName)) continue
-      return {
-        kind: 'html',
-        nodeId: node.id,
-      }
-    }
-
-    return null
-  }
-
-  private getHtmlNodeBridgeRuntimeSnapshot = (): {
-    currentNodeId: string
-    historyDepth: number
-    canGoBack: boolean
-  } => {
-    const history = this.engine.getHistory()
-    const currentNode = this.engine.getCurrentNode()
-    return {
-      currentNodeId: this.engine.getCurrentNodeId(),
-      historyDepth: history.length,
-      canGoBack: history.length > 0
-        || this.hasActiveSurfaceFocus(currentNode)
-        || this.canFallbackBackToRoot(currentNode),
-    }
+    return this.htmlIframe.isActiveReady()
   }
 
   private isLoading(): boolean {
@@ -2484,813 +662,38 @@ export class PlayerHost {
   private isActiveNodeImageReady(node: PublishNode | null | undefined): boolean {
     const imageUrl = this.getNodeImageSource(node)
     if (!imageUrl) return true
-    const expectedSrc = this.toAbsoluteUrl(imageUrl)
+    const expectedSrc = toAbsoluteUrl(imageUrl)
     const actualSrc = this.refs.nodeImage.currentSrc || this.refs.nodeImage.src
     return this.refs.nodeImage.complete && actualSrc === expectedSrc && this.refs.nodeImage.naturalWidth > 0
   }
 
-  private async preloadHtmlIframes(urls: string[]): Promise<void> {
-    const htmlUrls = Array.from(new Set(urls.map(url => this.toAbsoluteUrl(url))))
-    if (htmlUrls.length === 0) return
-
-    for (const url of htmlUrls) {
-      await this.runHtmlWarmupWhenIdle(() => this.ensureHtmlIframe(url).readyPromise)
-      await this.yieldToBrowser()
-    }
-  }
-
   private maybeStartHtmlIframePreload(): void {
-    const manifest = this.engine.getManifest()
-    if (!manifest) return
-    if (this.htmlIframePreloading) return
-
-    const strategy = this.resolveHtmlIframePreloadStrategy(manifest)
-    if (strategy === 'on-demand') return
-
-    const scope = this.getHtmlIframePreloadScope(manifest, strategy)
-    if (!scope) return
-    if (this.htmlIframePreloadedScopes.has(scope.key)) return
-
-    this.htmlIframePreloadedScopes.add(scope.key)
-    this.htmlIframePreloading = true
-    this.htmlIframeWarmupQueue = this.htmlIframeWarmupQueue
-      .then(() => this.preloadHtmlIframes(scope.urls))
-      .finally(() => {
-        this.htmlIframePreloading = false
-      })
-  }
-
-  private resolveHtmlIframePreloadStrategy(manifest: PublishManifest): HtmlIframePreloadStrategy {
-    return this.options.runtimeConfig?.htmlIframePreloadStrategy
-      ?? manifest.runtimeConfig?.htmlIframePreloadStrategy
-      ?? 'current-node'
-  }
-
-  private getHtmlIframePreloadScope(
-    manifest: PublishManifest,
-    strategy: Exclude<HtmlIframePreloadStrategy, 'on-demand'>,
-  ): { key: string, urls: string[] } | null {
-    if (strategy === 'all') {
-      const urls = manifest.nodes
-        .filter(node => this.getNodeKind(node) === 'html' && node.htmlUrl)
-        .map(node => node.htmlUrl as string)
-      return {
-        key: 'all',
-        urls,
-      }
-    }
-
-    const currentNodeId = this.engine.getCurrentNodeId()
-    const urls = manifest.edges
-      .filter(edge => edge.fromNodeId === currentNodeId)
-      .map(edge => manifest.nodeMap[edge.toNodeId])
-      .filter((node): node is PublishNode => !!node && this.getNodeKind(node) === 'html' && !!node.htmlUrl)
-      .map(node => node.htmlUrl as string)
-
-    return {
-      key: `current-node:${currentNodeId}`,
-      urls,
-    }
+    this.htmlIframe.maybeStartPreload()
   }
 
   private primeHtmlIframeForEdgeId(edgeId: string): void {
-    const manifest = this.engine.getManifest()
-    const edge = manifest?.edgeMap[edgeId]
-    if (!edge) return
-    this.primeHtmlIframeForNodeId(edge.toNodeId)
+    this.htmlIframe.primeForEdgeId(edgeId)
   }
 
   private primeHtmlIframeForNodeId(nodeId: string): void {
-    const manifest = this.engine.getManifest()
-    const node = manifest?.nodeMap[nodeId]
-    if (!node || this.getNodeKind(node) !== 'html' || !node.htmlUrl) return
-    void this.ensureHtmlIframe(node.htmlUrl).readyPromise
-  }
-
-  private runHtmlWarmupWhenIdle(task: () => Promise<void>): Promise<void> {
-    return new Promise(resolve => {
-      const execute = () => {
-        task().finally(resolve)
-      }
-
-      const browserWindow = globalThis as typeof globalThis & Window
-      if (typeof browserWindow.requestIdleCallback === 'function') {
-        browserWindow.requestIdleCallback(() => execute(), { timeout: 1200 })
-        return
-      }
-
-      window.setTimeout(execute, 0)
-    })
-  }
-
-  private yieldToBrowser(): Promise<void> {
-    return new Promise(resolve => {
-      window.setTimeout(resolve, 0)
-    })
-  }
-
-  private handleBackAction(): void {
-    this.tryHandleBackAction()
-  }
-
-  private canResetSurfaceCamera(node: PublishNode | null | undefined): boolean {
-    if (!node || this.getNodeKind(node) !== 'surface' || !node.surfaceConfig || !this.currentSurfaceCamera) {
-      return false
-    }
-    const initial = node.surfaceConfig.initialCamera
-    return (
-      Math.abs(this.currentSurfaceCamera.centerX - initial.centerX) > 0.0001
-      || Math.abs(this.currentSurfaceCamera.centerY - initial.centerY) > 0.0001
-      || Math.abs(this.currentSurfaceCamera.zoom - initial.zoom) > 0.0001
-    )
-  }
-
-  private hasActiveSurfaceFocus(node: PublishNode | null | undefined): boolean {
-    if (!node || this.getNodeKind(node) !== 'surface' || !node.surfaceConfig) {
-      return false
-    }
-    return this.surfaceSheetOpen
-      || !!this.activeSurfaceLayerId
-      || !!this.activeSurfaceCardId
-      || this.canResetSurfaceCamera(node)
-  }
-
-  private canFallbackBackToRoot(node: PublishNode | null | undefined): boolean {
-    const manifest = this.engine.getManifest()
-    if (!manifest || !node) return false
-    return node.id !== manifest.rootNodeId && this.engine.getHistory().length === 0
-  }
-
-  private tryHandleBackAction(): boolean {
-    if (this.infoSheetOpen) {
-      this.closeInfoSheet()
-      return true
-    }
-    const currentNode = this.engine.getCurrentNode()
-    if (this.hasActiveSurfaceFocus(currentNode)) {
-      this.resetSurfaceFocus(true)
-      return true
-    }
-    if (this.engine.getHistory().length > 0) {
-      this.engine.handleBack()
-      return true
-    }
-    if (this.canFallbackBackToRoot(currentNode)) {
-      const manifest = this.engine.getManifest()
-      if (!manifest) return false
-      this.pendingRouteSelection = null
-      this.activeHtmlRouteSelection = null
-      this.engine.switchNode(manifest.rootNodeId)
-      return true
-    }
-    return false
-  }
-
-  private resetSurfaceFocus(animated: boolean): void {
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode || this.getNodeKind(currentNode) !== 'surface' || !currentNode.surfaceConfig) {
-      return
-    }
-    this.surfaceSheetOpen = false
-    this.activeSurfaceLayerId = null
-    this.activeSurfaceCardId = null
-    this.setSurfaceCamera(currentNode.surfaceConfig.initialCamera, animated)
-  }
-
-  private setSurfaceCamera(camera: CameraState, animated: boolean): void {
-    const currentNode = this.engine.getCurrentNode()
-    if (!currentNode || this.getNodeKind(currentNode) !== 'surface' || !currentNode.surfaceConfig) return
-
-    const apply = (nextCamera: CameraState) => {
-      this.currentSurfaceCamera = nextCamera
-      this.applySurfaceImageLayout(currentNode)
-      this.renderAnnotations(currentNode, this.engine.isTransitioning())
-      this.updateHotspotViewport()
-      this.renderChrome(this.getState())
-      this.emitState()
-    }
-
-    if (!animated || !this.currentSurfaceCamera) {
-      if (this.surfaceAnimationFrameId !== null) {
-        cancelAnimationFrame(this.surfaceAnimationFrameId)
-        this.surfaceAnimationFrameId = null
-      }
-      apply(camera)
-      return
-    }
-
-    const from = this.currentSurfaceCamera
-    const to = camera
-    const startTime = performance.now()
-    const duration = 260
-    const step = (now: number) => {
-      const progress = Math.min((now - startTime) / duration, 1)
-      const eased = 1 - (1 - progress) * (1 - progress)
-      apply(interpolateCamera(from, to, eased))
-      if (progress < 1) {
-        this.surfaceAnimationFrameId = requestAnimationFrame(step)
-      } else {
-        this.surfaceAnimationFrameId = null
-      }
-    }
-
-    if (this.surfaceAnimationFrameId !== null) {
-      cancelAnimationFrame(this.surfaceAnimationFrameId)
-    }
-    this.surfaceAnimationFrameId = requestAnimationFrame(step)
-  }
-
-  private handleSurfaceHotspotNavigation(hotspot: SurfaceHotspot, currentNode: PublishNode): void {
-    void this.reportPageClick()
-    if (hotspot.target.type === 'edge') {
-      this.navigateByEdge(hotspot.target.edgeId)
-      return
-    }
-    if (hotspot.target.type === 'camera-preset') {
-      this.setSurfaceCamera(hotspot.target.camera, true)
-      return
-    }
-    if (hotspot.target.type === 'focus-layer') {
-      const { layerId } = hotspot.target
-      const layer = currentNode.surfaceLayers?.find(item => item.id === layerId)
-      this.activeSurfaceLayerId = layerId
-      const fallbackCardId = layer?.cards[0]?.id ?? null
-      this.activeSurfaceCardId = fallbackCardId
-      this.surfaceSheetOpen = false
-      if (layer?.cameraPreset) {
-        this.setSurfaceCamera({
-          ...layer.cameraPreset,
-          zoom: layer.visibility.minZoom,
-        }, true)
-      } else {
-        this.render()
-      }
-      if (fallbackCardId) {
-        requestAnimationFrame(() => this.focusSurfaceCard(fallbackCardId, false))
-      }
-    }
-  }
-
-  private positionSurfaceAnnotations(
-    hotspots: HTMLElement,
-    layout: SurfaceCameraLayout,
-  ): void {
-    hotspots.querySelectorAll<HTMLElement>('[data-surface-anchor-x]').forEach(el => {
-      const x = Number(el.dataset.surfaceAnchorX ?? '0')
-      const y = Number(el.dataset.surfaceAnchorY ?? '0')
-      const point = projectSurfacePoint({ x, y }, layout)
-      el.style.left = `${point.x}px`
-      el.style.top = `${point.y}px`
-      el.style.transform = 'translate(-50%, -50%)'
-    })
-  }
-
-  private createAnchoredAnnotationRoot(normalizedX: number, normalizedY: number): HTMLDivElement {
-    const root = document.createElement('div')
-    root.style.position = 'absolute'
-    root.style.left = `${normalizedX * 100}%`
-    root.style.top = `${normalizedY * 100}%`
-    root.style.transform = 'translate(-50%, -50%)'
-    root.style.display = 'flex'
-    root.style.flexDirection = 'column'
-    root.style.alignItems = 'center'
-    root.style.justifyContent = 'center'
-    root.style.gap = '6px'
-    root.style.pointerEvents = 'none'
-    root.style.zIndex = '2'
-    root.dataset.surfaceAnchorX = String(normalizedX)
-    root.dataset.surfaceAnchorY = String(normalizedY)
-    return root
-  }
-
-  private createAnnotationMarker(selected: boolean): HTMLSpanElement {
-    const marker = document.createElement('span')
-    marker.style.display = 'inline-flex'
-    marker.style.alignItems = 'center'
-    marker.style.justifyContent = 'center'
-    marker.style.width = '21px'
-    marker.style.height = '21px'
-    marker.style.pointerEvents = 'none'
-    marker.style.willChange = 'transform, opacity'
-    marker.style.animation = 'annotation-marker-breathe 2.8s ease-in-out infinite'
-    marker.innerHTML = selected ? SURFACE_MARKER_SELECTED_SVG : SURFACE_MARKER_SVG
-    return marker
-  }
-
-  private appendMarkerAndButton(
-    root: HTMLDivElement,
-    button: HTMLButtonElement,
-    marker: HTMLSpanElement,
-    config: { visible: boolean, position: 'top' | 'bottom', gapPx: number },
-  ): void {
-    root.style.gap = `${config.gapPx}px`
-    if (config.visible && config.position === 'top') {
-      root.appendChild(marker)
-    }
-    root.appendChild(button)
-    if (config.visible && config.position === 'bottom') {
-      root.appendChild(marker)
-    }
-  }
-
-  private applyAnnotationChipStyles(button: HTMLButtonElement, selected: boolean): void {
-    button.style.display = 'flex'
-    button.style.flexDirection = 'row'
-    button.style.alignItems = 'center'
-    button.style.justifyContent = 'center'
-    button.style.minWidth = '80px'
-    button.style.height = '36px'
-    button.style.padding = '8px 12px'
-    button.style.borderRadius = '30px'
-    button.style.border = selected ? 'none' : '1px solid rgba(255, 255, 255, 0.36)'
-    button.style.background = selected ? '#3366FF' : 'rgba(255, 255, 255, 0.8)'
-    button.style.color = selected ? '#FFFFFF' : 'rgba(0, 0, 0, 0.84)'
-    button.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.08)'
-    button.style.cursor = 'pointer'
-    button.style.pointerEvents = 'auto'
-    button.style.whiteSpace = 'nowrap'
-    button.style.zIndex = '1'
-  }
-
-  private resolveMarkerConfig(styleText?: string): { visible: boolean, position: 'top' | 'bottom', gapPx: number } {
-    const markerDisplay = styleText?.match(/--hotspot-marker-display\s*:\s*([^;]+)/i)?.[1]?.trim().toLowerCase()
-    const markerPosition = styleText?.match(/--hotspot-marker-position\s*:\s*([^;]+)/i)?.[1]?.trim().toLowerCase()
-    const markerGapRaw = styleText?.match(/--hotspot-marker-gap\s*:\s*([^;]+)/i)?.[1]?.trim().toLowerCase() ?? ''
-    const markerGapParsed = Number.parseFloat(markerGapRaw.replace(/px$/i, '').trim())
-    return {
-      visible: markerDisplay !== 'none',
-      position: markerPosition === 'bottom' ? 'bottom' : 'top',
-      gapPx: Number.isFinite(markerGapParsed) ? Math.max(markerGapParsed, 0) : 6,
-    }
-  }
-
-  private setActiveSurfaceCard(cardId: string | null): void {
-    if (this.activeSurfaceCardId === cardId) return
-    this.activeSurfaceCardId = cardId
-    if (this.getNodeKind(this.engine.getCurrentNode()) === 'surface') {
-      this.render()
-    }
+    this.htmlIframe.primeForNodeId(nodeId)
   }
 
   private focusSurfaceCard(cardId: string, moveCamera: boolean): void {
-    const currentNode = this.engine.getCurrentNode()
-    const cardContext = this.findSurfaceCardContext(currentNode, cardId)
-    if (!cardContext) return
-    this.clearSurfaceCardScrollSettleTimer()
-    this.activeSurfaceLayerId = cardContext.layer.id
-    this.activeSurfaceCardId = cardId
-    this.surfaceSheetOpen = true
-    if (this.getNodeKind(currentNode) === 'surface') {
-      this.render()
-    }
-    if (moveCamera && this.currentSurfaceCamera) {
-      const nextZoom = Math.max(
-        this.currentSurfaceCamera.zoom,
-        cardContext.layer.visibility.minZoom,
-        cardContext.layer.cameraPreset?.zoom ?? 0,
-      )
-      this.setSurfaceCamera({
-        centerX: cardContext.card.anchor.x,
-        centerY: cardContext.card.anchor.y,
-        zoom: nextZoom,
-      }, true)
-    } else {
-      this.scrollActiveSheetCardIntoView()
-    }
+    this.surface.focusCard(cardId, moveCamera)
     this.renderChrome(this.getState())
   }
 
-  private closeSurfaceSheet(): void {
-    this.clearSurfaceCardScrollSettleTimer()
-    this.surfaceSheetOpen = false
-    this.activeSurfaceCardId = null
-    if (this.getNodeKind(this.engine.getCurrentNode()) === 'surface') {
-      this.render()
-    }
-  }
-
-  private getActiveSurfaceLayer(node: PublishNode | null | undefined): SurfaceFocusLayer | null {
-    if (!node || this.getNodeKind(node) !== 'surface' || !this.activeSurfaceLayerId) return null
-    return node.surfaceLayers?.find(layer => layer.id === this.activeSurfaceLayerId) ?? null
-  }
-
-  private canUseShareAction(): boolean {
-    return this.canUseFalconShareAction() || this.canUseNativeShare()
-  }
-
-  private canUseFalconShareAction(): boolean {
-    const hostWindow = window as PlayerHostWindow
-    return typeof hostWindow._falcon !== 'undefined'
-      || typeof hostWindow.FalconJavaInterface !== 'undefined'
-  }
-
-  private canUseNativeShare(): boolean {
-    const browserNavigator = globalThis.navigator as BrowserNavigatorWithShare
-    return typeof browserNavigator.share === 'function'
-  }
-
-  private async shareWithNavigator(payload: {
-    title?: string
-    text?: string
-    url?: string
-  }): Promise<void> {
-    const browserNavigator = globalThis.navigator as BrowserNavigatorWithShare
-    if (typeof browserNavigator.share !== 'function') return
-    try {
-      await browserNavigator.share(payload)
-    } catch {
-      // Ignore abort and unsupported platform share failures.
-    }
-  }
-
-  private async tryShareWithF10(payload: Record<string, unknown>): Promise<boolean> {
-    try {
-      const f10Utils = await this.ensureF10ShareUtilsLoaded()
-      if (typeof f10Utils?.shareUrlCard !== 'function') {
-        return false
-      }
-      await f10Utils.shareUrlCard(payload)
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  private primeShareDependency(): void {
-    if (this.shareDependencyPrimed) return
-    this.shareDependencyPrimed = true
-    void this.ensureWeblogLoaded()
-    if (!this.canUseFalconShareAction()) return
-    void this.ensureF10ShareUtilsLoaded()
-  }
-
-  private startPageTracking(): void {
-    void this.reportPageExposure()
-    void this.reportBackflowIfNeeded()
-    this.resumePageStayTracking()
-    document.addEventListener('visibilitychange', this.handleTrackingVisibilityChange)
-    window.addEventListener('pagehide', this.handleTrackingPageHide)
-    this.destroyers.push(() => document.removeEventListener('visibilitychange', this.handleTrackingVisibilityChange))
-    this.destroyers.push(() => window.removeEventListener('pagehide', this.handleTrackingPageHide))
-    this.destroyers.push(() => this.stopPageStayTracking())
-  }
-
-  private handleTrackingVisibilityChange = (): void => {
-    if (document.visibilityState === 'visible') {
-      this.resumePageStayTracking()
-      return
-    }
-    this.pausePageStayTracking()
-  }
-
-  private handleTrackingPageHide = (): void => {
-    this.pausePageStayTracking()
-  }
-
-  private resumePageStayTracking(): void {
-    if (document.visibilityState === 'hidden') {
-      return
-    }
-    if (this.pageVisibleStartedAt === null) {
-      this.pageVisibleStartedAt = Date.now()
-    }
-    if (this.pageStayTimerId !== null) {
-      return
-    }
-    this.pageStayTimerId = window.setInterval(() => {
-      void this.flushPageStayTracking(false)
-    }, 1000)
-  }
-
-  private pausePageStayTracking(): void {
-    if (this.pageStayTimerId !== null) {
-      window.clearInterval(this.pageStayTimerId)
-      this.pageStayTimerId = null
-    }
-    void this.flushPageStayTracking(true)
-  }
-
-  private stopPageStayTracking(): void {
-    if (this.pageStayTimerId !== null) {
-      window.clearInterval(this.pageStayTimerId)
-      this.pageStayTimerId = null
-    }
-    this.pageVisibleStartedAt = null
-  }
-
-  private async reportPageExposure(): Promise<void> {
-    if (this.pageExposureReported) {
-      return
-    }
-    this.pageExposureReported = true
-    await this.reportTrackingPayload({
-      id: 'ths_f10_f10detail',
-      action: 'show',
-      logmap: {
-        stock: '',
-        marketId: '',
-        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
-        name: INDUSTRY_TRACKING_NAME,
-        source: resolveIndustryTrackingSource(),
-        modId: '',
-      },
-    })
-  }
-
-  private async reportPageClick(): Promise<void> {
-    await this.reportTrackingPayload({
-      id: 'ths_f10_f10detail',
-      action: 'click',
-      logmap: {
-        stock: '',
-        marketId: '',
-        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
-        name: INDUSTRY_TRACKING_NAME,
-        source: resolveIndustryTrackingSource(),
-        modId: '',
-      },
-    })
-  }
-
-  private async flushPageStayTracking(resetVisibleStart: boolean): Promise<void> {
-    if (this.pageVisibleStartedAt !== null) {
-      const visibleDeltaSeconds = Math.floor((Date.now() - this.pageVisibleStartedAt) / 1000)
-      if (visibleDeltaSeconds > 0) {
-        this.pageTrackedVisibleSeconds += visibleDeltaSeconds
-        this.pageVisibleStartedAt += visibleDeltaSeconds * 1000
-      }
-    }
-    if (resetVisibleStart) {
-      this.pageVisibleStartedAt = null
-    }
-    const reportTargetSeconds = Math.floor(this.pageTrackedVisibleSeconds / 5) * 5
-    if (reportTargetSeconds <= 0 || reportTargetSeconds <= this.pageStayReportedSeconds) {
-      return
-    }
-    this.pageStayReportedSeconds = reportTargetSeconds
-    await this.reportTrackingPayload({
-      id: 'ths_f10_f10detail_page_stayTime',
-      action: 'show',
-      logmap: {
-        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
-        name: INDUSTRY_TRACKING_NAME,
-        source: resolveIndustryTrackingSource(),
-        value: String(reportTargetSeconds / 5),
-      },
-    })
-  }
-
-  private async reportTrackingPayload(payload: Record<string, unknown>): Promise<void> {
-    try {
-      const weblog = await this.ensureWeblogLoaded()
-      if (typeof weblog?.report !== 'function') {
-        return
-      }
-      weblog.report(payload)
-    } catch {
-      // Ignore tracking failures and keep the runtime interactive.
-    }
-  }
-
-  private async reportShareClick(): Promise<void> {
-    await this.reportTrackingPayload({
-      id: 'ths_f10_f10detail_module_share',
-      action: 'click',
-      logmap: {
-        stock: '',
-        marketId: '',
-        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
-        name: INDUSTRY_TRACKING_NAME,
-      },
-    })
-  }
-
-  private async reportBackflowIfNeeded(): Promise<void> {
-    if (!shouldReportBackflow()) {
-      return
-    }
-    if (this.backflowReported) {
-      return
-    }
-    this.backflowReported = true
-    await this.reportTrackingPayload({
-      id: 'ths_f10_f10detail_module_backflow',
-      action: 'click',
-      logmap: {
-        stock: '',
-        marketId: '',
-        pageType: INDUSTRY_TRACKING_PAGE_TYPE,
-        name: INDUSTRY_TRACKING_NAME,
-      },
-    })
-  }
-
-  private async ensureWeblogLoaded(): Promise<WeblogApi | null> {
-    const hostWindow = window as PlayerHostWindow
-    if (hostWindow.weblog) {
-      this.configureWeblog(hostWindow.weblog)
-      return hostWindow.weblog
-    }
-    if (hostWindow.__interactiveGuideWeblogPromise) {
-      return hostWindow.__interactiveGuideWeblogPromise
-    }
-    hostWindow.__interactiveGuideWeblogPromise = this.ensureExternalScriptLoaded(
-      THSC_WEBLOG_SCRIPT_ATTR,
-      THSC_WEBLOG_CDN_URL,
-    ).then(() => {
-      const weblog = hostWindow.weblog ?? null
-      this.configureWeblog(weblog)
-      return weblog
-    })
-    return hostWindow.__interactiveGuideWeblogPromise
-  }
-
-  private configureWeblog(weblog: WeblogApi | null | undefined): void {
-    const hostWindow = window as PlayerHostWindow
-    if (!weblog || typeof weblog.setConfig !== 'function' || hostWindow.__interactiveGuideWeblogConfigured) {
-      return
-    }
-    try {
-      weblog.setConfig({
-        appKey: 'ce19ea099b',
-        debug: false,
-      })
-      hostWindow.__interactiveGuideWeblogConfigured = true
-    } catch {
-      // Ignore tracking initialization failures.
-    }
-  }
-
-  private async ensureF10ShareUtilsLoaded(): Promise<F10ShareUtils | null> {
-    const hostWindow = window as PlayerHostWindow
-    const resolvedUtils = this.resolveF10ShareUtils(hostWindow)
-    if (resolvedUtils) return resolvedUtils
-    if (hostWindow.__interactiveGuideF10UtilsPromise) {
-      return hostWindow.__interactiveGuideF10UtilsPromise
-    }
-
-    hostWindow.__interactiveGuideF10UtilsPromise = this.loadShareDependencyChain()
-      .then(() => this.resolveF10ShareUtils(hostWindow))
-
-    return hostWindow.__interactiveGuideF10UtilsPromise
-  }
-
-  private async loadShareDependencyChain(): Promise<void> {
-    const hostWindow = window as PlayerHostWindow
-    await this.ensureInlineScriptLoaded(
-      KINGFISHER_BRIDGE_SCRIPT_ATTR,
-      kingfisherBridgeUmdScript,
-      () => {
-        const bridge = hostWindow.Bridge ?? hostWindow['kingfisher-bridge']
-        if (bridge && !hostWindow.Bridge) {
-          hostWindow.Bridge = bridge
-        }
-      },
-    )
-    await this.ensureInlineScriptLoaded(
-      KINGFISHER_FALCON_SCRIPT_ATTR,
-      kingfisherFalconUmdScript,
-    )
-    await this.ensureExternalScriptLoaded(
-      THSC_F10_UTILS_SCRIPT_ATTR,
-      THSC_F10_UTILS_CDN_URL,
-    )
-  }
-
-  private async ensureInlineScriptLoaded(
-    scriptAttr: string,
-    scriptText: string,
-    onReady?: () => void,
-  ): Promise<void> {
-    const existingScript = document.querySelector(
-      `script[${scriptAttr}="true"]`,
-    ) as HTMLScriptElement | null
-    if (existingScript) {
-      onReady?.()
-      return
-    }
-
-    const script = document.createElement('script')
-    script.type = 'text/javascript'
-    script.setAttribute(scriptAttr, 'true')
-    script.text = scriptText
-    document.head.appendChild(script)
-    onReady?.()
-  }
-
-  private async ensureExternalScriptLoaded(
-    scriptAttr: string,
-    src: string,
-  ): Promise<void> {
-    await new Promise<void>(resolve => {
-      const complete = () => resolve()
-      const existingScript = document.querySelector(
-        `script[${scriptAttr}="true"]`,
-      ) as HTMLScriptElement | null
-      if (existingScript) {
-        if (existingScript.dataset.loaded === 'true' || existingScript.dataset.failed === 'true') {
-          complete()
-          return
-        }
-        existingScript.addEventListener('load', complete, { once: true })
-        existingScript.addEventListener('error', complete, { once: true })
-        return
-      }
-
-      const script = document.createElement('script')
-      script.src = src
-      script.async = true
-      script.crossOrigin = 'anonymous'
-      script.setAttribute(scriptAttr, 'true')
-      script.addEventListener('load', () => {
-        script.dataset.loaded = 'true'
-        complete()
-      }, { once: true })
-      script.addEventListener('error', () => {
-        script.dataset.failed = 'true'
-        complete()
-      }, { once: true })
-      document.head.appendChild(script)
-    })
-  }
-
-  private resolveF10ShareUtils(hostWindow: PlayerHostWindow): F10ShareUtils | null {
-    const utils = hostWindow.F10Utils ?? hostWindow._f ?? null
-    if (utils && !hostWindow.F10Utils) {
-      hostWindow.F10Utils = utils
-    }
-    return utils
-  }
-
-  private findSurfaceCardContext(
-    node: PublishNode | null | undefined,
-    cardId: string,
-  ): { layer: SurfaceFocusLayer, card: SurfaceCard } | null {
-    if (!node || this.getNodeKind(node) !== 'surface') return null
-    for (const layer of node.surfaceLayers ?? []) {
-      const card = layer.cards.find(item => item.id === cardId)
-      if (card) return { layer, card }
-    }
-    return null
-  }
-
-  private scrollActiveSheetCardIntoView(): void {
-    if (!this.activeSurfaceCardId) return
-    this.lockSurfaceCardScrollSync()
-    requestAnimationFrame(() => {
-      const activeCard = this.bottomSheetCardsEl.querySelector<HTMLElement>(`[data-surface-sheet-card-id="${this.activeSurfaceCardId}"]`)
-      activeCard?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
-    })
-  }
-
-  private resolveNearestBottomSheetCardId(): string | null {
-    const cards = Array.from(this.bottomSheetCardsEl.querySelectorAll<HTMLElement>('[data-surface-sheet-card-id]'))
-    if (cards.length === 0) return null
-    const containerRect = this.bottomSheetCardsEl.getBoundingClientRect()
-    const centerX = containerRect.left + containerRect.width / 2
-    let nearestCardId: string | null = null
-    let nearestDistance = Number.POSITIVE_INFINITY
-    for (const card of cards) {
-      const rect = card.getBoundingClientRect()
-      const cardCenter = rect.left + rect.width / 2
-      const distance = Math.abs(cardCenter - centerX)
-      if (distance < nearestDistance) {
-        nearestDistance = distance
-        nearestCardId = card.dataset.surfaceSheetCardId ?? null
-      }
-    }
-    return nearestCardId
-  }
-
   private scheduleSurfaceCardScrollCommit(): void {
-    this.clearSurfaceCardScrollSettleTimer()
-    this.surfaceCardScrollSettleTimer = window.setTimeout(() => {
-      this.surfaceCardScrollSettleTimer = null
-      const nearestCardId = this.resolveNearestBottomSheetCardId()
-      if (!nearestCardId || nearestCardId === this.activeSurfaceCardId) return
-      this.focusSurfaceCard(nearestCardId, true)
-    }, PlayerHost.SURFACE_CARD_SCROLL_SETTLE_MS)
+    this.surface.scheduleScrollCommit()
   }
 
   private clearSurfaceCardScrollSettleTimer(): void {
-    if (this.surfaceCardScrollSettleTimer === null) return
-    window.clearTimeout(this.surfaceCardScrollSettleTimer)
-    this.surfaceCardScrollSettleTimer = null
-  }
-
-  private lockSurfaceCardScrollSync(duration = PlayerHost.SURFACE_CARD_SCROLL_LOCK_MS): void {
-    this.surfaceCardScrollSyncLocked = true
-    this.clearSurfaceCardScrollSyncTimer()
-    this.surfaceCardScrollSyncTimer = window.setTimeout(() => {
-      this.surfaceCardScrollSyncLocked = false
-      this.surfaceCardScrollSyncTimer = null
-    }, duration)
+    this.surface.clearScrollSettleTimer()
   }
 
   private clearSurfaceCardScrollSyncTimer(): void {
-    if (this.surfaceCardScrollSyncTimer === null) return
-    window.clearTimeout(this.surfaceCardScrollSyncTimer)
-    this.surfaceCardScrollSyncTimer = null
+    this.surface.clearScrollSyncTimer()
   }
 
   private getNodeImageSource(node: PublishNode | null | undefined): string | undefined {
@@ -3304,27 +707,12 @@ export class PlayerHost {
   private getNodeAspectRatio(node: PublishNode | null | undefined): number | null {
     const imageUrl = this.getNodeImageSource(node)
     if (!imageUrl) return null
-    const absoluteUrl = this.toAbsoluteUrl(imageUrl)
+    const absoluteUrl = toAbsoluteUrl(imageUrl)
     const currentSrc = this.refs.nodeImage.currentSrc || this.refs.nodeImage.src
     if ((currentSrc && absoluteUrl === currentSrc) && this.refs.nodeImage.naturalWidth > 0 && this.refs.nodeImage.naturalHeight > 0) {
       return this.refs.nodeImage.naturalWidth / this.refs.nodeImage.naturalHeight
     }
     return this.engine.getSourceNodeAspectRatio(node)
-  }
-
-  private executeRuntimeAction(action: RuntimeAction): void {
-    if (action.type === 'navigate-edge') {
-      this.navigateByEdge(action.edgeId)
-      return
-    }
-    if (action.type === 'open-route') {
-      const resolvedUrl = this.resolveHtmlRouteUrl(action.route)
-      this.performDefaultHtmlRouteNavigation(resolvedUrl, action.openMode ?? 'current-tab')
-      return
-    }
-    if (action.type === 'open-url') {
-      window.open(action.url, action.target ?? '_blank', 'noopener,noreferrer')
-    }
   }
 
   private getNodeKind(node: PublishNode | null | undefined): 'surface' | 'image' | 'html' {
@@ -3333,72 +721,16 @@ export class PlayerHost {
   }
 
   private handleHotspotNavigation(hotspot: PublishHotspot): void {
-    void this.reportPageClick()
+    void this.pageTracker.reportClick()
     this.primeHtmlIframeForNodeId(hotspot.targetNodeId)
     this.engine.handleHotspotClick(hotspot)
   }
 
-  private ensureHtmlIframe(url: string): HtmlIframeEntry {
-    const absoluteUrl = this.toAbsoluteUrl(url)
-    const existing = this.htmlIframeEntries.get(absoluteUrl)
-    if (existing) return existing
-
-    const iframe = this.htmlIframeEntries.size === 0
-      ? this.refs.nodeIframe
-      : document.createElement('iframe')
-    if (this.htmlIframeEntries.size !== 0) {
-      iframe.sandbox.value = this.refs.nodeIframe.sandbox.value
-      this.htmlIframeLayer.appendChild(iframe)
-    }
-    this.applyManagedIframeBaseStyle(iframe)
-
-    let preloadResolved = false
-    let timeoutId = 0
-    let entry!: HtmlIframeEntry
-    const readyPromise = new Promise<void>((resolve) => {
-      const settlePreloadWait = () => {
-        if (preloadResolved) return
-        preloadResolved = true
-        entry.preloadSettled = true
-        window.clearTimeout(timeoutId)
-        resolve()
-      }
-
-      const handleLoad = () => {
-        entry.ready = true
-        iframe.removeEventListener('load', handleLoad)
-        settlePreloadWait()
-        if (this.refs.nodeIframe === iframe) {
-          this.render()
-          const currentNode = this.engine.getCurrentNode()
-          if (currentNode && this.getNodeKind(currentNode) === 'html') {
-            this.postHtmlNodeRouteSelection(currentNode)
-          }
-          this.updateHotspotViewport()
-          requestAnimationFrame(() => {
-            this.confirmHostVisualCommitIfReady('node-iframe:onLoad:next-frame')
-          })
-        }
-      }
-
-      iframe.addEventListener('load', handleLoad)
-      timeoutId = window.setTimeout(() => {
-        settlePreloadWait()
-      }, 12000)
-      iframe.src = absoluteUrl
-    })
-
-    entry = {
-      iframe,
-      ready: false,
-      readyPromise,
-      preloadSettled: false,
-      cleanup: () => {
-        window.clearTimeout(timeoutId)
-      },
-    }
-    this.htmlIframeEntries.set(absoluteUrl, entry)
-    return entry
+  private async ensureExternalScriptLoaded(
+    scriptAttr: string,
+    src: string,
+  ): Promise<void> {
+    await ensureExternalScriptLoaded(scriptAttr, src)
   }
 }
 
@@ -3413,79 +745,3 @@ if (typeof window !== 'undefined') {
 }
 
 export default PlayerHost
-
-function ensureChromeAnimationStyle(): void {
-  const styleId = 'player-host-chrome-animations'
-  if (document.getElementById(styleId)) return
-  const style = document.createElement('style')
-  style.id = styleId
-  style.textContent = `
-    @keyframes drag-hint-arrow-glow {
-      0%, 100% {
-        opacity: 0.28;
-        transform: translateX(0);
-        text-shadow: none;
-      }
-      35% {
-        opacity: 0.52;
-        transform: translateX(0);
-        text-shadow: none;
-      }
-      55% {
-        opacity: 1;
-        transform: translateX(var(--drag-hint-shift, 1px));
-        text-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
-      }
-      75% {
-        opacity: 0.42;
-        transform: translateX(0);
-        text-shadow: none;
-      }
-    }
-  `
-  document.head.appendChild(style)
-}
-
-function parseRuntimeRouteSelection(params: URLSearchParams): RuntimeRouteSelection | null {
-  const focusName = params.get('focus')?.trim() || ''
-  if (!focusName) {
-    return null
-  }
-  return {
-    focusName,
-  }
-}
-
-function normalizeRuntimeRouteFocusName(value: string): string {
-  return value.trim().replace(/\s+/g, '').toLocaleLowerCase()
-}
-
-const KNOWN_ROCKET_HTML_ROUTE_FOCUS_NAMES = new Set([
-  '卫星总装',
-  '整流罩',
-  '二级控制系统',
-  '二级箭体结构',
-  '二级发动机',
-  '级间段',
-  '格栅舵',
-  '一级控制系统',
-  '一级箭体结构',
-  '着陆系统',
-  '一级发动机组',
-  '热控系统',
-  '结构系统',
-  '有效载荷系统',
-  '综合电子系统',
-  '测控系统',
-  '电源系统',
-  '姿轨控系统',
-].map(normalizeRuntimeRouteFocusName))
-
-function matchesKnownHtmlRouteFocus(htmlUrl: string, normalizedFocusName: string): boolean {
-  const normalizedHtmlUrl = htmlUrl.trim().toLocaleLowerCase()
-  if (!normalizedFocusName) return false
-  if (normalizedHtmlUrl.includes('rocket-shared/rocket.html') || normalizedHtmlUrl.endsWith('/rocket.html')) {
-    return KNOWN_ROCKET_HTML_ROUTE_FOCUS_NAMES.has(normalizedFocusName)
-  }
-  return false
-}

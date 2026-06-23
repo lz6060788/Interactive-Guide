@@ -73,6 +73,7 @@ All AI/ML provider configs must come from environment variables. The flip-book p
 ## Project Docs
 
 - `docs/开发计划.md`: 当前开发阶段、已完成能力与后续重点
+- `docs/项目能力与特性清单.md`: 当前项目的细粒度功能、特性与遗留候选项清单，用于逐项判断保留、移除或合并
 - `docs/项目技术架构与核心逻辑总览.md`: 项目全局技术架构、核心逻辑链路、模块分层与应用场景总览
 - `docs/运行时渲染架构与扩展设计.md`: 运行时三层结构、`PlayerHost/PlayerCore` 职责边界、iframe `postMessage` 协议与独立运行时集成约束
 - `docs/总图漫游与独立节点架构设计.md`: 新的最终态架构文档，定义 `surface / image / html` 三类节点模型、camera 漫游、缩放驱动信息显隐、卡片连线与新编辑器方向
