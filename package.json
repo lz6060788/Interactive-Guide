@@ -14,7 +14,7 @@
     "build:player-core": "npm run build:player-host",
     "build:upload-bundle": "cd scripts && npx vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/surface-camera.test.ts tests/region-manifest-validation.test.ts",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "validate:package": "tsx src/shared/validate-package.ts"
   },
   "dependencies": {
@@ -33,7 +33,9 @@
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.2",
     "@types/node": "^22.15.17",
+    "@types/supertest": "^7.2.0",
     "@types/uuid": "^10.0.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vite": "^6.3.5"

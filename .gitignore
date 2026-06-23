@@ -16,7 +16,7 @@ data/publish/*
 .agents
 .playwright-cli
 /data
-docs
+tmp/
 *.png
 *.mp4
 *.html

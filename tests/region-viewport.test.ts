@@ -29,8 +29,8 @@ test('resolveInitialRegionViewport derives center window from panRange and viewp
     },
   })
 
-  assert.equal(result.initialWindow.topLeft.y, 0.3)
-  assert.equal(result.initialWindow.bottomLeft.y, 0.7)
+  approxEqual(result.initialWindow.topLeft.y, 0.3)
+  approxEqual(result.initialWindow.bottomLeft.y, 0.7)
   approxEqual(result.initialWindow.topLeft.x, 0.3)
   approxEqual(result.initialWindow.topRight.x, 0.7)
   assert.equal(result.fitMode, 'fitHeight')
