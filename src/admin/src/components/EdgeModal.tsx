@@ -3,8 +3,7 @@ import {
   Box, Flex, Text, Button, Heading, Badge,
   IconButton, VStack, HStack,
 } from '@chakra-ui/react'
-import { X, Save, RefreshCw, Upload } from 'lucide-react'
-import { uploadEdgeVideo } from '../services/api'
+import { X, Save, RefreshCw } from 'lucide-react'
 import { TransitionSelector, VideoTransitionForm, PanTransitionForm, FlipTransitionForm, ZoomTransitionForm, type TransitionOption } from './Edge/transitions'
 import type { PanConfig, FlipConfig, ZoomConfig } from './Edge/transitions'
 
@@ -113,13 +112,6 @@ function SaveButton({ saving, onClick }: { saving: boolean; onClick: () => void 
   )
 }
 
-function linesToArray(value: string): string[] {
-  return value
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean)
-}
-
 export function EdgeModal({
   pkg,
   edgeId,
@@ -146,9 +138,6 @@ export function EdgeModal({
 
   // Video state (for legacy video transition)
   const [videoUrl, setVideoUrl] = useState(edge.videoUrl)
-  const [uploadingVideo, setUploadingVideo] = useState(false)
-  const [uploadVideoMsg, setUploadVideoMsg] = useState<string | null>(null)
-
   // Transition type selection
   const [selectedTransition, setSelectedTransition] = useState<TransitionOption | null>(() => {
     if (edge.transitionType === 'builtin' && edge.builtinTransition) {
@@ -501,7 +490,7 @@ export function EdgeModal({
               onClick={async () => {
                 try {
                   await onRegenerateEdge(edge.id)
-                } catch (e: any) {
+                } catch {
                   // Error handled by parent
                 }
               }}

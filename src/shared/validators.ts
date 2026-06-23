@@ -10,7 +10,6 @@ import type {
   KnowledgeNode,
   KnowledgeEdge,
   PublishManifest,
-  QuadRange,
   SurfaceConfig,
   SurfaceFocusLayer,
   SurfaceCard,
@@ -90,18 +89,6 @@ function validateBuiltinTransitionConfig(
     validateNormalizedPoint(builtin.focusQuad.bottomRight, `${edgeLabel} zoom focusQuad.bottomRight`, errors)
     validateNormalizedPoint(builtin.focusQuad.bottomLeft, `${edgeLabel} zoom focusQuad.bottomLeft`, errors)
   }
-}
-
-function validateQuadRange(range: unknown, label: string, errors: string[]) {
-  if (!range || typeof range !== 'object') {
-    errors.push(`${label} must be an object with topLeft/topRight/bottomRight/bottomLeft`)
-    return
-  }
-  const quad = range as QuadRange
-  validateNormalizedPoint(quad.topLeft, `${label}.topLeft`, errors)
-  validateNormalizedPoint(quad.topRight, `${label}.topRight`, errors)
-  validateNormalizedPoint(quad.bottomRight, `${label}.bottomRight`, errors)
-  validateNormalizedPoint(quad.bottomLeft, `${label}.bottomLeft`, errors)
 }
 
 function validateCameraState(

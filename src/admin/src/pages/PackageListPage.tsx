@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Flex, Text, Button, Heading, Badge, Card, Input,
+  Box, Flex, Text, Button, Heading, Badge, Card,
   IconButton, Spinner, Grid,
 } from '@chakra-ui/react'
 import { Upload, Play, Download, Copy, Trash2, ChevronRight, Layers, Clock, Plus } from 'lucide-react'

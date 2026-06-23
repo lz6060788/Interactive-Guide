@@ -4,7 +4,6 @@ import type {
   PublishNode,
   PublishEdge,
   BuiltinTransitionConfig,
-  SurfaceConfig,
 } from '../../shared/types.js'
 import type { BuiltinTransitionType } from '../../shared/types.js'
 import type { Transition, TransitionPlaybackDirection } from '../transitions/index.js'
@@ -626,7 +625,7 @@ class PlayerCore {
     })
   }
 
-  private clearPendingVisualCommit(reason: string): void {
+  private clearPendingVisualCommit(_reason: string): void {
     if (!this.pendingVisualCommit) return
 
     const pending = this.pendingVisualCommit
@@ -740,7 +739,7 @@ class PlayerCore {
   private resolveBuiltinTransitionConfig(
     config: BuiltinTransitionConfig,
     hotspot: TransitionHotspot,
-    targetNodeId?: string,
+    _targetNodeId?: string,
   ): BuiltinTransitionConfig {
     if (config.type !== 'zoom') {
       return { ...config }

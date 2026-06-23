@@ -9,7 +9,6 @@ import type { Repository } from '../storage/repository.js'
 import type {
   KnowledgePackage,
   KnowledgeNode,
-  KnowledgeEdge,
   PackageBuildRecord,
   NodeBuildRecord,
   EdgeBuildRecord,
@@ -20,6 +19,17 @@ import { generateGenerateId, nowISO, getResolutionDimensions } from '../../share
 import { AppError } from '../middleware/app-error.js'
 import { PromptBuilder } from './prompt-builder.js'
 import { RuntimeBundleGenerator } from './runtime-bundle.js'
+import {
+  type ManifestBuilderContext,
+  buildManifest,
+  syncAssetsToWorkspace,
+} from './manifest-builder.js'
+import {
+  type RegeneratorDeps,
+  regenerateHotspots as regenerateHotspotsFn,
+  runRegenerateNode as runRegenerateNodeFn,
+  runRegenerateEdge as runRegenerateEdgeFn,
+} from './regenerator.js'
 
 import type * as vision from '../ai/vision.js'
 import type * as image from '../ai/image.js'
@@ -42,6 +52,23 @@ export class BuildPipeline {
     private promptBuilder: PromptBuilder,
     private bundleGenerator: RuntimeBundleGenerator,
   ) {}
+
+  private get manifestCtx(): ManifestBuilderContext {
+    return { repo: this.repo, promptBuilder: this.promptBuilder }
+  }
+
+  private get regeneratorDeps(): RegeneratorDeps {
+    return {
+      repo: this.repo,
+      visionModule: this.visionModule,
+      imageModule: this.imageModule,
+      videoModule: this.videoModule,
+      mediaModule: this.mediaModule,
+      promptBuilder: this.promptBuilder,
+      manifestCtx: this.manifestCtx,
+      log: (generateId: string, message: string) => this.appendLog(generateId, message),
+    }
+  }
 
   // ─── Public API ─────────────────────────────────────────────
 
@@ -77,8 +104,15 @@ export class BuildPipeline {
     this.appendLog(generateId, `[Generate] Started for guide "${guideId}"`)
 
     this.runGenerate(generateId, guide).catch(err => {
-      this.appendLog(generateId, `[Generate] Fatal error: ${err.message}`)
-      console.error(`[Generate] ${generateId} fatal error:`, err)
+      this.appendLog(generateId, `[Generate] Unhandled fatal error: ${err.message}`)
+      console.error(`[Generate] ${generateId} unhandled fatal error:`, err)
+      const record = this.repo.loadGenerateRecord(generateId)
+      if (record && record.status !== 'failed') {
+        record.status = 'failed'
+        record.finishedAt = nowISO()
+        record.updatedAt = nowISO()
+        this.repo.saveGenerateRecord(record)
+      }
     })
 
     return record
@@ -141,9 +175,9 @@ export class BuildPipeline {
 
     this.appendLog(generateId, `[Regen] Regenerating node "${nodeId}"...`)
 
-    this.runRegenerateNode(generateId, guide, node).catch(err => {
-      this.appendLog(generateId, `[Regen] Node "${nodeId}" fatal error: ${err.message}`)
-      console.error(`[Regen] Node "${nodeId}" fatal error:`, err)
+    runRegenerateNodeFn(generateId, guide, node, this.regeneratorDeps).catch(err => {
+      this.appendLog(generateId, `[Regen] Node "${nodeId}" unhandled error: ${err.message}`)
+      console.error(`[Regen] Node "${nodeId}" unhandled error:`, err)
     })
   }
 
@@ -173,316 +207,16 @@ export class BuildPipeline {
 
     this.appendLog(generateId, `[Regen] Regenerating edge "${edgeId}"...`)
 
-    this.runRegenerateEdge(generateId, guide, edge, fromNode, toNode).catch(err => {
-      this.appendLog(generateId, `[Regen] Edge "${edgeId}" fatal error: ${err.message}`)
-      console.error(`[Regen] Edge "${edgeId}" fatal error:`, err)
+    runRegenerateEdgeFn(generateId, guide, edge, fromNode, toNode, this.regeneratorDeps).catch(err => {
+      this.appendLog(generateId, `[Regen] Edge "${edgeId}" unhandled error: ${err.message}`)
+      console.error(`[Regen] Edge "${edgeId}" unhandled error:`, err)
     })
 
     return { buildId: generateId, edgeId }
   }
 
   async regenerateHotspots(guideId: string, nodeId: string) {
-    this.repo.refresh()
-    const guides = this.repo.loadAllGuides()
-    const guide = guides.get(guideId)
-    if (!guide) throw AppError.notFound(`Guide "${guideId}" not found`)
-
-    const node = guide.nodes.find(n => n.id === nodeId)
-    if (!node) throw AppError.notFound(`Node "${nodeId}" not found`)
-    if (!node.hotspots || node.hotspots.length === 0) return []
-
-    const generates = this.repo.loadAllGenerates()
-    const latest = Array.from(generates.values())
-      .filter(g => g.packageId === guideId)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
-    if (!latest) throw AppError.validation('No existing build found')
-
-    const generateId = latest.buildId
-
-    const manualHotspots: Array<{
-      edgeId: string; targetNodeId: string; label: string
-      normalizedX: number; normalizedY: number; radius: number
-      source: 'vision' | 'manual'
-    }> = node.hotspots.map(hs => ({
-      edgeId: hs.edgeId,
-      targetNodeId: hs.targetNodeId,
-      label: hs.label,
-      normalizedX: hs.normalizedX,
-      normalizedY: hs.normalizedY,
-      radius: hs.radius ?? 12,
-      source: 'manual' as const,
-    }))
-
-    const imageRelPath = `${GENERATES_DIR}/${generateId}/nodes/${nodeId}/image.png`
-    const imageBuffer = this.repo.readFile(imageRelPath)
-    if (!imageBuffer) throw AppError.validation(`Image not found for node "${nodeId}"`)
-
-    let recommended: typeof manualHotspots = manualHotspots
-    try {
-      const visionResult = await this.visionModule.recommendHotspots(node, imageBuffer)
-      if (visionResult.length > 0) {
-        recommended = visionResult.map(vr => {
-          const manual = manualHotspots.find(m => m.targetNodeId === vr.targetNodeId)
-          return {
-            edgeId: manual?.edgeId ?? '',
-            targetNodeId: vr.targetNodeId,
-            label: vr.label,
-            normalizedX: vr.normalizedX,
-            normalizedY: vr.normalizedY,
-            radius: vr.radius,
-            source: 'vision' as const,
-          }
-        })
-      }
-    } catch (e: any) {
-      console.error(`[RegenHotspots] Vision failed for "${nodeId}":`, e.message)
-    }
-
-    this.repo.writeJson(
-      `${GENERATES_DIR}/${generateId}/nodes/${nodeId}/hotspots.recommended.json`,
-      recommended,
-    )
-
-    const updatedNodes = guide.nodes.map(n => {
-      if (n.id !== nodeId) return n
-      return {
-        ...n,
-        hotspots: n.hotspots?.map(hs => {
-          const rec = recommended.find(r => r.targetNodeId === hs.targetNodeId)
-          return rec ? { ...hs, normalizedX: rec.normalizedX, normalizedY: rec.normalizedY } : hs
-        }),
-      }
-    })
-    const updatedGuide = { ...guide, nodes: updatedNodes, metadata: { ...guide.metadata, updatedAt: nowISO() } }
-    this.repo.saveGuide(updatedGuide)
-
-    try {
-      const manifestPath = `publish/${guideId}/${guide.version}/manifest.json`
-      const manifest = this.repo.readJson<any>(manifestPath)
-      if (manifest && manifest.nodes) {
-        const updatedHotspots = updatedNodes.find(un => un.id === nodeId)?.hotspots?.map(hs => ({
-          edgeId: hs.edgeId,
-          targetNodeId: hs.targetNodeId,
-          label: hs.label,
-          normalizedX: hs.normalizedX,
-          normalizedY: hs.normalizedY,
-          radius: hs.radius,
-          markerType: 'dot',
-        })) || []
-
-        manifest.nodes = manifest.nodes.map((n: any) => {
-          if (n.id === nodeId) return { ...n, hotspots: updatedHotspots }
-          return n
-        })
-        if (manifest.nodeMap?.[nodeId]) {
-          manifest.nodeMap[nodeId].hotspots = updatedHotspots
-        }
-        this.repo.writeJson(manifestPath, manifest)
-      }
-    } catch (e) {
-      console.warn(`Failed to sync regenerated hotspots to manifest for guide ${guideId}:`, e)
-    }
-
-    return recommended
-  }
-
-  // ─── Regeneration ─────────────────────────────────────────
-
-  private async runRegenerateNode(
-    generateId: string,
-    guide: KnowledgePackage,
-    node: KnowledgeNode,
-  ) {
-    const nodeRecord: NodeBuildRecord = {
-      buildId: generateId,
-      nodeId: node.id,
-      status: 'running',
-      plannerStatus: 'success',
-      imageStatus: 'running',
-      updatedAt: nowISO(),
-    }
-
-    try {
-      const imagePrompt = this.promptBuilder.buildImagePrompt(node, guide)
-
-      this.repo.writeJson(
-        `${GENERATES_DIR}/${generateId}/nodes/${node.id}/planner.json`,
-        {
-          nodeId: node.id,
-          title: node.title,
-          style: guide.style ?? 'morandi-journal',
-          imagePrompt,
-          summary: this.promptBuilder.getNodeSummary(node),
-          status: 'success',
-        },
-      )
-
-      this.appendLog(generateId, `[Regen] Generating image for "${node.id}"...`)
-      const imageResult = await this.imageModule.generateNodeImage(
-        node.id,
-        imagePrompt,
-        getResolutionDimensions(guide.resolution).width,
-        getResolutionDimensions(guide.resolution).height,
-      )
-
-      const buildImagePath = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
-      this.repo.copyFile(imageResult.localPath, buildImagePath)
-
-      const publishImagePath = `publish/${guide.id}/${guide.version}/assets/nodes/${node.id}.png`
-      if (this.repo.fileExists(publishImagePath)) {
-        this.repo.copyFile(imageResult.localPath, publishImagePath)
-      }
-
-      const workspaceImagePath = `workspace/${guide.id}/nodes/${node.id}.png`
-      this.repo.copyFile(imageResult.localPath, workspaceImagePath)
-      const workspaceManifest = this.buildWorkspaceManifest(guide)
-      this.repo.writeJson(`workspace/${guide.id}/manifest.json`, workspaceManifest)
-
-      nodeRecord.imageStatus = 'success'
-      nodeRecord.imagePath = buildImagePath
-      nodeRecord.modelInputUrl = imageResult.modelInputUrl
-      nodeRecord.status = 'success'
-
-      this.appendLog(generateId, `[Regen] Node "${node.id}" done (cached: ${imageResult.fromCache})`)
-    } catch (e: any) {
-      nodeRecord.status = 'failed'
-      nodeRecord.imageStatus = 'failed'
-      nodeRecord.errorMessage = e.message
-      this.appendLog(generateId, `[Regen] Node "${node.id}" FAILED: ${e.message}`)
-      console.error(`[Regen] Node "${node.id}" failed:`, e.message)
-    }
-
-    nodeRecord.updatedAt = nowISO()
-    this.repo.saveNodeRecord(generateId, node.id, nodeRecord)
-  }
-
-  private async runRegenerateEdge(
-    generateId: string,
-    guide: KnowledgePackage,
-    edge: KnowledgeEdge,
-    fromNode: KnowledgeNode,
-    toNode: KnowledgeNode,
-  ) {
-    const edgeRecord: EdgeBuildRecord = {
-      buildId: generateId,
-      edgeId: edge.id,
-      status: 'running',
-      promptStatus: 'running',
-      videoStatus: 'pending',
-      updatedAt: nowISO(),
-    }
-
-    try {
-      const visualPlan = this.promptBuilder.resolveTransitionDescriptionMode(edge) === 'manual'
-        ? this.promptBuilder.buildManualTransitionPlan(edge)
-        : await this.promptBuilder.planTransitionVisuals(generateId, edge, fromNode, toNode, guide, this.repo)
-
-      const transitionPrompt = this.promptBuilder.buildTransitionPrompt(edge, fromNode, toNode, guide, visualPlan)
-      const transitionJsonPath = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.json`
-
-      edgeRecord.promptStatus = 'success'
-      edgeRecord.transitionStrategyMode = visualPlan.mode
-      edgeRecord.transitionStrategyReason = visualPlan.reason
-      edgeRecord.transitionPath = transitionJsonPath
-
-      this.repo.writeJson(
-        transitionJsonPath,
-        {
-          edgeId: edge.id,
-          fromNodeId: edge.fromNodeId,
-          toNodeId: edge.toNodeId,
-          relationLabel: edge.relationLabel,
-          descriptionMode: this.promptBuilder.resolveTransitionDescriptionMode(edge),
-          manualTransitionPrompt: this.promptBuilder.getManualTransitionDescription(edge) || undefined,
-          strategyMode: visualPlan.mode,
-          strategyReason: visualPlan.reason,
-          visualPlan,
-          prompt: transitionPrompt,
-          status: 'running',
-        },
-      )
-
-      const firstFrame = await this.mediaModule.exposeNodeImage(
-        generateId,
-        this.resolveVideoFrameNodeId(guide, edge.fromNodeId),
-      )
-      const lastFrame = await this.mediaModule.exposeNodeImage(
-        generateId,
-        this.resolveVideoFrameNodeId(guide, edge.toNodeId),
-      )
-
-      edgeRecord.videoStatus = 'running'
-      this.appendLog(generateId, `[Regen] Generating video "${edge.id}" (${edge.fromNodeId} → ${edge.toNodeId})...`)
-
-      const videoResult = await this.videoModule.generateTransitionVideo(
-        edge.id,
-        edge.fromNodeId,
-        edge.toNodeId,
-        transitionPrompt,
-        firstFrame.url,
-        lastFrame.url,
-        (status, taskId) => {
-          this.appendLog(generateId, `[Regen] "${edge.id}" video task ${taskId}: ${status}`)
-        },
-      )
-
-      const buildVideoPath = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.mp4`
-      const publishVideoPath = `publish/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`
-
-      this.repo.copyFile(videoResult.localPath, buildVideoPath)
-      this.repo.copyFile(videoResult.localPath, publishVideoPath)
-
-      edgeRecord.videoStatus = 'success'
-      edgeRecord.videoPath = buildVideoPath
-      edgeRecord.status = 'success'
-
-      const updatedGuide: KnowledgePackage = {
-        ...guide,
-        edges: guide.edges.map(currentEdge => (
-          currentEdge.id === edge.id
-            ? {
-              ...currentEdge,
-              status: 'ready',
-              videoStatus: 'success',
-              videoUrl: `/api/media/${guide.id}/${guide.version}/assets/edges/${edge.id}.mp4`,
-            }
-            : currentEdge
-        )),
-        metadata: { ...guide.metadata, updatedAt: nowISO() },
-      }
-
-      this.repo.saveGuide(updatedGuide)
-      const manifest = this.buildManifest(updatedGuide, generateId)
-      this.repo.writeJson(`publish/${guide.id}/${guide.version}/manifest.json`, manifest)
-
-      const workspaceVideoPath = `workspace/${guide.id}/edges/${edge.id}.mp4`
-      this.repo.copyFile(videoResult.localPath, workspaceVideoPath)
-      const workspaceManifest = this.buildWorkspaceManifest(updatedGuide)
-      this.repo.writeJson(`workspace/${guide.id}/manifest.json`, workspaceManifest)
-
-      this.appendLog(generateId, `[Regen] Edge "${edge.id}" done (cached: ${videoResult.fromCache})`)
-    } catch (e: any) {
-      const updatedGuide: KnowledgePackage = {
-        ...guide,
-        edges: guide.edges.map(currentEdge => (
-          currentEdge.id === edge.id
-            ? { ...currentEdge, videoStatus: 'failed' }
-            : currentEdge
-        )),
-        metadata: { ...guide.metadata, updatedAt: nowISO() },
-      }
-
-      this.repo.saveGuide(updatedGuide)
-
-      edgeRecord.status = 'failed'
-      edgeRecord.videoStatus = 'failed'
-      edgeRecord.errorMessage = e.message
-      this.appendLog(generateId, `[Regen] Edge "${edge.id}" FAILED: ${e.message}`)
-      console.error(`[Regen] Edge "${edge.id}" failed:`, e.message)
-    }
-
-    edgeRecord.updatedAt = nowISO()
-    this.repo.saveEdgeRecord(generateId, edge.id, edgeRecord)
+    return regenerateHotspotsFn(guideId, nodeId, this.regeneratorDeps)
   }
 
   // ─── Pipeline ─────────────────────────────────────────────
@@ -940,12 +674,11 @@ export class BuildPipeline {
   private resolveVideoFrameNodeId(guide: KnowledgePackage, nodeId: string): string {
     const node = guide.nodes.find(item => item.id === nodeId)
     if (!node) return nodeId
-    const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
     return nodeId
   }
 
   private publishFromGenerate(generateId: string, guide: KnowledgePackage) {
-    this.syncAssetsToWorkspace(guide, generateId)
+    syncAssetsToWorkspace(guide, generateId, this.manifestCtx)
 
     const publishDir = `publish/${guide.id}/${guide.version}`
     this.repo.ensureDir(`${publishDir}/assets/nodes`)
@@ -979,295 +712,12 @@ export class BuildPipeline {
       }
     }
 
-    const manifest = this.buildManifest(guide, generateId)
+    const manifest = buildManifest(guide, generateId, this.manifestCtx)
     this.repo.writeJson(`${publishDir}/manifest.json`, manifest)
     this.repo.writeJson(
       `${publishDir}/summary.json`,
       this.repo.loadGenerateRecord(generateId),
     )
-  }
-
-  syncAssetsToWorkspace(guide: KnowledgePackage, generateId: string): void {
-    const workspaceDir = `workspace/${guide.id}`
-    this.repo.ensureDir(`${workspaceDir}/nodes`)
-    this.repo.ensureDir(`${workspaceDir}/edges`)
-
-    for (const node of guide.nodes) {
-      const nodeKind = node.nodeKind ?? (node.contentType === 'html' ? 'html' : 'image')
-      if (nodeKind === 'html') {
-        const htmlSrc = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/content.html`
-        if (this.repo.fileExists(htmlSrc)) {
-          this.repo.copyFile(htmlSrc, `${workspaceDir}/nodes/${node.id}.html`)
-        }
-      } else {
-        const src = `${GENERATES_DIR}/${generateId}/nodes/${node.id}/image.png`
-        if (this.repo.fileExists(src)) {
-          this.repo.copyFile(src, `${workspaceDir}/nodes/${node.id}.png`)
-        }
-      }
-    }
-
-    for (const edge of guide.edges) {
-      const src = `${GENERATES_DIR}/${generateId}/edges/${edge.id}/transition.mp4`
-      if (this.repo.fileExists(src)) {
-        this.repo.copyFile(src, `${workspaceDir}/edges/${edge.id}.mp4`)
-      }
-    }
-
-    const manifest = this.buildWorkspaceManifest(guide)
-    this.repo.writeJson(`${workspaceDir}/manifest.json`, manifest)
-  }
-
-  // ─── Manifest Builders ──────────────────────────────────────
-
-  private static readonly IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'jfif', 'webp', 'gif', 'bmp', 'svg']
-
-  private resolveNodeImageFileName(guide: KnowledgePackage, nodeId: string): string | null {
-    for (const ext of BuildPipeline.IMAGE_EXTENSIONS) {
-      if (this.repo.fileExists(`workspace/${guide.id}/nodes/${nodeId}.${ext}`)) return `${nodeId}.${ext}`
-    }
-    return null
-  }
-
-  private buildManifest(guide: KnowledgePackage, generateId: string): PublishManifest {
-    const mediaBase = `/api/media/${guide.id}/${guide.version}`
-
-    const nodes = guide.nodes.map(n => {
-      const summary = this.promptBuilder.getNodeSummary(n)
-      const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
-      const imageFileName = this.resolveNodeImageFileName(guide, n.id)
-      const hasHtmlPreviewImage = imageFileName !== null
-
-      const nodeKind = n.nodeKind ?? (n.contentType === 'html' ? 'html' : 'image')
-      if (nodeKind === 'html') {
-        return {
-          id: n.id,
-          title: n.title,
-          summary: summary || undefined,
-          keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
-          topicType: n.topicType,
-          sourceText: n.sourceText?.trim() || undefined,
-          contentType: 'html' as const,
-          htmlUrl: `${mediaBase}/assets/nodes/${n.id}.html`,
-          imageUrl: hasHtmlPreviewImage ? `${mediaBase}/assets/nodes/${imageFileName}` : undefined,
-          hotspotEdgeIds: n.hotspotEdgeIds,
-          imageFitMode: n.imageFitMode,
-          nodeKind,
-          surfaceConfig: n.surfaceConfig
-            ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/assets/nodes/${imageFileName ?? `${n.id}.png`}` }
-            : undefined,
-          surfaceLayers: n.surfaceLayers,
-          hotspots: [] as Array<{
-            edgeId: string; targetNodeId: string; label: string
-            normalizedX: number; normalizedY: number; radius?: number
-            markerType: 'dot'
-            style?: string
-          }>,
-        }
-      }
-
-      return {
-        id: n.id,
-        title: n.title,
-        summary: summary || undefined,
-        keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
-        topicType: n.topicType,
-        sourceText: n.sourceText?.trim() || undefined,
-        imageUrl: `${mediaBase}/assets/nodes/${imageFileName ?? `${n.id}.png`}`,
-        imageFitMode: n.imageFitMode,
-        nodeKind,
-        surfaceConfig: n.surfaceConfig
-          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/assets/nodes/${imageFileName ?? `${n.id}.png`}` }
-          : undefined,
-        surfaceLayers: n.surfaceLayers,
-        hotspots: (n.hotspots ?? []).map(hs => ({
-          edgeId: hs.edgeId,
-          targetNodeId: hs.targetNodeId,
-          label: hs.label,
-          normalizedX: hs.normalizedX,
-          normalizedY: hs.normalizedY,
-          radius: hs.radius,
-          markerType: 'dot' as const,
-          style: hs.style,
-        })),
-      }
-    })
-
-    const edges = guide.edges.map(e => {
-      const videoPath = `${GENERATES_DIR}/${generateId}/edges/${e.id}/transition.mp4`
-      const hasVideo = this.repo.fileExists(videoPath)
-
-      return {
-        id: e.id,
-        fromNodeId: e.fromNodeId,
-        toNodeId: e.toNodeId,
-        relationLabel: e.relationLabel,
-        transitionType: e.transitionType,
-        builtinTransition: e.builtinTransition,
-        videoUrl: hasVideo ? `${mediaBase}/assets/edges/${e.id}.mp4` : undefined,
-      }
-    })
-
-    const nodeMap: Record<string, (typeof nodes)[0]> = {}
-    for (const n of nodes) nodeMap[n.id] = n
-
-    const edgeMap: Record<string, (typeof edges)[0]> = {}
-    for (const e of edges) edgeMap[e.id] = e
-
-    return {
-      packageId: guide.id,
-      version: guide.version,
-      title: guide.title,
-      rootNodeId: 'root',
-      resolution: guide.resolution,
-      visualStyle: guide.visualStyle,
-      transitionStyle: guide.transitionStyle,
-      runtimeConfig: guide.runtimeConfig,
-      infoOverlay: guide.infoOverlay,
-      nodes,
-      edges,
-      nodeMap,
-      edgeMap,
-      metadata: {
-        generatedAt: nowISO(),
-        manifestVersion: '1.0.0',
-      },
-    }
-  }
-
-  private buildWorkspaceManifest(guide: KnowledgePackage): PublishManifest {
-    const mediaBase = `/api/media/workspace/${guide.id}`
-
-    const nodes = guide.nodes.map(n => {
-      const summary = this.promptBuilder.getNodeSummary(n)
-      const keyPoints = this.promptBuilder.getNodeKeyPoints(n)
-      const imageFileName = this.resolveNodeImageFileName(guide, n.id)
-      const hasHtmlPreviewImage = imageFileName !== null
-
-      const nodeKind = n.nodeKind ?? (n.contentType === 'html' ? 'html' : 'image')
-      if (nodeKind === 'html') {
-        return {
-          id: n.id,
-          title: n.title,
-          keyContent: n.keyContent,
-          summary: summary || undefined,
-          keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
-          topicType: n.topicType,
-          sourceText: n.sourceText?.trim() || undefined,
-          visualIntent: n.visualIntent,
-          hotspotHints: n.hotspotHints,
-          presentationIntent: n.presentationIntent,
-          imageStatus: n.imageStatus,
-          status: n.status,
-          extensions: n.extensions,
-          contentType: 'html' as const,
-          htmlSource: n.htmlSource,
-          htmlUrl: `${mediaBase}/nodes/${n.id}.html`,
-          imageUrl: hasHtmlPreviewImage ? `${mediaBase}/nodes/${imageFileName}` : undefined,
-          hotspotEdgeIds: n.hotspotEdgeIds,
-          imageFitMode: n.imageFitMode,
-          nodeKind,
-          surfaceConfig: n.surfaceConfig
-            ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${imageFileName ?? `${n.id}.png`}` }
-            : undefined,
-          surfaceLayers: n.surfaceLayers,
-          hotspots: [] as Array<{
-            edgeId: string; targetNodeId: string; label: string
-            normalizedX: number; normalizedY: number; radius?: number
-            markerType: 'dot'
-            style?: string
-          }>,
-        }
-      }
-
-      return {
-        id: n.id,
-        title: n.title,
-        keyContent: n.keyContent,
-        summary: summary || undefined,
-        keyPoints: keyPoints.length > 0 ? keyPoints : undefined,
-        topicType: n.topicType,
-        sourceText: n.sourceText?.trim() || undefined,
-        visualIntent: n.visualIntent,
-        hotspotHints: n.hotspotHints,
-        presentationIntent: n.presentationIntent,
-        imageUrl: `${mediaBase}/nodes/${imageFileName ?? `${n.id}.png`}`,
-        imageStatus: n.imageStatus,
-        status: n.status,
-        extensions: n.extensions,
-        imageFitMode: n.imageFitMode,
-        nodeKind,
-        surfaceConfig: n.surfaceConfig
-          ? { ...n.surfaceConfig, sourceImageUrl: `${mediaBase}/nodes/${imageFileName ?? `${n.id}.png`}` }
-          : undefined,
-        surfaceLayers: n.surfaceLayers,
-        hotspots: (n.hotspots ?? []).map(hs => ({
-          edgeId: hs.edgeId,
-          targetNodeId: hs.targetNodeId,
-          label: hs.label,
-          normalizedX: hs.normalizedX,
-          normalizedY: hs.normalizedY,
-          radius: hs.radius,
-          markerType: 'dot' as const,
-          style: hs.style,
-        })),
-      }
-    })
-
-    const edges = guide.edges.map(e => {
-      const videoPath = `workspace/${guide.id}/edges/${e.id}.mp4`
-      const hasVideo = this.repo.fileExists(videoPath)
-
-      return {
-        id: e.id,
-        fromNodeId: e.fromNodeId,
-        toNodeId: e.toNodeId,
-        relationLabel: e.relationLabel,
-        transitionDescriptionMode: e.transitionDescriptionMode,
-        manualTransitionPrompt: e.manualTransitionPrompt,
-        promptStatus: e.promptStatus,
-        transitionStrategyMode: e.transitionStrategyMode,
-        transitionStrategyReason: e.transitionStrategyReason,
-        transitionPlan: e.transitionPlan,
-        transitionPrompt: e.transitionPrompt,
-        transitionPath: e.transitionPath,
-        transitionType: e.transitionType,
-        builtinTransition: e.builtinTransition,
-        videoStatus: e.videoStatus,
-        status: e.status,
-        extensions: e.extensions,
-        videoUrl: hasVideo ? `${mediaBase}/edges/${e.id}.mp4` : undefined,
-      }
-    })
-
-    const nodeMap: Record<string, (typeof nodes)[0]> = {}
-    for (const n of nodes) nodeMap[n.id] = n
-
-    const edgeMap: Record<string, (typeof edges)[0]> = {}
-    for (const e of edges) edgeMap[e.id] = e
-
-    return {
-      packageId: guide.id,
-      version: guide.version,
-      title: guide.title,
-      rootNodeId: 'root',
-      locale: guide.locale,
-      description: guide.description,
-      resolution: guide.resolution,
-      visualStyle: guide.visualStyle,
-      transitionStyle: guide.transitionStyle,
-      style: guide.style,
-      runtimeConfig: guide.runtimeConfig,
-      infoOverlay: guide.infoOverlay,
-      nodes,
-      edges,
-      nodeMap,
-      edgeMap,
-      metadata: {
-        generatedAt: nowISO(),
-        manifestVersion: '1.0.0',
-      },
-    }
   }
 
   // ─── Logging ──────────────────────────────────────────────

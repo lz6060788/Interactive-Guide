@@ -83,8 +83,6 @@ export function PanTransitionForm({
     }
   }
 
-  const [previewProgress, setPreviewProgress] = useState(0)
-
   const runPreview = () => {
     if (!fromElRef.current || !toElRef.current || !containerRef.current) return
 

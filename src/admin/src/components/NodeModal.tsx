@@ -3,7 +3,7 @@ import {
   Box, Flex, Text, Button, Heading, Badge,
   IconButton, HStack,
 } from '@chakra-ui/react'
-import { X, Crosshair, Save, Image as ImageIcon, Trash2, RefreshCw, Upload } from 'lucide-react'
+import { X, Crosshair, Save, Trash2, RefreshCw, Upload } from 'lucide-react'
 import { uploadNodeImage, uploadNodeHtml } from '../services/api'
 import { SurfaceNodeDesigner, SurfaceNodeEditorModal } from './SurfaceNodeDesigner'
 
@@ -20,14 +20,6 @@ interface NodeModalProps {
   onRegenerateNode?: (nodeId: string) => void
   onRegenerateHotspots?: (nodeId: string) => Promise<void>
 }
-
-const STYLE_OPTIONS = [
-  { value: 'morandi-journal', label: 'Morandi Journal — 暖色手绘日记' },
-  { value: 'pop-laboratory', label: 'Pop Laboratory — 实验室精度' },
-  { value: 'cyberpunk-neon', label: 'Cyberpunk Neon — 赛博霓虹' },
-  { value: 'technical-schematic', label: 'Technical Schematic — 工程蓝图' },
-  { value: 'craft-handmade', label: 'Craft Handmade — 手工拼贴' },
-]
 
 const TOPIC_TYPE_OPTIONS = [
   { value: 'general', label: 'General — 通用内容' },
@@ -50,15 +42,6 @@ const NODE_KIND_OPTIONS = [
 
 function formatJson(value: unknown): string {
   return value ? JSON.stringify(value, null, 2) : ''
-}
-
-function parseJsonSafe<T>(value: string): T | null {
-  if (!value.trim()) return null
-  try {
-    return JSON.parse(value) as T
-  } catch {
-    return null
-  }
 }
 
 function Field({ label, value, onChange, disabled, multiline, rows, mono, placeholder }: {

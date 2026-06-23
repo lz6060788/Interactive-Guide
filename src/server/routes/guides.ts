@@ -4,12 +4,9 @@
 // All guide/node/edge CRUD endpoints.
 // Thin controller — delegates to GuideService, no business logic here.
 
-import fs from 'node:fs'
-import path from 'node:path'
 import express, { Router, type Request, type Response, type NextFunction } from 'express'
 import { GuideService } from '../services/guide-service.js'
 import { hydrateGuideEdgeTransitions } from '../services/guide-hydration.js'
-import type { KnowledgePackage } from '../../shared/types.js'
 
 export function createGuidesRouter(guideService: GuideService): Router {
   const router = Router()

@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Box, Flex, Text, Button, Heading, Badge, Table, Spinner,
-  Collapsible,
+  Box, Flex, Text, Button, Heading, Badge, Spinner,
 } from '@chakra-ui/react'
 import { ArrowLeft, RefreshCw, ChevronDown, ChevronRight, FileText } from 'lucide-react'
 import * as api from '../services/api'

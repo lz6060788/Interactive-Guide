@@ -50,7 +50,7 @@ test('POST /api/generates/:generateId/cancel cancels or rejects if already finis
   const { app, cleanup } = createTestApp()
   try {
     const generateRes = await supertest(app).post('/api/guides/test-guide/generate')
-    const { buildId, status } = generateRes.body.data
+    const { buildId, status: _status } = generateRes.body.data
 
     // Give the async pipeline a moment to settle
     await new Promise(resolve => setTimeout(resolve, 100))

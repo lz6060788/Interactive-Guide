@@ -1,6 +1,6 @@
 import { Badge, Box, Button, Flex, Heading, HStack, Stack, Text } from '@chakra-ui/react'
 import { ChevronDown, ChevronUp, FolderTree, Plus, Trash2 } from 'lucide-react'
-import type { PanoramaGroup, PanoramaItem, PanoramaSection } from '../../../shared/panorama-types'
+import type { PanoramaSection } from '../../../shared/panorama-types'
 import { isPanoramaGroup } from '../../../shared/panorama-types'
 
 interface PanoramaStructurePanelProps {

@@ -66,7 +66,7 @@ export class FsRepository implements Repository {
             this.guides.set(guide.id, guide)
             continue
           } catch {
-            console.warn(`[FsRepo] Failed to load workspace guide: ${guidePath}`)
+            console.error(`[FsRepo] Failed to load workspace guide: ${guidePath}`)
           }
         }
         if (!fs.existsSync(manifestPath)) continue
@@ -75,7 +75,7 @@ export class FsRepository implements Repository {
           const guide = this.manifestToGuide(manifest)
           this.guides.set(guide.id, guide)
         } catch {
-          console.warn(`[FsRepo] Failed to load workspace manifest: ${manifestPath}`)
+          console.error(`[FsRepo] Failed to load workspace manifest: ${manifestPath}`)
         }
       }
     }
@@ -93,7 +93,7 @@ export class FsRepository implements Repository {
           const record: PackageBuildRecord = JSON.parse(fs.readFileSync(generatePath, 'utf-8'))
           this.generates.set(record.buildId, record)
         } catch {
-          console.warn(`[FsRepo] Failed to load generate record: ${generatePath}`)
+          console.error(`[FsRepo] Failed to load generate record: ${generatePath}`)
         }
       }
     }

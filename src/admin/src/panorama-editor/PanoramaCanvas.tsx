@@ -47,8 +47,8 @@ type DragState =
 
 export function PanoramaCanvas({
   backgroundImageUrl,
-  group,
-  item,
+  group: _group,
+  item: _item,
   viewport,
   marker,
   focusRect,

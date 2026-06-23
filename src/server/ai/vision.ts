@@ -7,12 +7,12 @@
 
 import { loadConfig } from '../config.js'
 import { buildCacheKey, getCachedPlannerResult, persistPlannerResult } from './cache.js'
+import { withRetry } from './retry.js'
 import { getResolutionDimensions } from '../../shared/utils.js'
 import type {
   KnowledgeEdge,
   KnowledgeNode,
   KnowledgePackage,
-  NodeHotspot,
   TransitionVisualPlan,
 } from '../../shared/types.js'
 
@@ -188,27 +188,33 @@ ${hotspotsText}`
   const cached = getCachedPlannerResult(cacheKey)
   if (cached) return cached as PlannerResult
 
-  const response = await fetch(`${config.VISION_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.VISION_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: config.VISION_MODEL,
-      temperature: config.VISION_TEMPERATURE,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: PLANNER_SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
+  const response = await withRetry(
+    `vision-planner-${node.id}`,
+    () => fetch(`${config.VISION_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.VISION_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: config.VISION_MODEL,
+        temperature: config.VISION_TEMPERATURE,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: PLANNER_SYSTEM_PROMPT },
+          { role: 'user', content: userMessage },
+        ],
+      }),
+      signal: AbortSignal.timeout(config.VISION_TIMEOUT_MS),
     }),
-    signal: AbortSignal.timeout(config.VISION_TIMEOUT_MS),
-  })
+  )
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '')
-    throw new Error(`Vision planner API error ${response.status}: ${errText}`)
+    throw Object.assign(
+      new Error(`Vision planner API error ${response.status}: ${errText}`),
+      { status: response.status },
+    )
   }
 
   const payload = await response.json() as {
@@ -261,12 +267,6 @@ export async function recommendHotspots(
 
   if (!node.hotspots || node.hotspots.length === 0) return []
 
-  const hotspotTargets = node.hotspots.map(hs => ({
-    edgeId: hs.edgeId,
-    targetNodeId: hs.targetNodeId,
-    label: hs.label,
-  }))
-
   const imageUrl = `data:image/png;base64,${imageBuffer.toString('base64')}`
 
   // Build edge context: what does each hotspot lead to?
@@ -288,33 +288,39 @@ ${edgeContext}
 3. 检查所有热点：X 坐标不能全部相同，Y 坐标也不能全部相同
 4. 确保热点落在有内容的区域，不落在空白、纯色背景或装饰区域`
 
-  const response = await fetch(`${config.VISION_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.VISION_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: config.VISION_MODEL,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: HOTSPOT_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: userMessage },
-            { type: 'image_url', image_url: { url: imageUrl } },
-          ],
-        },
-      ],
+  const response = await withRetry(
+    `vision-hotspot-${node.id}`,
+    () => fetch(`${config.VISION_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.VISION_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: config.VISION_MODEL,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: HOTSPOT_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userMessage },
+              { type: 'image_url', image_url: { url: imageUrl } },
+            ],
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(config.VISION_TIMEOUT_MS),
     }),
-    signal: AbortSignal.timeout(config.VISION_TIMEOUT_MS),
-  })
+  )
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '')
-    throw new Error(`Hotspot recommendation API error ${response.status}: ${errText}`)
+    throw Object.assign(
+      new Error(`Hotspot recommendation API error ${response.status}: ${errText}`),
+      { status: response.status },
+    )
   }
 
   const payload = await response.json() as {
@@ -414,34 +420,40 @@ export async function planTransitionVisuals(
   const fromImageUrl = `data:image/png;base64,${fromImageBuffer.toString('base64')}`
   const toImageUrl = `data:image/png;base64,${toImageBuffer.toString('base64')}`
 
-  const response = await fetch(`${config.VISION_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.VISION_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: config.VISION_MODEL,
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: TRANSITION_VISUAL_PLAN_SYSTEM_PROMPT },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: userMessage },
-            { type: 'image_url', image_url: { url: fromImageUrl } },
-            { type: 'image_url', image_url: { url: toImageUrl } },
-          ],
-        },
-      ],
+  const response = await withRetry(
+    `vision-transition-plan-${edge.id}`,
+    () => fetch(`${config.VISION_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.VISION_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: config.VISION_MODEL,
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: TRANSITION_VISUAL_PLAN_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userMessage },
+              { type: 'image_url', image_url: { url: fromImageUrl } },
+              { type: 'image_url', image_url: { url: toImageUrl } },
+            ],
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(config.VISION_TIMEOUT_MS),
     }),
-    signal: AbortSignal.timeout(config.VISION_TIMEOUT_MS),
-  })
+  )
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '')
-    throw new Error(`Transition visual plan API error ${response.status}: ${errText}`)
+    throw Object.assign(
+      new Error(`Transition visual plan API error ${response.status}: ${errText}`),
+      { status: response.status },
+    )
   }
 
   const payload = await response.json() as {

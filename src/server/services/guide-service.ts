@@ -220,7 +220,7 @@ export class GuideService {
         updatedAt: nowISO(),
       },
       nodes: source.nodes.map(node => {
-        const { imageStatus, imageUrl, hotspots, ...rest } = node
+        const { imageStatus: _imageStatus, imageUrl: _imageUrl, hotspots, ...rest } = node
         const copiedNode: KnowledgeNode = {
           ...rest,
           imageStatus: 'idle',
@@ -234,9 +234,9 @@ export class GuideService {
       }),
       edges: source.edges.map(edge => {
         const {
-          videoStatus, videoUrl, promptStatus, transitionPath,
-          transitionPrompt, transitionPlan, transitionStrategyMode,
-          transitionStrategyReason, status, ...rest
+          videoStatus: _videoStatus, videoUrl: _videoUrl, promptStatus: _promptStatus, transitionPath: _transitionPath,
+          transitionPrompt: _transitionPrompt, transitionPlan: _transitionPlan, transitionStrategyMode: _transitionStrategyMode,
+          transitionStrategyReason: _transitionStrategyReason, status: _status, ...rest
         } = edge
         const copiedEdge: KnowledgeEdge = {
           ...rest,
@@ -299,7 +299,7 @@ export class GuideService {
         this.repo.writeJson(manifestPath, manifest)
       }
     } catch (e) {
-      console.warn(`Failed to sync node updates to publish manifest for guide ${guideId}:`, e)
+      console.error(`[GuideService] Failed to sync node updates to publish manifest for guide ${guideId}:`, e)
     }
 
     return guide.nodes[idx]
@@ -394,7 +394,7 @@ export class GuideService {
         console.log(`[updateHotspots] Synced to publish manifest: ${manifestPath}`)
       }
     } catch (e) {
-      console.warn(`Failed to sync hotspots to publish manifest for guide ${guideId}:`, e)
+      console.error(`[GuideService] Failed to sync hotspots to publish manifest for guide ${guideId}:`, e)
     }
 
     return node

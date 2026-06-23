@@ -3,10 +3,10 @@
 // ============================================================
 // Facade exporting types, factory, and the core generation function.
 
-import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { loadConfig } from '../config.js'
 import { buildCacheKey, getCachedImage, persistImageToCache } from './cache.js'
+import { withRetry } from './retry.js'
 import { createImageProvider, type ImageProviderName, type ImageGenerationProvider } from './image/providers/image-provider-interface.js'
 
 export { type ImageProviderName, type ImageGenerationProvider, createImageProvider }
@@ -61,9 +61,12 @@ export async function generateNodeImage(
     }
   }
 
-  // Generate image via provider
+  // Generate image via provider (with retry on transient failures)
   const provider = createImageProvider(config)
-  const imageResult = await provider.generate(prompt, size, referenceImageBuffer)
+  const imageResult = await withRetry(
+    `image-generate-${nodeId}`,
+    () => provider.generate(prompt, size, referenceImageBuffer),
+  )
 
   // Persist to cache
   const localPath = persistImageToCache(cacheKey, imageResult.buffer, {

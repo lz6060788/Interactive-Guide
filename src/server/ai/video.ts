@@ -5,9 +5,9 @@
 // can now be selected by configuration. This module keeps the
 // shared pipeline: cache -> submit -> poll -> download -> persist.
 
-import fs from 'node:fs'
 import { loadConfig } from '../config.js'
 import { buildCacheKey, getCachedVideo, persistVideoToCache } from './cache.js'
+import { withRetry } from './retry.js'
 import { createVideoProvider, type VideoGenerationRequest, type VideoTaskStatus } from './video-provider.js'
 
 // ─── Full Async Pipeline ─────────────────────────────────────
@@ -53,13 +53,19 @@ export async function generateTransitionVideo(
     lastFrameUrl,
   }
 
-  const { taskId } = await provider.submitTask(request)
+  const { taskId } = await withRetry(
+    `video-submit-${edgeId}`,
+    () => provider.submitTask(request),
+  )
   console.log(`[Video] Task submitted via ${provider.name}: ${taskId}`)
   console.log(`[Video] Polling task ${taskId} for edge ${edgeId}...`)
 
   const startedAt = Date.now()
   while (Date.now() - startedAt < provider.timeoutMs) {
-    const result = await provider.pollTask(taskId)
+    const result = await withRetry(
+      `video-poll-${taskId}`,
+      () => provider.pollTask(taskId),
+    )
 
     if (onStatusChange) onStatusChange(result.status, taskId)
 
@@ -95,9 +101,12 @@ export async function generateTransitionVideo(
 // ─── Helpers ─────────────────────────────────────────────────
 
 async function downloadVideo(url: string): Promise<Buffer> {
-  const response = await fetch(url)
+  const response = await withRetry(
+    `video-download`,
+    () => fetch(url, { signal: AbortSignal.timeout(60_000) }),
+  )
   if (!response.ok) {
-    throw new Error(`Failed to download video: ${response.status}`)
+    throw Object.assign(new Error(`Failed to download video: ${response.status}`), { status: response.status })
   }
   return Buffer.from(await response.arrayBuffer())
 }

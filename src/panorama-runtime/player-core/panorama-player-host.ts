@@ -20,7 +20,7 @@ import {
   shouldUseAppleFocusOverlayFallback,
 } from './panorama-player-host-utils.js'
 import { ListController, type ListControllerEnv, type PanoramaListItemRefs, type PanoramaListDragState } from './panorama-player-host-list.js'
-import { FocusOverlayRenderer, type FocusOverlayRendererEnv, type SceneGeometry } from './panorama-player-host-focus-overlay.js'
+import { FocusOverlayRenderer, type FocusOverlayRendererEnv } from './panorama-player-host-focus-overlay.js'
 import { PanoramaShareManager, type PanoramaShareManagerEnv } from './panorama-player-host-share.js'
 
 export interface PanoramaPlayerHostRefs {

@@ -13,6 +13,7 @@ data/publish/*
 .claude/
 !.claude/settings.json
 !.claude/skills/
+!.claude/memory/
 .agents
 .playwright-cli
 /data

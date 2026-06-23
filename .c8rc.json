@@ -1,0 +1,14 @@
+{
+  "reporter": ["text", "lcov"],
+  "exclude": [
+    "tests/**",
+    "src/admin/node_modules/**",
+    "**/*.d.ts",
+    "**/*.d.mts"
+  ],
+  "lines": 30,
+  "functions": 30,
+  "branches": 25,
+  "statements": 30,
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo, type CSSProperties } from 'react'
 import {
-  Box, Flex, Text, Heading, Button, Badge, IconButton, VStack,
+  Box, Flex, Text, Heading, Button, IconButton,
 } from '@chakra-ui/react'
 import { X, Save } from 'lucide-react'
 
