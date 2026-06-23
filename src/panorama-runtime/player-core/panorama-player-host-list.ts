@@ -189,7 +189,9 @@ export class ListController {
     this.env.listEl.classList.remove('is-dragging')
     try {
       this.env.listEl.releasePointerCapture(event.pointerId)
-    } catch {}
+    } catch {
+      console.warn('[PanoramaHostList] releasePointerCapture failed')
+    }
 
     if (this.env.listDragState.moved) {
       this.env.listDragState = null

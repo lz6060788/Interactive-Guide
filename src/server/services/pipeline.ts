@@ -210,7 +210,7 @@ export class BuildPipeline {
       normalizedX: hs.normalizedX,
       normalizedY: hs.normalizedY,
       radius: hs.radius ?? 12,
-      source: 'manual' as 'manual',
+      source: 'manual' as const,
     }))
 
     const imageRelPath = `${GENERATES_DIR}/${generateId}/nodes/${nodeId}/image.png`

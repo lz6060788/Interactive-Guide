@@ -49,7 +49,7 @@ const configSchema = z.object({
   SERVER_BASE_URL: z.string().default('http://localhost:8788'),
 
   // Vision / LLM Provider (OpenAI-compatible)
-  VISION_API_KEY: z.string().default(''),
+  VISION_API_KEY: z.string().min(1, 'VISION_API_KEY is required'),
   VISION_BASE_URL: z.string().default('https://dashscope.aliyuncs.com/compatible-mode/v1'),
   VISION_MODEL: z.string().default('kimi-k2.6'),
   VISION_TIMEOUT_MS: z.coerce.number().default(60000),
@@ -57,7 +57,7 @@ const configSchema = z.object({
 
   // Image Generation Config
   IMAGE_PROVIDER: z.enum(['dashscope', 'openai']).default('dashscope'),
-  IMAGE_API_KEY: z.string().default(''),
+  IMAGE_API_KEY: z.string().min(1, 'IMAGE_API_KEY is required'),
   IMAGE_BASE_URL: z.string().default('https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation'),
   IMAGE_MODEL: z.string().default('qwen-image-2.0-pro'),
   IMAGE_TIMEOUT_MS: z.coerce.number().default(120000),
@@ -68,7 +68,7 @@ const configSchema = z.object({
   VIDEO_POLL_INTERVAL_MS: z.coerce.number().default(15000),
 
   // Video Generation Provider (DashScope async, legacy transition model)
-  VIDEO_API_KEY: z.string().default(''),
+  VIDEO_API_KEY: z.string().min(1, 'VIDEO_API_KEY is required'),
   VIDEO_BASE_URL: z.string().default('https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis'),
   VIDEO_TASK_BASE_URL: z.string().default('https://dashscope.aliyuncs.com/api/v1/tasks'),
   VIDEO_MODEL: z.string().default('pixverse/pixverse-v6-kf2v'),
