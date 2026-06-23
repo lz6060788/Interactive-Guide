@@ -1,0 +1,131 @@
+{
+  "_meta": {
+    "lastDocSyncRef": "22c6a5a"
+  },
+  "server": {
+    "code_paths": ["src/server/**"],
+    "module_summary": "Express 5 backend API server with guide CRUD, build pipeline orchestration, and runtime bundle packaging.",
+    "docs": {
+      "architecture": {
+        "path": "docs/architecture/项目技术架构与核心逻辑总览.md",
+        "summary": "Overall system architecture, tech stack (Express 5 + React 19 + Vite), and component relationships."
+      },
+      "design": {
+        "path": "docs/architecture/后端详细设计方案.md",
+        "summary": "Backend detailed design including Express API routes, service layer, repository pattern, and build pipeline stages."
+      },
+      "pipeline": {
+        "path": "docs/architecture/构建任务流与目录结构设计.md",
+        "summary": "Six-stage build pipeline (validate → prepare → gen_nodes → gen_hotspots → gen_edges → publish) and data directory layout."
+      },
+      "manifest": {
+        "path": "docs/architecture/发布Manifest与运行时数据契约设计.md",
+        "summary": "PublishManifest schema as the runtime contract between build server and player frontend."
+      }
+    }
+  },
+  "runtime": {
+    "code_paths": ["src/runtime/**"],
+    "module_summary": "Lightweight runtime player that loads a pre-generated manifest and renders interactive guided tours with hotspots and video transitions.",
+    "docs": {
+      "architecture": {
+        "path": "docs/architecture/运行时渲染架构与扩展设计.md",
+        "summary": "Runtime rendering architecture covering node display, hotspot interaction, video transitions, and extension points."
+      },
+      "region_viewport": {
+        "path": "docs/architecture/局部子图节点与区域视窗架构设计.md",
+        "summary": "Region viewport design for magnified pan-range windows: coordinate spaces, initial window derivation, fit modes, and camera clamping."
+      },
+      "render_modes": {
+        "path": "docs/architecture/画面比例与图片填充模式渲染逻辑-2026-05-21.md",
+        "summary": "Image aspect ratio handling and fill mode rendering logic (fitHeight, fitWidth, fill) for viewport adaptation."
+      }
+    }
+  },
+  "panorama": {
+    "code_paths": ["src/panorama-runtime/**"],
+    "module_summary": "Panorama runtime for full-map roaming and independent node rendering, including stand-alone HTML artifacts.",
+    "docs": {
+      "architecture": {
+        "path": "docs/architecture/总图漫游与独立节点架构设计.md",
+        "summary": "Full-map panorama roaming architecture and independent node interaction model."
+      },
+      "html_artifact": {
+        "path": "docs/features/独立全景HTML产物方案设计.md",
+        "summary": "Stand-alone HTML artifact design for panorama guides with embedded runtime."
+      }
+    }
+  },
+  "admin": {
+    "code_paths": ["src/admin/**"],
+    "module_summary": "React 19 admin workbench for guide management, visual editing (React Flow canvas), and preview.",
+    "docs": {
+      "ui_flow": {
+        "path": "docs/features/管理端UI与操作流程设计.md",
+        "summary": "Admin UI design and operation workflows including guide list, editor canvas, and detail drawer."
+      },
+      "components": {
+        "path": "docs/features/管理端工作台组件拆分与状态设计.md",
+        "summary": "Admin workbench component tree decomposition and state management design."
+      }
+    }
+  },
+  "schema": {
+    "code_paths": ["src/shared/**"],
+    "module_summary": "Shared types, Zod validators, and schema contracts used across server and runtime.",
+    "docs": {
+      "knowledge_input": {
+        "path": "docs/features/知识输入Schema设计.md",
+        "summary": "Knowledge input schema design for KnowledgePackage structure: nodes, edges, hotspots, and metadata."
+      },
+      "content_spec": {
+        "path": "docs/features/生图内容描述规范.md",
+        "summary": "Image generation content description specification used in AI prompt building."
+      },
+      "html_protocol": {
+        "path": "docs/features/HTML节点通信协议与接入指南.md",
+        "summary": "HTML node communication protocol and integration guide for embeddable HTML content nodes."
+      }
+    }
+  },
+  "dev": {
+    "code_paths": [],
+    "module_summary": "Development guides, test plans, acceptance criteria, and debugging references.",
+    "docs": {
+      "plan": {
+        "path": "docs/development/开发计划.md",
+        "summary": "Overall development plan and phase roadmap."
+      },
+      "features": {
+        "path": "docs/development/项目能力与特性清单.md",
+        "summary": "Project capabilities and features checklist."
+      },
+      "guide": {
+        "path": "docs/development/项目设计与实现指导.md",
+        "summary": "Project design and implementation guidance."
+      },
+      "test": {
+        "path": "docs/development/后端验收标准与测试方案.md",
+        "summary": "Backend acceptance criteria and testing methodology."
+      },
+      "debug": {
+        "path": "docs/development/rocket开发调试指南.md",
+        "summary": "Rocket IDE development and debugging guide."
+      }
+    }
+  },
+  "postmortems": {
+    "code_paths": [],
+    "module_summary": "Post-implementation reviews and knowledge capture from production builds and bug fixes.",
+    "docs": {
+      "macro_generation": {
+        "path": "docs/postmortems/宏观经济学导览生成复盘与知识沉淀-2026-05-11.md",
+        "summary": "Postmortem on macroeconomics guide generation: image quality, prompt tuning, and pipeline iteration lessons."
+      },
+      "edge_video_fix": {
+        "path": "docs/postmortems/边转场视频与预览链路修复-2026-05-11.md",
+        "summary": "Postmortem on edge transition video and preview link repair: root cause analysis and fix strategy."
+      }
+    }
+  }
+}
