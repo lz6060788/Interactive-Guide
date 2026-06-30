@@ -1,0 +1,115 @@
+{
+  "$schema": "internal://interactive-guide/test-fixture/v1",
+  "projectId": "guide_surface_validation_001",
+  "title": "商业航天",
+  "frozenAt": "2026-06-30",
+  "purpose": "Knowledge content extracted from the legacy guide.json. Used as input to guide-project-bootstrap when generating the new project.json in Phase 2.",
+  "stages": [
+    {
+      "key": "upstream",
+      "label": "上游",
+      "categories": [
+        {
+          "id": "upstream-rocket",
+          "title": "火箭",
+          "items": [
+            { "id": "upstream-rocket-01", "title": "运载火箭总体设计", "description": "火箭箭体结构、动力系统、制导控制等总体方案设计。" },
+            { "id": "upstream-rocket-02", "title": "火箭发动机", "description": "液体/固体发动机及推力室、喷管、涡轮泵等关键部组件。" },
+            { "id": "upstream-rocket-03", "title": "箭体结构与材料", "description": "箭体壳体、贮箱、高强轻质材料与制造工艺。" },
+            { "id": "upstream-rocket-04", "title": "电气与综合电子", "description": "箭载计算机、电源、配电与综合电子系统。" },
+            { "id": "upstream-rocket-05", "title": "伺服机构与执行件", "description": "推力矢量控制、姿控发动机与各类伺服作动器。" },
+            { "id": "upstream-rocket-06", "title": "推进剂", "description": "液体推进剂、固体推进剂配方及加注、储存、运输。" },
+            { "id": "upstream-rocket-07", "title": "总装与测试", "description": "箭体总装、测试与发射前合练流程。" },
+            { "id": "upstream-rocket-08", "title": "可靠性与质量", "description": "可靠性设计、试验验证与全寿命质量管理。" },
+            { "id": "upstream-rocket-09", "title": "回收与可重复使用", "description": "垂直回收、伞降回收等可重复使用技术。" },
+            { "id": "upstream-rocket-10", "title": "运载能力与运载效率", "description": "运载系数、LEO/GTO 运力与多星部署能力。" }
+          ]
+        },
+        {
+          "id": "upstream-satellite",
+          "title": "卫星",
+          "items": [
+            { "id": "upstream-satellite-01", "title": "卫星总体设计", "description": "卫星平台与载荷总体方案、构型与布局。" },
+            { "id": "upstream-satellite-02", "title": "星载电源", "description": "太阳能电池、蓄电池与电源控制。" },
+            { "id": "upstream-satellite-03", "title": "推进与轨道控制", "description": "电推进、化学推进与轨道机动。" },
+            { "id": "upstream-satellite-04", "title": "星务与综合电子", "description": "星务计算机、数据管理与综合电子。" },
+            { "id": "upstream-satellite-05", "title": "通信载荷", "description": "转发器、天线与调制解调。" },
+            { "id": "upstream-satellite-06", "title": "遥感载荷", "description": "光学相机、合成孔径雷达与多光谱载荷。" },
+            { "id": "upstream-satellite-07", "title": "导航载荷", "description": "星载原子钟、信号生成与导航载荷。" },
+            { "id": "upstream-satellite-08", "title": "热控与机构", "description": "热控材料、热管以及太阳翼、天线等展开机构。" }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "midstream",
+      "label": "中游",
+      "categories": [
+        {
+          "id": "midstream-launch-services",
+          "title": "发射服务",
+          "items": [
+            { "id": "midstream-launch-services-01", "title": "星箭测试", "description": "验证卫星与火箭之间的接口、通信和环境适应性，确保顺利发射入轨。" },
+            { "id": "midstream-launch-services-02", "title": "发射场专项检测", "description": "对火箭、卫星和地面系统进行发射前检查，降低故障风险。" },
+            { "id": "midstream-launch-services-03", "title": "火箭燃料", "description": "为火箭提供推进能源，涵盖燃料制备、储存、加注和安全管理等环节。" },
+            { "id": "midstream-launch-services-04", "title": "地面发射设施", "description": "包含发射工位、勤务塔等基建，承担火箭箭体吊装、加注与发射实施。" }
+          ]
+        },
+        {
+          "id": "midstream-ttc-ops",
+          "title": "测控通信与运控",
+          "items": [
+            { "id": "midstream-ttc-ops-01", "title": "地面测控设备", "description": "搭建天地通信链路，实时收发火箭卫星飞行状态数据。" },
+            { "id": "midstream-ttc-ops-02", "title": "在轨监测系统", "description": "卫星在轨全周期健康巡检，故障处置、能源与载荷运维。" },
+            { "id": "midstream-ttc-ops-03", "title": "星座组网管理", "description": "统筹多星轨道排布，协调星间链路，实现卫星星座整体协同运行。" }
+          ]
+        },
+        {
+          "id": "midstream-constellation-ops",
+          "title": "星座运营",
+          "items": [
+            { "id": "midstream-constellation-ops-01", "title": "星座运营", "description": "面向高低轨卫星网络提供组网调度、运行管理和服务保障，支持广域覆盖、持续通信和全球高速连接。" }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "downstream",
+      "label": "下游",
+      "categories": [
+        {
+          "id": "downstream-satcom",
+          "title": "卫星通信",
+          "items": [
+            { "id": "downstream-satcom-01", "title": "通信地面站", "description": "连接用户与卫星网络，提供通信、数据接收和业务接入能力。" },
+            { "id": "downstream-satcom-02", "title": "机载 / 船载 / 车载卫星终端", "description": "搭载于飞机、船舶、车辆，依托卫星实现移动场景全天候通信与定位。" },
+            { "id": "downstream-satcom-03", "title": "通信服务", "description": "提供基于卫星网络的语音、数据、物联网等通信连接服务，保障偏远地区、应急场景等的通信覆盖。" }
+          ]
+        },
+        {
+          "id": "downstream-remote-sensing",
+          "title": "卫星遥感",
+          "items": [
+            { "id": "downstream-remote-sensing-01", "title": "遥感地面站", "description": "接收并处理卫星遥感数据，提供影像产品和增值服务。" },
+            { "id": "downstream-remote-sensing-02", "title": "遥感应用服务", "description": "面向农业、林业、应急、海洋等行业提供遥感监测与决策支持。" }
+          ]
+        },
+        {
+          "id": "downstream-navigation",
+          "title": "卫星导航",
+          "items": [
+            { "id": "downstream-navigation-01", "title": "北斗导航及应用", "description": "北斗系统位置、导航、授时服务及其行业应用。" },
+            { "id": "downstream-navigation-02", "title": "高精度全球导航卫星系统", "description": "PPP/RTK 等高精度导航定位服务及接收机。" }
+          ]
+        },
+        {
+          "id": "downstream-space-computing",
+          "title": "太空算力",
+          "items": [
+            { "id": "downstream-space-computing-01", "title": "太空算力", "description": "星载计算、星座算力调度与在轨智能处理。" }
+          ]
+        }
+      ]
+    }
+  ]
+}

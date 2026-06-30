@@ -1,0 +1,112 @@
+{
+  "$schema": "internal://interactive-guide/test-fixture/v1",
+  "projectId": "guide_surface_validation_001",
+  "frozenAt": "2026-06-30",
+  "purpose": "Spatial baseline (normalized [0,1] coordinates) extracted from legacy surfaceLayers. Atlas + Catalog must reproduce these positions exactly. calibrationStatus = 'confirmed' on every entry.",
+  "panorama": {
+    "assetId": "panorama:商业航天全景图",
+    "assetPath": "nodes/root.jfif",
+    "sha256": "66852813d6a8f31bd37cd4c714063df6135efa05148e4aaabefebfe99c618efa"
+  },
+  "stages": [
+    {
+      "key": "upstream",
+      "label": "上游",
+      "presentation": "html-scene",
+      "sceneAssetId": "scene:rocket-shared",
+      "sceneEntryPath": "index.html",
+      "htmlActivationMessage": {
+        "type": "activate-rocket-scene",
+        "payload": { "stage": "upstream" }
+      }
+    },
+    {
+      "key": "midstream",
+      "label": "中游",
+      "presentation": "panorama",
+      "hotspots": [
+        { "categoryId": "midstream-launch-services",      "label": "发射服务",       "anchor": { "x": 0.21389844048305096, "y": 0.4662216985801561 } },
+        { "categoryId": "midstream-ttc-ops",              "label": "测控通信与运控", "anchor": { "x": 0.4978,              "y": 0.759 } },
+        { "categoryId": "midstream-constellation-ops",    "label": "星座运营",       "anchor": { "x": 0.6274107726103905,  "y": 0.09550102882113361 } }
+      ]
+    },
+    {
+      "key": "downstream",
+      "label": "下游",
+      "presentation": "panorama",
+      "hotspots": [
+        { "categoryId": "downstream-satcom",           "label": "卫星通信", "anchor": { "x": 0.8215874054135477, "y": 0.5395935272655278 } },
+        { "categoryId": "downstream-remote-sensing",    "label": "卫星遥感", "anchor": { "x": 0.9125472142154484, "y": 0.6467549708677452 } },
+        { "categoryId": "downstream-navigation",        "label": "卫星导航", "anchor": { "x": 0.2700,              "y": 0.83 } },
+        { "categoryId": "downstream-space-computing",   "label": "太空算力", "anchor": { "x": 0.8000384414781281, "y": 0.6754738052947167 } }
+      ]
+    }
+  ],
+  "categoryItems": {
+    "midstream-launch-services": [
+      { "itemId": "midstream-launch-services-01", "label": "星箭测试",       "marker": { "x": 0.10963241234470456, "y": 0.5740133157597013 } },
+      { "itemId": "midstream-launch-services-02", "label": "发射场专项检测", "marker": { "x": 0.3105821950701634,  "y": 0.5127087634347777 } },
+      { "itemId": "midstream-launch-services-03", "label": "火箭燃料",       "marker": { "x": 0.23033862337525615, "y": 0.6287454368895425 } },
+      { "itemId": "midstream-launch-services-04", "label": "地面发射设施",   "marker": { "x": 0.1823140508,         "y": 0.5561752 } }
+    ],
+    "midstream-ttc-ops": [
+      { "itemId": "midstream-ttc-ops-01", "label": "地面测控设备",   "marker": { "x": 0.5547466062026444, "y": 0.7920013576196402 } },
+      { "itemId": "midstream-ttc-ops-02", "label": "在轨监测系统",   "marker": { "x": 0.4950743715214466, "y": 0.7557981672134857 } },
+      { "itemId": "midstream-ttc-ops-03", "label": "星座组网管理",   "marker": { "x": 0.437337481451705,  "y": 0.7866915710911868 } }
+    ],
+    "midstream-constellation-ops": [
+      { "itemId": "midstream-constellation-ops-01", "label": "星座运营", "marker": { "x": 0.6259677968837077, "y": 0.06618125787811012 } }
+    ],
+    "downstream-satcom": [
+      { "itemId": "downstream-satcom-01", "label": "通信地面站",                 "marker": { "x": 0.7680273989001094, "y": 0.5154553209002716 } },
+      { "itemId": "downstream-satcom-02", "label": "机载 / 船载 / 车载卫星终端", "marker": { "x": 0.733513838242468,  "y": 0.7408342113078402 } },
+      { "itemId": "downstream-satcom-03", "label": "通信服务",                   "marker": { "x": 0.7419002758854645, "y": 0.612481740666365 } }
+    ],
+    "downstream-remote-sensing": [
+      { "itemId": "downstream-remote-sensing-01", "label": "遥感地面站",     "marker": { "x": 0.827044619213166, "y": 0.5581462142139948 } },
+      { "itemId": "downstream-remote-sensing-02", "label": "遥感应用服务",   "marker": { "x": 0.8986507687383264, "y": 0.6189673786486029 } }
+    ],
+    "downstream-navigation": [
+      { "itemId": "downstream-navigation-01", "label": "北斗导航及应用",             "marker": { "x": 0.2573402489593416, "y": 0.8600633555832108 } },
+      { "itemId": "downstream-navigation-02", "label": "高精度全球导航卫星系统",   "marker": { "x": 0.3305596596762153, "y": 0.8006901233171173 } }
+    ],
+    "downstream-space-computing": [
+      { "itemId": "downstream-space-computing-01", "label": "太空算力", "marker": { "x": 0.8000384414781281, "y": 0.6754738052947167 } }
+    ]
+  },
+  "routes": [
+    {
+      "id": "route-overview-to-rocket",
+      "from": { "kind": "panorama" },
+      "to":   { "kind": "scene", "sceneId": "scene:rocket-shared" },
+      "transition": {
+        "kind": "video",
+        "videoAssetPath": "edges/edge-root-to-rocket.mp4",
+        "videoSha256": "398c6052763aa4e5617ae25d8e3acecebc99c470b3cd0def3ef67c2067e5c75c",
+        "timeoutMs": 8000,
+        "onFailure": "cut"
+      }
+    }
+  ],
+  "calibrationStatus": "confirmed",
+  "outOfScopeItems": [
+    { "itemId": "upstream-rocket-01", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-rocket-02", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-rocket-03", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-rocket-04", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-rocket-05", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-rocket-06", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-rocket-07", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-rocket-08", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-rocket-09", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-rocket-10", "categoryId": "upstream-rocket", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-satellite-01", "categoryId": "upstream-satellite", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-satellite-02", "categoryId": "upstream-satellite", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-satellite-03", "categoryId": "upstream-satellite", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-satellite-04", "categoryId": "upstream-satellite", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-satellite-05", "categoryId": "upstream-satellite", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-satellite-06", "categoryId": "upstream-satellite", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-satellite-07", "categoryId": "upstream-satellite", "note": "已在上游 HTML scene 中体现，无独立空间标注" },
+    { "itemId": "upstream-satellite-08", "categoryId": "upstream-satellite", "note": "已在上游 HTML scene 中体现，无独立空间标注" }
+  ]
+}
