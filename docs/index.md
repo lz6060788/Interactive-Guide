@@ -19,6 +19,7 @@ Last sync: dual-product architecture (2026-06-30)
 |-----|-------------|
 | [重构计划](plans/2026-06-30-dual-product-refactor.md) | Dual-product refactor (Phases 0–8) |
 | [验收基线](development/dual-product-baseline-2026-06-30.md) | Phase 0 acceptance baseline |
+| [端到端验证流程](development/端到端验证流程-2026-06-30.md) | From-scratch end-to-end verification checklist |
 | [实现指导](development/项目设计与实现指导.md) | Implementation guidance |
 | [测试方案](development/后端验收标准与测试方案.md) | Test standards |
 
