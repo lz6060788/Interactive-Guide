@@ -35,6 +35,7 @@ import { createGeneratesRouter } from './routes/generates.js'
 import { createProjectsRouter } from './routes/projects.js'
 import { createAssetsRouter } from './routes/assets.js'
 import { createReleasesRouter } from './routes/releases.js'
+import { createPreviewsRouter } from './routes/previews.js'
 
 // Middleware
 import { errorHandler } from './middleware/error-handler.js'
@@ -74,7 +75,8 @@ app.use('/api', createGeneratesRouter(generateService))
 // Phase 2 routes — GuideProject 2.0 surface
 app.use('/api', createProjectsRouter(projectService))
 app.use('/api', createAssetsRouter(projectService, assetService))
-app.use('/api', createReleasesRouter(releaseRepo))
+app.use('/api', createReleasesRouter(projectRepo, releaseRepo))
+app.use('/api', createPreviewsRouter(projectRepo))
 
 // 404 catch-all for unmatched routes
 app.use((_req, res) => {

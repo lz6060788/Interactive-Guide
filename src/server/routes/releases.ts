@@ -1,12 +1,18 @@
 /**
- * Release routes — placeholder for Phase 6 implementation.
- * Lists existing releases (read-only) and 501s on build.
+ * Release routes — list, read, and build releases.
  */
 import { Router } from 'express'
+import { ProjectRepository } from '../storage/project-repository.js'
 import { ReleaseRepository } from '../storage/release-repository.js'
+import { ReleaseService, ReleaseValidationError } from '../services/release-service.js'
 
-export function createReleasesRouter(repo: ReleaseRepository = new ReleaseRepository()): Router {
+export function createReleasesRouter(
+  projects: ProjectRepository = new ProjectRepository(),
+  repo: ReleaseRepository = new ReleaseRepository(),
+): Router {
   const router = Router()
+  const service = new ReleaseService(projects, repo)
+
   router.get('/projects/:id/releases', (req, res) => {
     const versions = repo.listVersions(String(req.params.id))
     res.json({ data: versions })
@@ -19,11 +25,18 @@ export function createReleasesRouter(repo: ReleaseRepository = new ReleaseReposi
     }
     res.json({ data: manifest })
   })
-  router.post('/projects/:id/releases', (_req, res) => {
-    res.status(501).json({
-      error: 'Release build is implemented in Phase 6 (dual-product atomic release).',
-      code: 'NOT_IMPLEMENTED',
-    })
+  router.post('/projects/:id/releases', (req, res) => {
+    try {
+      const result = service.buildRelease(String(req.params.id))
+      res.json({ data: result })
+    } catch (err) {
+      if (err instanceof ReleaseValidationError) {
+        res.status(400).json({ error: err.message, code: 'VALIDATION_FAILED', failures: err.failures })
+        return
+      }
+      const msg = (err as Error).message
+      res.status(500).json({ error: msg, code: 'BUILD_FAILED' })
+    }
   })
   return router
 }

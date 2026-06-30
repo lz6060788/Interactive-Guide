@@ -14,7 +14,8 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AtlasManifest, CatalogManifest } from '../../products/contracts/manifest-types.js'
+import type { AtlasManifest } from '../../products/atlas/contract/atlas-manifest.js'
+import type { CatalogManifest } from '../../products/catalog/contract/catalog-manifest.js'
 
 export interface ReleaseManifest {
   projectId: string
