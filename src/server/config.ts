@@ -47,6 +47,7 @@ const configSchema = z.object({
   PORT: z.coerce.number().default(8788),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   SERVER_BASE_URL: z.string().default('http://localhost:8788'),
+  DATA_DIR: z.string().default('./data'),
 
   // Vision / LLM Provider (OpenAI-compatible)
   VISION_API_KEY: z.string().min(1, 'VISION_API_KEY is required'),

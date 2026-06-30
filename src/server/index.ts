@@ -12,10 +12,15 @@ import { loadConfig } from './config.js'
 
 // Storage layer
 import { FsRepository } from './storage/fs-repository.js'
+import { ProjectRepository } from './storage/project-repository.js'
+import { AssetRepository } from './storage/asset-repository.js'
+import { ReleaseRepository } from './storage/release-repository.js'
 
 // Business services
 import { GuideService } from './services/guide-service.js'
 import { GenerateService } from './services/generate-service.js'
+import { ProjectService } from './services/project-service.js'
+import { AssetService } from './services/asset-service.js'
 
 // AI modules (imported as modules, not classes)
 import * as visionModule from './ai/vision.js'
@@ -27,6 +32,9 @@ import * as mediaModule from './ai/media.js'
 import { healthRouter } from './routes/health.js'
 import { createGuidesRouter } from './routes/guides.js'
 import { createGeneratesRouter } from './routes/generates.js'
+import { createProjectsRouter } from './routes/projects.js'
+import { createAssetsRouter } from './routes/assets.js'
+import { createReleasesRouter } from './routes/releases.js'
 
 // Middleware
 import { errorHandler } from './middleware/error-handler.js'
@@ -35,9 +43,15 @@ const config = loadConfig()
 
 // ─── Dependency Injection ──────────────────────────────────
 
-const repo = new FsRepository()
-const guideService = new GuideService(repo)
-const generateService = new GenerateService(repo, visionModule, imageModule, videoModule, mediaModule)
+const fsRepo = new FsRepository()
+const guideService = new GuideService(fsRepo)
+const generateService = new GenerateService(fsRepo, visionModule, imageModule, videoModule, mediaModule)
+
+const projectRepo = new ProjectRepository({ dataDir: config.DATA_DIR })
+const assetRepo = new AssetRepository(projectRepo, { dataDir: config.DATA_DIR })
+const releaseRepo = new ReleaseRepository({ dataDir: config.DATA_DIR })
+const projectService = new ProjectService(projectRepo)
+const assetService = new AssetService(projectRepo, assetRepo)
 
 // ─── Express App ──────────────────────────────────────────
 
@@ -57,6 +71,10 @@ app.use('/api/panorama-bundles', express.static(path.resolve('data/panorama-bund
 app.use('/api', healthRouter)
 app.use('/api', createGuidesRouter(guideService))
 app.use('/api', createGeneratesRouter(generateService))
+// Phase 2 routes — GuideProject 2.0 surface
+app.use('/api', createProjectsRouter(projectService))
+app.use('/api', createAssetsRouter(projectService, assetService))
+app.use('/api', createReleasesRouter(releaseRepo))
 
 // 404 catch-all for unmatched routes
 app.use((_req, res) => {

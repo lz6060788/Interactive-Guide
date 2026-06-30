@@ -63,9 +63,29 @@ export function validateReleaseProject(project: GuideProject): ValidationResult 
   checkSceneReferences(project, issues)
   checkRouteReferences(project, issues)
   checkSpatialRanges(project, issues)
+  checkPanoramaAssetBound(project, issues)
   checkCalibrationCompleteness(project, issues)
   checkAtlasCategoryCoverage(project, issues)
   return { ok: issues.length === 0, issues }
+}
+
+function checkPanoramaAssetBound(project: GuideProject, issues: ValidationIssue[]): void {
+  if (!project.panorama.assetId) {
+    issues.push({
+      code: 'PANORAMA_ASSET_MISSING',
+      path: 'panorama.assetId',
+      message: 'release requires panorama.assetId to reference a registered image asset',
+    })
+    return
+  }
+  const def = project.assets.byId[project.panorama.assetId]
+  if (!def || def.kind !== 'image') {
+    issues.push({
+      code: 'PANORAMA_ASSET_INVALID',
+      path: 'panorama.assetId',
+      message: `panorama.assetId "${project.panorama.assetId}" must reference an image asset`,
+    })
+  }
 }
 
 function checkCalibrationCompleteness(project: GuideProject, issues: ValidationIssue[]): void {

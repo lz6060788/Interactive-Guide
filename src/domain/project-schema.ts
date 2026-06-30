@@ -75,7 +75,9 @@ export const ItemSpatialLayoutSchema = z.object({
 })
 
 export const PanoramaModelSchema = z.object({
-  assetId: z.string().min(1),
+  // panorama.assetId may be '' on a freshly-created empty draft; the
+  // release-tier validator (checkPanoramaAsset) rejects empty values.
+  assetId: z.string(),
   coordinateSpace: CoordinateSpaceSchema,
   cameraBounds: CameraBoundsSchema,
   initialViewport: ViewportSchema,
