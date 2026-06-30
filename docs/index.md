@@ -33,6 +33,7 @@ Last sync: `22c6a5a` | 2026-06-23
 
 | Doc | Date |
 |-----|------|
+| [双产品架构重构方案](plans/2026-06-29-双产品架构重构方案.md) | 2026-06-29 |
 | [builtin-transitions-design](plans/2026-05-18-builtin-transitions-design.md) | 2026-05-18 |
 | [builtin-transitions-implementation](plans/2026-05-18-builtin-transitions-implementation.md) | 2026-05-18 |
 | [modal-refactoring-plan](plans/2026-05-18-modal-refactoring-plan.md) | 2026-05-18 |
