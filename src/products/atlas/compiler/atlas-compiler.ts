@@ -55,7 +55,9 @@ export function compileAtlas(
   // Atlas only shows categories whose experience.kind is 'panorama' OR whose
   // scene is included in this release. We include all categories that have a
   // spatial layout, then filter items the same way.
-  const panoramaCategories = normalizedProject.knowledge.stages.flatMap((s) => s.categories)
+  const panoramaCategories = normalizedProject.knowledge.stages.flatMap((s) =>
+    s.categories.map((category) => ({ stageLabel: s.label, category })),
+  )
 
   // Resolve scene reachability: a route is reachable from Atlas if its `from`
   // is panorama or if its target scene is in the project.
@@ -64,13 +66,19 @@ export function compileAtlas(
     (r) => r.from.kind === 'panorama' || ('sceneId' in r.from && sceneIds.has(r.from.sceneId)),
   )
 
-  // Categories: stable order by id
-  const sortedCategories = [...panoramaCategories].sort((a, b) => a.id.localeCompare(b.id))
+  // Categories follow the authored stage/category order so the runtime,
+  // editor and release HTML all agree on "first category / first item"
+  // semantics. Use id only as a deterministic tie-breaker.
+  const sortedCategories = [...panoramaCategories].sort((a, b) => {
+    const orderDelta = (a.category.order ?? 0) - (b.category.order ?? 0)
+    if (orderDelta !== 0) return orderDelta
+    return a.category.id.localeCompare(b.category.id)
+  })
 
   // Items: by category order, then item id
   const allItems: AtlasManifest['items'] = []
   for (const cat of sortedCategories) {
-    for (const itemId of [...cat.itemIds].sort()) {
+    for (const itemId of cat.category.itemIds) {
       const item = normalizedProject.knowledge.items[itemId]
       const layout = normalizedProject.panorama.items[itemId]
       if (!item || !layout?.marker) continue
@@ -82,8 +90,17 @@ export function compileAtlas(
         order: item.order ?? 0,
         ...(item.tags ? { tags: item.tags } : {}),
         marker: { x: layout.marker.x, y: layout.marker.y },
+        ...(layout.viewportOverride ? { viewportOverride: { ...layout.viewportOverride } } : {}),
         ...(layout.callout
-          ? { callout: { dock: layout.callout.dock, target: { ...layout.callout.target } } }
+          ? {
+              callout: {
+                markerPosition: layout.callout.markerPosition,
+                markerGapPx: layout.callout.markerGapPx,
+                ...(layout.callout.minZoom !== undefined
+                  ? { minZoom: layout.callout.minZoom }
+                  : {}),
+              },
+            }
           : {}),
       })
     }
@@ -91,18 +108,25 @@ export function compileAtlas(
 
   // Categories
   const categories: AtlasManifest['categories'] = sortedCategories
-    .filter((c) => normalizedProject.panorama.categories[c.id]?.viewport !== undefined)
+    .filter((c) => normalizedProject.panorama.categories[c.category.id]?.viewport !== undefined)
     .map((c) => {
-      const layout = normalizedProject.panorama.categories[c.id]
+      const layout = normalizedProject.panorama.categories[c.category.id]
       return {
-        id: c.id,
-        title: c.title,
-        order: c.order,
-        ...(c.description ? { description: c.description } : {}),
-        itemIds: [...c.itemIds].sort(),
-        experience: c.experience,
+        id: c.category.id,
+        title: c.category.title,
+        ...(c.stageLabel ? { stageLabel: c.stageLabel } : {}),
+        order: c.category.order,
+        ...(c.category.description ? { description: c.category.description } : {}),
+        itemIds: [...c.category.itemIds],
+        experience: c.category.experience,
         viewport: layout.viewport!,
+        ...(layout.activationZoom !== undefined
+          ? { activationZoom: layout.activationZoom }
+          : {}),
         ...(layout.hotspot ? { hotspot: { ...layout.hotspot } } : {}),
+        ...(layout.hotspotMinZoom !== undefined
+          ? { hotspotMinZoom: layout.hotspotMinZoom }
+          : {}),
       }
     })
 
@@ -164,7 +188,19 @@ export function compileAtlas(
         : {}),
       interaction: normalizedProject.products.atlas.interaction,
       chrome: normalizedProject.products.atlas.chrome ?? {},
-      theme: normalizedProject.products.atlas.theme,
+      theme: {
+        hotspotVariant: normalizedProject.products.atlas.theme.hotspotVariant,
+        calloutVariant: normalizedProject.products.atlas.theme.calloutVariant,
+        ...(normalizedProject.products.atlas.theme.hotspotMinZoom !== undefined
+          ? { hotspotMinZoom: normalizedProject.products.atlas.theme.hotspotMinZoom }
+          : {}),
+        ...(normalizedProject.products.atlas.theme.calloutMinZoom !== undefined
+          ? { calloutMinZoom: normalizedProject.products.atlas.theme.calloutMinZoom }
+          : {}),
+        ...(normalizedProject.products.atlas.theme.itemMarkerMinZoom !== undefined
+          ? { itemMarkerMinZoom: normalizedProject.products.atlas.theme.itemMarkerMinZoom }
+          : {}),
+      },
     },
     integrations: normalizedProject.integrations,
   }

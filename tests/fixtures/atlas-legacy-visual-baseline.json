@@ -1,0 +1,66 @@
+{
+  "source": {
+    "branch": "main",
+    "commit": "c2bcb34",
+    "runtimeFile": "src/runtime/player-core/player-host.ts",
+    "note": "rocket/rocket.html is an HTML scene and is not the Atlas annotation baseline"
+  },
+  "viewport": {
+    "primary": { "width": 375, "height": 808 },
+    "desktop": { "width": 1440, "height": 900 },
+    "maxAnnotationPositionErrorPx": 1
+  },
+  "annotation": {
+    "marker": {
+      "width": 21,
+      "height": 21,
+      "animationDurationMs": 2800,
+      "animationScalePeak": 1.06,
+      "defaultInnerRadius": 4.5,
+      "selectedInnerRadius": 5.5,
+      "selectedColor": "#FF2436"
+    },
+    "chip": {
+      "minWidth": 80,
+      "itemMinWidth": 88,
+      "itemMaxWidth": 240,
+      "height": 36,
+      "paddingX": 12,
+      "paddingY": 8,
+      "borderRadius": 30,
+      "gapToMarker": 6,
+      "fontSize": 16,
+      "fontWeight": 600,
+      "lineHeight": 20,
+      "defaultBackground": "rgba(255, 255, 255, 0.8)",
+      "defaultColor": "rgba(0, 0, 0, 0.84)",
+      "defaultBorder": "1px solid rgba(255, 255, 255, 0.36)",
+      "selectedBackground": "#3366FF",
+      "selectedColor": "#FFFFFF",
+      "shadow": "0 8px 24px rgba(0, 0, 0, 0.08)",
+      "hasConnectorLine": false
+    }
+  },
+  "drawer": {
+    "gap": 14,
+    "padding": [14, 16, 18, 16],
+    "topRadius": 8,
+    "background": "linear-gradient(360deg, #F5F5F5 0%, rgba(255, 255, 255, 0.64) 100%)",
+    "backdropBlurPx": 6,
+    "shadow": "0 -10px 36px rgba(15, 23, 42, 0.12)",
+    "transitionDurationMs": 280,
+    "opacityDurationMs": 220,
+    "card": {
+      "width": 260,
+      "minHeight": 108,
+      "padding": [14, 16],
+      "radius": 12,
+      "gap": 12,
+      "selectedBorder": "2px solid #3366FF",
+      "selectedBackground": "rgba(51, 102, 255, 0.10)",
+      "scrollSnapType": "x proximity",
+      "scrollSettleMs": 140,
+      "scrollLockMs": 420
+    }
+  }
+}

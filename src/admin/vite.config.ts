@@ -1,13 +1,17 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
 
 export default defineConfig({
   plugins: [react()],
-  root: '.',
+  root: process.cwd(),
   resolve: {
+    preserveSymlinks: true,
     alias: {
-      '@shared': path.resolve(__dirname, '../shared'),
+      '@shared': path.resolve(process.cwd(), '../shared'),
+      '@domain': path.resolve(process.cwd(), '../domain'),
+      '@products': path.resolve(process.cwd(), '../products'),
     },
   },
   server: {
@@ -21,5 +25,10 @@ export default defineConfig({
   },
   build: {
     outDir: path.resolve(__dirname, '../../dist/admin'),
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 })

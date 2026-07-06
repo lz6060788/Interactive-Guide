@@ -57,21 +57,27 @@ export const CameraBoundsSchema = z.object({
 })
 
 export const ItemCalloutSchema = z.object({
-  dock: z.enum(['top', 'right', 'bottom', 'left']),
-  target: NormalizedPointSchema,
+  markerPosition: z.enum(['top', 'bottom']),
+  markerGapPx: z.number().int().min(0).max(64),
+  minZoom: z.number().positive().optional(),
 })
 
 export const CategorySpatialLayoutSchema = z.object({
   viewport: ViewportSchema,
   activationZoom: z.number().positive().optional(),
   hotspot: NormalizedPointSchema.optional(),
+  hotspotMinZoom: z.number().positive().optional(),
 })
 
 export const ItemSpatialLayoutSchema = z.object({
   marker: NormalizedPointSchema,
-  focusRect: NormalizedRectSchema,
+  // Catalog-only focus rect. Optional at the project level: catalog items
+  // must provide it (catalog compiler skips items missing focusRect),
+  // atlas-only items can omit it.
+  focusRect: NormalizedRectSchema.optional(),
   viewportOverride: ViewportSchema.optional(),
   callout: ItemCalloutSchema.optional(),
+  markerMinZoom: z.number().positive().optional(),
 })
 
 export const PanoramaModelSchema = z.object({
@@ -132,10 +138,14 @@ export const SceneFocusCommandSchema = z.object({
 })
 
 export const HtmlSceneViewSchema = z.object({
-  id: z.string().min(1),
-  title: z.string().min(1),
+  // id/title/activationMessage.type may be '' while the user is typing
+  // (transient empty state mid-edit). Release-tier validation
+  // (checkUniqueIds / checkSceneReferences) catches dangling refs at
+  // publish time.
+  id: z.string(),
+  title: z.string(),
   activationMessage: z.object({
-    type: z.string().min(1),
+    type: z.string(),
     payload: z.record(z.string(), z.unknown()).optional(),
   }),
   categoryIds: z.array(z.string().min(1)),
@@ -145,7 +155,11 @@ export const HtmlSceneViewSchema = z.object({
 export const HtmlScenePackageSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
-  assetId: z.string().min(1),
+  // assetId may be '' on a freshly-created scene that has not yet been
+  // paired with an uploaded zip bundle. The release-tier validator
+  // (checkSceneAsset in static-validator / project-validator) catches
+  // dangling references at release time.
+  assetId: z.string(),
   protocol: SceneProtocolSchema,
   views: z.array(HtmlSceneViewSchema).min(1),
 })
@@ -164,7 +178,10 @@ export const ProductChromeConfigSchema = z.object({
 
 export const AtlasThemeSchema = z.object({
   hotspotVariant: z.enum(['default', 'highlight', 'minimal']),
-  calloutVariant: z.enum(['line', 'pill', 'none']),
+  calloutVariant: z.enum(['classic', 'connector', 'none']),
+  hotspotMinZoom: z.number().positive().optional(),
+  calloutMinZoom: z.number().positive().optional(),
+  itemMarkerMinZoom: z.number().positive().optional(),
   accentColor: z.string().optional(),
   backgroundColor: z.string().optional(),
   textColor: z.string().optional(),

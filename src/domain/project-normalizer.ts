@@ -91,30 +91,23 @@ export function normalizeProject(
     }
   }
 
-  // item focus defaults
+  // item spatial defaults
+  //   - Always populate `marker` from the category centroid so newly
+  //     added items land somewhere visible in the panorama.
+  //   - `focusRect` is catalog-only; left undefined unless/until the
+  //     catalog inspector populates it.
+  //   - `callout` is optional and editor-driven.
   for (const stage of next.knowledge.stages) {
     for (const category of stage.categories) {
       for (const itemId of category.itemIds) {
         const item: IndustryItem | undefined = next.knowledge.items[itemId]
         if (!item) continue
         const existing: ItemSpatialLayout | undefined = next.panorama.items[itemId]
-        const layout: ItemSpatialLayout = existing ?? {
-          marker: layoutCentroid(next.panorama.categories[category.id]),
-          focusRect: {
-            x: 0.5 - PROJECT_DEFAULTS.panorama.focusRect.width / 2,
-            y: 0.5 - PROJECT_DEFAULTS.panorama.focusRect.height / 2,
-            width: PROJECT_DEFAULTS.panorama.focusRect.width,
-            height: PROJECT_DEFAULTS.panorama.focusRect.height,
-            radius: PROJECT_DEFAULTS.panorama.focusRect.radius,
-            maskOpacity: PROJECT_DEFAULTS.panorama.focusRect.maskOpacity,
-          },
-        }
-        if (layout.focusRect.radius === undefined) {
-          ;(layout.focusRect as { radius?: number }).radius = PROJECT_DEFAULTS.panorama.focusRect.radius
-        }
-        if (layout.focusRect.maskOpacity === undefined) {
-          ;(layout.focusRect as { maskOpacity?: number }).maskOpacity = PROJECT_DEFAULTS.panorama.focusRect.maskOpacity
-        }
+        const layout: ItemSpatialLayout =
+          existing ??
+          ({
+            marker: layoutCentroid(next.panorama.categories[category.id]),
+          } as ItemSpatialLayout)
         next.panorama.items[itemId] = layout
         item.categoryId = category.id
       }
@@ -199,7 +192,7 @@ export function createDraftProject(input: { id: string; title: string; locale?: 
       atlas: {
         enabled: true,
         viewport: { width: 375, height: 808 },
-        theme: { hotspotVariant: 'default', calloutVariant: 'line' },
+        theme: { hotspotVariant: 'default', calloutVariant: 'classic' },
         chrome: {},
         interaction: { wheelZoom: true, dragPan: true, pinchZoom: true, resetCameraEnabled: true },
         categoryIds: [],

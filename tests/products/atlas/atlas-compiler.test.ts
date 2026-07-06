@@ -36,10 +36,12 @@ function sample(): GuideProject {
   }
   p.panorama.categories['cat-up'] = {
     viewport: { centerX: 0.5, centerY: 0.5, zoom: 2 },
+    activationZoom: 3.6,
     hotspot: { x: 0.5, y: 0.5 },
   }
   p.panorama.items['item-1'] = {
     marker: { x: 0.5, y: 0.6 },
+    viewportOverride: { centerX: 0.4, centerY: 0.55, zoom: 2.6 },
     focusRect: { x: 0, y: 0, width: 0.22, height: 0.18 },
   }
   return p
@@ -54,9 +56,12 @@ test('compileAtlas projects project fields into the manifest', () => {
   assert.equal(manifest.panorama.url, './assets/images/asset-pano/image.jpg')
   assert.equal(manifest.categories.length, 1)
   assert.equal(manifest.categories[0].id, 'cat-up')
+  assert.equal(manifest.categories[0].stageLabel, '上游')
   assert.equal(manifest.categories[0].hotspot?.x, 0.5)
+  assert.equal(manifest.categories[0].activationZoom, 3.6)
   assert.equal(manifest.items.length, 1)
   assert.equal(manifest.items[0].marker.y, 0.6)
+  assert.equal(manifest.items[0].viewportOverride?.zoom, 2.6)
 })
 
 test('compileAtlas throws when panorama.assetId is missing', () => {
@@ -73,8 +78,9 @@ test('compileAtlas throws when panorama.assetId points at a non-image', () => {
 
 test('compileAtlas is deterministic: same input → same manifest (key order stable)', () => {
   const p = sample()
-  const a = compileAtlas(p, closure)
-  const b = compileAtlas(p, closure)
+  const now = () => '2026-07-03T00:00:00.000Z'
+  const a = compileAtlas(p, closure, now)
+  const b = compileAtlas(p, closure, now)
   assert.equal(JSON.stringify(a.manifest), JSON.stringify(b.manifest))
 })
 
@@ -99,4 +105,24 @@ test('compileAtlas includes routes reachable from panorama or scene', () => {
   const { manifest } = compileAtlas(p, closure)
   assert.equal(manifest.routes.length, 1)
   assert.equal(manifest.routes[0].id, 'r1')
+})
+
+test('compileAtlas preserves authored category.itemIds order for drawer and first-callout focus', () => {
+  const p = sample()
+  p.knowledge.stages[0].categories[0].itemIds = ['item-2', 'item-1']
+  p.knowledge.items['item-2'] = {
+    id: 'item-2',
+    categoryId: 'cat-up',
+    title: 'Item 2',
+    description: '',
+    order: 1,
+  }
+  p.panorama.items['item-2'] = {
+    marker: { x: 0.25, y: 0.35 },
+    callout: { markerPosition: 'top', markerGapPx: 6 },
+  }
+
+  const { manifest } = compileAtlas(p, closure)
+  assert.deepEqual(manifest.categories[0].itemIds, ['item-2', 'item-1'])
+  assert.deepEqual(manifest.items.map((item) => item.id), ['item-2', 'item-1'])
 })

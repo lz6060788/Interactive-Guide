@@ -71,11 +71,15 @@ export interface CategorySpatialLayout {
   viewport: Viewport
   activationZoom?: number
   hotspot?: NormalizedPoint
+  /** Hide this hotspot when camera zoom falls below this value. */
+  hotspotMinZoom?: number
 }
 
 export interface ItemCallout {
-  dock: 'top' | 'right' | 'bottom' | 'left'
-  target: NormalizedPoint
+  markerPosition: 'top' | 'bottom'
+  markerGapPx: number
+  /** Hide this callout when camera zoom falls below this value. */
+  minZoom?: number
 }
 
 /** Focus rect shape (radius + maskOpacity are visual-only, validated in [0,1] for opacity). */
@@ -86,9 +90,12 @@ export interface NormalizedFocusRect extends NormalizedRect {
 
 export interface ItemSpatialLayout {
   marker: NormalizedPoint
-  focusRect: NormalizedFocusRect
+  /** Catalog-only: required for items exposed in catalog; optional for atlas-only items. */
+  focusRect?: NormalizedFocusRect
   viewportOverride?: Viewport
   callout?: ItemCallout
+  /** Hide this item marker when camera zoom falls below this value. */
+  markerMinZoom?: number
 }
 
 export interface PanoramaModel {
@@ -184,7 +191,13 @@ export interface ProductChromeConfig {
 
 export interface AtlasTheme {
   hotspotVariant: 'default' | 'highlight' | 'minimal'
-  calloutVariant: 'line' | 'pill' | 'none'
+  calloutVariant: 'classic' | 'connector' | 'none'
+  /** Hide hotspots when camera zoom falls below this value. Undefined = always show. */
+  hotspotMinZoom?: number
+  /** Hide callouts when camera zoom falls below this value. Undefined = always show. */
+  calloutMinZoom?: number
+  /** Hide item markers when camera zoom falls below this value. Undefined = always show. */
+  itemMarkerMinZoom?: number
   accentColor?: string
   backgroundColor?: string
   textColor?: string

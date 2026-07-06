@@ -171,7 +171,7 @@ function blankAtlasConfig(): GuideProject['products']['atlas'] {
   return {
     enabled: true,
     viewport: { width: 375, height: 808 },
-    theme: { hotspotVariant: 'default', calloutVariant: 'line' },
+    theme: { hotspotVariant: 'default', calloutVariant: 'classic' },
     chrome: {},
     interaction: { wheelZoom: true, dragPan: true, pinchZoom: true, resetCameraEnabled: true },
     categoryIds: [],

@@ -49,6 +49,7 @@ export interface HtmlSceneManifest {
 export interface CategoryManifestEntry {
   id: string
   title: string
+  stageLabel?: string
   order: number
   description?: string
   itemIds: string[]
@@ -83,14 +84,14 @@ export interface AtlasManifest extends ProductManifestBase {
   product: 'atlas'
   /** Categories shown as hotspots in the Atlas UI. */
   categories: Array<CategoryManifestEntry & { viewport: Viewport; hotspot?: { x: number; y: number } }>
-  items: Array<ItemManifestEntry & { marker: { x: number; y: number }; callout?: { dock: string; target: { x: number; y: number } } }>
+  items: Array<ItemManifestEntry & { marker: { x: number; y: number }; viewportOverride?: Viewport; callout?: { markerPosition: 'top' | 'bottom'; markerGapPx: number; minZoom?: number } }>
   /** Product-level configuration. */
   config: {
     viewport: { width: number; height: number }
     hintText?: string
     interaction: { wheelZoom: boolean; dragPan: boolean; pinchZoom: boolean; resetCameraEnabled: boolean }
     chrome: Record<string, unknown>
-    theme: { hotspotVariant: 'default' | 'highlight' | 'minimal'; calloutVariant: 'line' | 'pill' | 'none' }
+    theme: { hotspotVariant: 'default' | 'highlight' | 'minimal'; calloutVariant: 'classic' | 'connector' | 'none' }
   }
 }
 

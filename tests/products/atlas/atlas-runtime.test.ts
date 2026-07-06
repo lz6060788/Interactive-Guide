@@ -49,6 +49,7 @@ function minimalManifest(): AtlasManifest {
     itemIds: ['item-1'],
     experience: { kind: 'panorama' },
     viewport: { centerX: 0.5, centerY: 0.5, zoom: 2 },
+    activationZoom: 3.6,
     hotspot: { x: 0.5, y: 0.5 },
   }
   const item: AtlasItemEntry = {
@@ -81,7 +82,8 @@ function minimalManifest(): AtlasManifest {
       viewport: { width: 375, height: 808 },
       interaction: { wheelZoom: true, dragPan: true, pinchZoom: true, resetCameraEnabled: true },
       chrome: {},
-      theme: { hotspotVariant: 'default', calloutVariant: 'line' },
+      hintText: '拖动或缩放探索全景图',
+      theme: { hotspotVariant: 'default', calloutVariant: 'classic' },
     },
     integrations: {},
   }
@@ -89,31 +91,76 @@ function minimalManifest(): AtlasManifest {
 
 class FakeEl {
   children: FakeEl[] = []
+  parent: FakeEl | null = null
   dataset: Record<string, string | undefined> = {}
   style: Record<string, string | undefined> = {}
   className = ''
   textContent = ''
   innerHTML = ''
   tagName = 'div'
+  id = ''
+  ownerDocument: Document | null = null
+  listeners = new Map<string, Array<(event?: any) => void>>()
   appendChild<T>(child: T): T {
     this.children.push(child as unknown as FakeEl)
+    const fakeChild = child as unknown as FakeEl
+    fakeChild.ownerDocument = this.ownerDocument
+    fakeChild.parent = this
     return child
   }
-  setAttribute(_k: string, _v: string): void {}
-  getBoundingClientRect(): { left: number; top: number; width: number; height: number } {
-    return { left: 0, top: 0, width: 375, height: 808 }
+  setAttribute(k: string, v: string): void {
+    if (k === 'data-testid') this.dataset.testid = v
+    if (k === 'data-item-id') this.dataset.itemId = v
+    if (k === 'data-category-id') this.dataset.categoryId = v
   }
-  addEventListener(): void {}
-  removeEventListener(): void {}
+  getBoundingClientRect(): { left: number; top: number; width: number; height: number } {
+    const width = Number.parseFloat(this.style.width ?? '') || 260
+    const height = Number.parseFloat(this.style.height ?? '') || 808
+    return { left: 0, top: 0, width, height }
+  }
+  addEventListener(type: string, listener: (event?: any) => void): void {
+    const list = this.listeners.get(type) ?? []
+    list.push(listener)
+    this.listeners.set(type, list)
+  }
+  removeEventListener(type: string, listener: (event?: any) => void): void {
+    const list = this.listeners.get(type) ?? []
+    this.listeners.set(type, list.filter((entry) => entry !== listener))
+  }
+  scrollIntoView(): void {}
+  remove(): void {
+    if (!this.parent) return
+    this.parent.children = this.parent.children.filter((child) => child !== this)
+    this.parent = null
+  }
+  click(): void {
+    for (const listener of this.listeners.get('click') ?? []) {
+      listener({
+        preventDefault() {},
+        stopPropagation() {},
+      })
+    }
+  }
 }
 
 // Minimal DOM stand-ins via a Proxy that returns FakeEl / arrays
-const fakeDocument: Pick<Document, 'createElement' | 'createElementNS'> = {
+const fakeHead = new FakeEl()
+const fakeDocument: Pick<Document, 'createElement' | 'createElementNS' | 'getElementById' | 'head'> = {
+  head: fakeHead as unknown as HTMLHeadElement,
   createElement(tag: string): HTMLElement {
-    return new FakeEl() as unknown as HTMLElement
+    const el = new FakeEl()
+    el.tagName = tag
+    el.ownerDocument = fakeDocument as unknown as Document
+    return el as unknown as HTMLElement
   },
   createElementNS(_ns: string, tag: string): Element {
-    return new FakeEl() as unknown as Element
+    const el = new FakeEl()
+    el.tagName = tag
+    el.ownerDocument = fakeDocument as unknown as Document
+    return el as unknown as Element
+  },
+  getElementById(id: string): HTMLElement | null {
+    return collectAll([fakeHead]).find((node) => node.id === id) as unknown as HTMLElement ?? null
   },
 }
 
@@ -131,12 +178,25 @@ test('AtlasRuntime.loadManifest + mount sets up children', async () => {
   const loader = makeLoader()
   const rt = new AtlasRuntime({ assets: loader })
   const m = minimalManifest()
-  m.items[0].callout = { dock: 'top', target: { x: 0.7, y: 0.2 } }
+  m.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
   rt.loadManifest(m)
-  const container = new FakeEl() as unknown as HTMLElement
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
   await rt.mount(container)
-  // panorama image + 1 hotspot + 1 item marker + 1 callout (svg+label)
-  assert.ok((container as unknown as FakeEl).children.length >= 3)
+  // Mounted DOM has 3 top-level children: transformed panorama layer,
+  // fixed-size overlay layer, and the bottom panel.
+  const kids = (container as unknown as FakeEl).children
+  assert.ok(kids.length >= 3, `expected at least 3 top-level children, got ${kids.length}`)
+  // Verify the testids are present somewhere in the tree (catches a
+  // regression where the viewport layer or panel disappears).
+  const allNodes = collectAll(kids)
+  const testids = new Set(allNodes.map((n) => n.dataset?.testid).filter(Boolean))
+  assert.ok(testids.has('atlas-viewport-layer'), 'viewport layer missing')
+  assert.ok(testids.has('atlas-panorama'), 'panorama image missing')
+  assert.ok(testids.has('atlas-card-drawer'), 'drawer missing')
+  assert.ok(testids.has('atlas-runtime-toolbar'), 'toolbar missing')
+  assert.ok(testids.has('atlas-runtime-hint'), 'hint missing')
   rt.destroy()
 })
 
@@ -144,12 +204,140 @@ test('AtlasRuntime.focusCategory emits analytics:expose and activates marker', a
   const loader = makeLoader()
   const events: AtlasEvent[] = []
   const rt = new AtlasRuntime({ assets: loader })
-  rt.loadManifest(minimalManifest())
+  const manifest = minimalManifest()
+  manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
+  rt.loadManifest(manifest)
   rt.on((e) => events.push(e))
-  const container = new FakeEl() as unknown as HTMLElement
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
   await rt.mount(container)
   rt.focusCategory('cat-1')
   assert.ok(events.some((e) => e.type === 'analytics:expose' && e.target.kind === 'category'))
+  const drawer = findByTestId(containerEl, 'atlas-card-drawer')
+  const card = findByTestId(containerEl, 'atlas-card-item-1')
+  const hotspot = findByTestId(containerEl, 'atlas-hotspot-cat-1')
+  const callout = findByTestId(containerEl, 'atlas-callout-item-1')
+  assert.equal(drawer?.style.opacity, '1')
+  assert.equal(card?.dataset.active, 'true')
+  assert.equal(hotspot?.dataset.active, 'false')
+  assert.equal(callout?.dataset.active, 'true')
+  rt.destroy()
+})
+
+test('AtlasRuntime.focusCategory focuses the default highlighted item with category activationZoom', async () => {
+  const loader = makeLoader()
+  const rt = new AtlasRuntime({ assets: loader })
+  const manifest = minimalManifest()
+  manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
+  manifest.items[0].viewportOverride = { centerX: 0.3, centerY: 0.4, zoom: 2.2 }
+  rt.loadManifest(manifest)
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
+  await rt.mount(container)
+
+  const animateCalls: Array<{ centerX: number; centerY: number; zoom: number }> = []
+  ;(rt as unknown as { camera: { animateTo: (viewport: { centerX: number; centerY: number; zoom: number }) => void } }).camera.animateTo =
+    (viewport) => {
+      animateCalls.push(viewport)
+    }
+
+  rt.focusCategory('cat-1')
+
+  assert.deepEqual(animateCalls[0], {
+    centerX: 0.3,
+    centerY: 0.4,
+    zoom: 3.6,
+  })
+
+  rt.destroy()
+})
+
+test('AtlasRuntime keeps hotspot roots as flex containers when visible', async () => {
+  const loader = makeLoader()
+  const rt = new AtlasRuntime({ assets: loader })
+  const manifest = minimalManifest()
+  rt.loadManifest(manifest)
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
+  await rt.mount(container)
+
+  const hotspot = findByTestId(containerEl, 'atlas-hotspot-cat-1')
+  assert.equal(hotspot?.style.display, 'flex')
+  assert.equal(hotspot?.style.flexDirection, 'column')
+
+  rt.destroy()
+})
+
+test('AtlasRuntime keeps the floating back button visible even before the drawer opens', async () => {
+  const loader = makeLoader()
+  const rt = new AtlasRuntime({ assets: loader })
+  const manifest = minimalManifest()
+  rt.loadManifest(manifest)
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
+  await rt.mount(container)
+
+  const floatingBack = findByTestId(containerEl, 'atlas-runtime-floating-back')
+  assert.equal(floatingBack?.style.display, 'flex')
+  assert.equal(floatingBack?.style.opacity, '1')
+  assert.equal(floatingBack?.style.bottom, '24px')
+
+  rt.destroy()
+})
+
+test('AtlasRuntime hotspot click opens the drawer and item click keeps card state in sync', async () => {
+  const loader = makeLoader()
+  const events: AtlasEvent[] = []
+  const rt = new AtlasRuntime({ assets: loader })
+  const manifest = minimalManifest()
+  manifest.items[0].viewportOverride = { centerX: 0.3, centerY: 0.4, zoom: 3 }
+  manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
+  rt.loadManifest(manifest)
+  rt.on((event) => events.push(event))
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
+  await rt.mount(container)
+
+  const hotspot = findByTestId(containerEl, 'atlas-hotspot-cat-1')
+  hotspot?.children[1]?.click()
+  const drawer = findByTestId(containerEl, 'atlas-card-drawer')
+  const card = findByTestId(containerEl, 'atlas-card-item-1')
+  assert.equal(drawer?.style.opacity, '1')
+  assert.equal(card?.dataset.active, 'true')
+  assert.ok(events.some((event) => event.type === 'hotspotclick' && event.categoryId === 'cat-1'))
+
+  card?.click()
+  assert.ok(events.some((event) => event.type === 'itemclick' && event.itemId === 'item-1'))
+  assert.equal(card?.dataset.active, 'true')
+
+  const closeButton = findByTestId(containerEl, 'atlas-card-drawer-close')
+  closeButton?.click()
+  assert.equal(drawer?.style.opacity, '0')
+  rt.destroy()
+})
+
+test('AtlasRuntime preserves bottom-marker callout order from the legacy runtime', async () => {
+  const loader = makeLoader()
+  const manifest = minimalManifest()
+  manifest.items[0].callout = { markerPosition: 'bottom', markerGapPx: 6 }
+  const rt = new AtlasRuntime({ assets: loader })
+  rt.loadManifest(manifest)
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
+  await rt.mount(container)
+
+  const callout = findByTestId(containerEl, 'atlas-callout-item-1')
+  assert.ok(callout, 'callout missing')
+  assert.equal(callout?.children[0]?.tagName, 'button')
+  assert.equal(callout?.children[1]?.tagName, 'span')
+  assert.equal(callout?.style.flexDirection, 'column')
+
   rt.destroy()
 })
 
@@ -175,11 +363,46 @@ test('AtlasRuntime.openRoute triggers the scene opener for scene targets', async
   ]
   const rt = new AtlasRuntime({ assets: loader })
   rt.loadManifest(m)
-  const container = new FakeEl() as unknown as HTMLElement
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
   await rt.mount(container)
   rt.openRoute('r1')
   assert.equal(loader.events[0], 'open:s-1')
   rt.destroy()
+})
+
+test('AtlasRuntime.mount survives destroy() called during awaited image load', async () => {
+  // Reproduces the race that crashed the editor preview: useEffect cleanup
+  // calls destroy() (sets mountedEl=null) before mount's awaited loadImage
+  // resolves. The fix: mount() checks the destroyed flag after the await
+  // and bails out instead of calling appendChild on null.
+  let resolveLoad!: (img: HTMLImageElement) => void
+  const loader: AtlasRuntimeAssetLoader = {
+    resolveUrl: (u) => u,
+    loadImage: () => new Promise<HTMLImageElement>((res) => { resolveLoad = res }),
+    openScene: () => {},
+  }
+  const rt = new AtlasRuntime({ assets: loader })
+  rt.loadManifest(minimalManifest())
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
+  const mountPromise = rt.mount(container)
+
+  // Simulate cleanup firing before the awaited image resolves.
+  rt.destroy()
+  // Now the deferred image resolves; the awaited body must NOT crash.
+  resolveLoad(fakeImage())
+  await mountPromise
+
+  // No assertion needed beyond "did not throw". If we get here, the
+  // race-condition fix holds. The viewport layer may have been appended
+  // before the destroy (that's OK — the panic we care about was an
+  // appendChild on null after the await).
+  const kids = (container as unknown as FakeEl).children
+  const hasImage = collectAll(kids).some((n) => n.dataset?.testid === 'atlas-panorama')
+  assert.equal(hasImage, false, 'destroyed runtime must not append the panorama image')
 })
 
 test('AtlasRuntime.destroy emits analytics:stay with non-zero duration', async () => {
@@ -189,7 +412,9 @@ test('AtlasRuntime.destroy emits analytics:stay with non-zero duration', async (
   const rt = new AtlasRuntime({ assets: loader, now: () => now })
   rt.loadManifest(minimalManifest())
   rt.on((e) => events.push(e))
-  const container = new FakeEl() as unknown as HTMLElement
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
   await rt.mount(container)
   now = 1500
   rt.destroy()
@@ -200,6 +425,25 @@ test('AtlasRuntime.destroy emits analytics:stay with non-zero duration', async (
 test('AtlasRuntime.mount throws when no manifest is loaded', async () => {
   const loader = makeLoader()
   const rt = new AtlasRuntime({ assets: loader })
-  const container = new FakeEl() as unknown as HTMLElement
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
   await assert.rejects(() => rt.mount(container), /loadManifest/)
 })
+
+// Walk the FakeEl tree depth-first; used to assert on nested testids.
+function collectAll(roots: FakeEl[]): FakeEl[] {
+  const out: FakeEl[] = []
+  const stack = [...roots]
+  while (stack.length > 0) {
+    const n = stack.pop()!
+    out.push(n)
+    if (!Array.isArray(n.children)) continue
+    for (const c of n.children) stack.push(c)
+  }
+  return out
+}
+
+function findByTestId(root: FakeEl, testId: string): FakeEl | undefined {
+  return collectAll([root]).find((node) => node.dataset.testid === testId)
+}

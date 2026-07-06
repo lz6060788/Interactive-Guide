@@ -12,11 +12,14 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["../shared/*"]
+      "@shared/*": ["../shared/*"],
+      "@domain/*": ["../domain/*"],
+      "@products/*": ["../products/*"]
     }
   },
-  "include": ["src/**/*", "../shared/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*", "../shared/**/*.ts", "../domain/**/*.ts", "../products/**/*.ts"],
+  "exclude": ["node_modules", "dist", "src/legacy/**/*"]
 }

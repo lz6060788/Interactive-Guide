@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: dual-product architecture (2026-06-30)
+Last sync: 重构修复 Phase D（进行中）— Atlas 底部横向卡片抽屉与分类/项目联动 (2026-07-06)
 
 ### Modules
 
@@ -17,6 +17,13 @@ Last sync: dual-product architecture (2026-06-30)
 
 | Doc | Description |
 |-----|-------------|
+| [Phase 16 修复](development/phase16-five-fixes-2026-07-01.md) | 拖动缩放 / Hotspot-Callout 一致性 / 删焦点矩形 / 底部详情面板 / Zoom 阈值 (2026-07-01) |
+| [Phase 15 修复](development/phase15-preview-url-hotspot-callout-2026-07-01.md) | AtlasPreview 底图 URL / Hotspot 视觉 / Callout 线+Pin 视觉对齐运行时 (2026-07-01) |
+| [Phase 14 修复](development/phase14-six-detail-fixes-2026-07-01.md) | AtlasRuntime mount 竞态 / IME 输入 / 面包屑 / Hotspot 视觉 / 工具栏激活态 / 画布平移 (2026-07-01) |
+| [Phase 13 修复](development/phase13-hotspot-toolbar-canvas-fixes-2026-07-01.md) | html-bundle 上传去除 / view schema 放宽 / AtlasPreview 占位 / Hotspot 复合 transform / 拖拽禁用 transition / 工具栏边界 (2026-07-01) |
+| [Phase 12 修复](development/phase12-panorama-bind-htmlscene-fix-2026-07-01.md) | "设为底图" 按钮 / HTML 场景 schema 放宽 / 概念说明 (2026-07-01) |
+| [Phase 11 变更](development/phase11-chakra-migration-2026-07-01.md) | Chakra UI 3.35 迁移 / 删除 13 个手写 primitives (2026-07-01) |
+| [Phase 10 变更](development/phase10-hover-settings-htmlscene-canvas-2026-07-01.md) | Hover states / Settings / HTML Scene / 画布直接操作 (2026-07-01) |
 | [重构计划](plans/2026-06-30-dual-product-refactor.md) | Dual-product refactor (Phases 0–8) |
 | [验收基线](development/dual-product-baseline-2026-06-30.md) | Phase 0 acceptance baseline |
 | [端到端验证流程](development/端到端验证流程-2026-06-30.md) | From-scratch end-to-end verification checklist |
@@ -49,6 +56,7 @@ Last sync: dual-product architecture (2026-06-30)
 
 | Doc | Date |
 |-----|------|
+| [重构后续修复与体验恢复计划](plans/2026-07-03-post-refactor-remediation-plan.md) | 2026-07-03 |
 | [双产品架构重构方案](plans/2026-06-29-双产品架构重构方案.md) | 2026-06-29 |
 | [双产品重构实施计划](plans/2026-06-30-dual-product-refactor.md) | 2026-06-30 |
 

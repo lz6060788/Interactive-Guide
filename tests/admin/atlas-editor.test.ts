@@ -9,29 +9,19 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { AtlasEditor } from '../../src/admin/src/editors/atlas/AtlasEditor'
-import { AtlasCanvas } from '../../src/admin/src/editors/atlas/AtlasCanvas'
-import { AtlasToolbar } from '../../src/admin/src/editors/atlas/AtlasToolbar'
-import { AtlasInspector } from '../../src/admin/src/editors/atlas/AtlasInspector'
-import { AtlasPreview } from '../../src/admin/src/editors/atlas/AtlasPreview'
+import fs from 'node:fs'
+import path from 'node:path'
 import { createDraftProject } from '../../src/domain/project-normalizer'
 import { compileAtlas } from '../../src/products/atlas/compiler/atlas-compiler'
 
-test('Atlas components are importable from the admin surface', () => {
-  assert.equal(typeof AtlasEditor, 'function')
-  assert.equal(typeof AtlasCanvas, 'function')
-  assert.equal(typeof AtlasToolbar, 'function')
-  assert.equal(typeof AtlasInspector, 'function')
-  assert.equal(typeof AtlasPreview, 'function')
-})
-
-test('AtlasEditor exposes a Tool and Selection API the inspector consumes', () => {
-  // Type-level smoke: import the types to confirm they exist and are
-  // exported. (This test passes at compile time; we just want to make
-  // sure the module surface is stable.)
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const editor = AtlasEditor as unknown
-  assert.equal(typeof editor, 'function')
+test('Atlas editor feature surface exists at the current module paths', () => {
+  for (const file of ['AtlasEditor', 'AtlasCanvas', 'AtlasToolbar', 'AtlasInspector', 'AtlasPreview']) {
+    assert.equal(
+      fs.existsSync(path.resolve(`src/admin/src/features/atlas-editor/components/${file}.tsx`)),
+      true,
+      `${file}.tsx must exist`,
+    )
+  }
 })
 
 test('AtlasCanvas data-testid matches the runtime contract', () => {

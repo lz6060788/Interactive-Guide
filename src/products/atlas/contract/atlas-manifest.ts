@@ -48,6 +48,7 @@ export interface AtlasHtmlSceneManifest {
 export interface AtlasCategoryEntry {
   id: string
   title: string
+  stageLabel?: string
   order: number
   description?: string
   itemIds: string[]
@@ -55,8 +56,12 @@ export interface AtlasCategoryEntry {
     | { kind: 'panorama' }
     | { kind: 'html-scene'; sceneId: string; viewId: string }
   viewport: Viewport
+  /** Zoom used when hotspot click should focus the category's default callout/item. */
+  activationZoom?: number
   /** Click target on the panorama (normalized [0,1]). */
   hotspot?: { x: number; y: number }
+  /** Hide this hotspot when camera zoom falls below this value. */
+  hotspotMinZoom?: number
 }
 
 export interface AtlasItemEntry {
@@ -67,7 +72,15 @@ export interface AtlasItemEntry {
   order: number
   tags?: string[]
   marker: { x: number; y: number }
-  callout?: { dock: 'top' | 'bottom' | 'left' | 'right'; target: { x: number; y: number } }
+  viewportOverride?: Viewport
+  /** Hide this item marker when camera zoom falls below this value. */
+  markerMinZoom?: number
+  callout?: {
+    markerPosition: 'top' | 'bottom'
+    markerGapPx: number
+    /** Hide this callout when camera zoom falls below this value. */
+    minZoom?: number
+  }
 }
 
 export interface AtlasManifest {
@@ -98,7 +111,13 @@ export interface AtlasManifest {
     chrome: ProductChromeConfig
     theme: {
       hotspotVariant: 'default' | 'highlight' | 'minimal'
-      calloutVariant: 'line' | 'pill' | 'none'
+      calloutVariant: 'classic' | 'connector' | 'none'
+      /** Hide hotspots when camera zoom < this. */
+      hotspotMinZoom?: number
+      /** Hide callouts when camera zoom < this. */
+      calloutMinZoom?: number
+      /** Hide item markers when camera zoom < this. */
+      itemMarkerMinZoom?: number
     }
   }
   integrations: ProjectIntegrations

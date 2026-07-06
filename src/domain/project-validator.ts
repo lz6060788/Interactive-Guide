@@ -428,12 +428,11 @@ function checkSpatialRanges(project: GuideProject, issues: ValidationIssue[]): v
   }
   for (const [itemId, layout] of Object.entries(project.panorama.items)) {
     ensureNormalizedPoint(layout.marker, `panorama.items.${itemId}.marker`, issues)
-    ensureNormalizedRect(layout.focusRect, `panorama.items.${itemId}.focusRect`, issues)
+    if (layout.focusRect) {
+      ensureNormalizedRect(layout.focusRect, `panorama.items.${itemId}.focusRect`, issues)
+    }
     if (layout.viewportOverride) {
       ensureViewport(layout.viewportOverride, `panorama.items.${itemId}.viewportOverride`, issues)
-    }
-    if (layout.callout) {
-      ensureNormalizedPoint(layout.callout.target, `panorama.items.${itemId}.callout.target`, issues)
     }
   }
 }

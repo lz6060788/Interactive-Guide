@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "skills/baoyu-infographic/SKILL.md",
       "computedHash": "d8b7255bd1ac0842fc8b6a4c2f58e395f64c245a11756cea7ef690082e96381f"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "93f53fd1c0352d3d7ec17b8f73d7351bf76f4821e55d123c9d2abc2c53ba48e4"
     }
   }
 }

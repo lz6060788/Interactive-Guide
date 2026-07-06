@@ -1,64 +1,129 @@
 /**
- * AtlasEditorPage — the page that fetches a GuideProject from the API
- * and renders the AtlasEditor.
+ * AtlasEditorPage — the page that loads a project and mounts AtlasEditor.
  *
- * The fetch is intentionally simple — once the project API is wired
- * through ProjectContext (Phase 8), this becomes a thin wrapper.
+ * Layout:
+ *   ┌────────────────────────────────────────────────────┐
+ *   │ TopBar (project title + breadcrumbs)               │
+ *   ├──────────┬─────────────────────────────────────────┤
+ *   │          │ Toolbar                                 │
+ *   │  Struc-  ├────────────────────────────┬────────────┤
+ *   │  ture    │ Canvas                    │ Preview    │
+ *   │          │                           │            │
+ *   │          ├───────────────────────────┴────────────┤
+ *   ├──────────┴─────────────────────────────────────────┤
+ *   │ StatusBar                                          │
+ *   └────────────────────────────────────────────────────┘
  */
-import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { AtlasEditor } from '../editors/atlas/AtlasEditor'
-import type { GuideProject } from '../../../domain/project-types'
+import { useNavigate, useParams } from 'react-router-dom'
+import {
+  Box,
+  Button,
+  EmptyState,
+  Flex,
+  HStack,
+  Text,
+} from '@chakra-ui/react'
+import { Compass, Settings as SettingsIcon } from 'lucide-react'
+import { useProject } from '../features/projects/api'
+import { AtlasEditor } from '../features/atlas-editor/components/AtlasEditor'
+import { useAtlasEditorStore } from '../features/atlas-editor/store'
+import { ApiError } from '../lib/api-client'
+import { PageHeader, StatusFooter, TableSkeleton } from '../components/PageHeader'
 
 export function AtlasEditorPage(): JSX.Element {
-  const { projectId } = useParams<{ projectId: string }>()
-  const [project, setProject] = useState<GuideProject | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const navigate = useNavigate()
+  const { projectId = '' } = useParams<{ projectId: string }>()
+  const projectQuery = useProject(projectId)
+  const isDirty = useAtlasEditorStore((s) => s.dirty)
 
-  useEffect(() => {
-    if (!projectId) return
-    void fetch(`/api/projects/${projectId}`)
-      .then(async (r) => {
-        if (!r.ok) throw new Error(`failed: ${r.status}`)
-        return (await r.json()) as { data: GuideProject }
-      })
-      .then((r) => setProject(r.data))
-      .catch((e: Error) => setError(e.message))
-  }, [projectId])
-
-  async function patch(atlas: GuideProject['products']['atlas'], expectedRevision: number): Promise<void> {
-    if (!project) return
-    setBusy(true)
-    try {
-      const res = await fetch(`/api/projects/${project.id}/products/atlas`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json', 'x-expected-revision': String(expectedRevision) },
-        body: JSON.stringify(atlas),
-      })
-      if (!res.ok) throw new Error(`failed: ${res.status}`)
-      const r = (await res.json()) as { data: GuideProject }
-      setProject(r.data)
-    } finally {
-      setBusy(false)
-    }
+  if (projectQuery.isLoading) {
+    return (
+      <Flex direction="column" h="100vh">
+        <PageHeader crumbs={[{ label: 'Projects', to: '/' }, { label: '加载中…' }]} />
+        <Box flex="1" p="6">
+          <TableSkeleton rows={6} />
+        </Box>
+        <StatusFooter revision={0} isDirty={false} backendOk />
+      </Flex>
+    )
   }
 
-  if (error) return <div style={{ padding: 24, color: '#dc2626' }}>{error}</div>
-  if (!project) return <div style={{ padding: 24 }}>加载中…</div>
+  if (projectQuery.isError) {
+    const err = projectQuery.error
+    const notFound = err instanceof ApiError && err.status === 404
+    return (
+      <Flex direction="column" h="100vh">
+        <PageHeader crumbs={[{ label: 'Projects', to: '/' }, { label: 'Atlas Editor' }]} />
+        <Flex flex="1" align="center" justify="center">
+          <EmptyState.Root maxW="400px">
+            <EmptyState.Indicator>
+              <Compass size={36} strokeWidth={1.25} color="ink.faint" />
+            </EmptyState.Indicator>
+            <EmptyState.Title>
+              {notFound ? `项目 "${projectId}" 不存在` : '加载失败'}
+            </EmptyState.Title>
+            <EmptyState.Description>
+              {notFound
+                ? '可能尚未创建，或 id 拼写错误。返回项目列表重试。'
+                : (err as Error).message}
+            </EmptyState.Description>
+            <Button variant="primary" onClick={() => navigate('/')}>
+              返回项目列表
+            </Button>
+          </EmptyState.Root>
+        </Flex>
+        <StatusFooter revision={0} isDirty={false} backendOk={false} />
+      </Flex>
+    )
+  }
+
+  const project = projectQuery.data!
+  const stageCount = project.knowledge.stages.length
+  const catCount = project.knowledge.stages.reduce((acc, s) => acc + s.categories.length, 0)
+  const itemCount = Object.keys(project.knowledge.items).length
+  const hotspotCount = Object.values(project.panorama.categories).filter((c) => c?.hotspot).length
+
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <header style={{ padding: '8px 16px', borderBottom: '1px solid #e5e7eb' }}>
-        <strong>{project.title}</strong> <small style={{ color: '#6b7280' }}>· Atlas Editor</small>
-        {busy && <span style={{ marginLeft: 12, color: '#6b7280' }}>保存中…</span>}
-      </header>
-      <div style={{ flex: 1 }}>
-        <AtlasEditor
-          project={project}
-          expectedRevision={project.metadata.revision}
-          onPatch={patch}
-        />
-      </div>
-    </div>
+    <Flex direction="column" h="100vh">
+      <PageHeader
+        crumbs={[
+          { label: 'Projects', to: '/' },
+          { label: project.title, to: `/projects/${project.id}/atlas-editor` },
+          { label: 'Atlas Editor' },
+        ]}
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => navigate(`/projects/${project.id}/settings`)}
+            data-testid="btn-open-settings"
+          >
+            <HStack gap="1.5">
+              <SettingsIcon size={14} />
+              Settings
+            </HStack>
+          </Button>
+        }
+      />
+      <Box flex="1" minH="0">
+        <AtlasEditor projectId={project.id} />
+      </Box>
+      <StatusFooter
+        revision={project.metadata.revision}
+        isDirty={isDirty}
+        lastSavedAt={project.metadata.updatedAt}
+        backendOk={!projectQuery.isError}
+        stats={{
+          stages: stageCount,
+          categories: catCount,
+          items: hotspotCount + itemCount,
+        }}
+        leftExtras={
+          <Text color="ink.faint">
+            {hotspotCount} hotspots · {itemCount} items
+          </Text>
+        }
+      />
+    </Flex>
   )
 }

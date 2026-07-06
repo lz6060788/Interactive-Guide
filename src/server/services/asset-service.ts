@@ -11,6 +11,7 @@
 import type { AssetDefinition, GuideProject } from '../../domain/project-types.js'
 import {
   AssetRepository,
+  AssetNotFoundError,
   type RegisterResult,
 } from '../storage/asset-repository.js'
 import { ProjectRepository } from '../storage/project-repository.js'
@@ -82,6 +83,22 @@ export class AssetService {
       r.transition?.assetId === assetId ? { ...r, transition: undefined } : r,
     )
     this.saveBumped(project, next, expectedRevision)
+  }
+
+  /**
+   * Resolves an asset id to its on-disk absolute path. Throws
+   * AssetNotFoundError if either the project or the asset id is missing.
+   */
+  absolutePathFor(projectId: string, assetId: string): string {
+    const project = this.projects.tryGet(projectId)
+    if (!project) {
+      throw new AssetNotFoundError(assetId)
+    }
+    const def = project.assets.byId[assetId]
+    if (!def) {
+      throw new AssetNotFoundError(assetId)
+    }
+    return this.assets.absolutePathFor(projectId, def.sourcePath)
   }
 
   private register(projectId: string, reg: RegisterResult, options: RegisterAssetOptions): AssetDefinition {

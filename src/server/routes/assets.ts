@@ -6,6 +6,7 @@
  * directly.
  */
 import express, { Router, type Request, type Response, type NextFunction } from 'express'
+import fs from 'node:fs'
 import type { ProjectService } from '../services/project-service.js'
 import type { AssetService } from '../services/asset-service.js'
 import { AssetConflictError, RevisionConflictError } from '../services/asset-service.js'
@@ -107,6 +108,38 @@ export function createAssetsRouter(
       res.json({ data: { ok: true } })
     }),
   )
+
+  // GET — stream an asset blob back to the admin (or preview runtime) so the
+  // editor can render the panorama image / play the transition video without
+  // needing direct file-system access. The mime type comes from the asset
+  // definition; missing assets return 404.
+  router.get('/projects/:id/assets/blob/:assetId', handle((req, res) => {
+    const projectId = String(req.params.id)
+    const assetId = String(req.params.assetId)
+    const project = projectService.get(projectId)
+    const def = project.assets.byId[assetId]
+    if (!def) {
+      res.status(404).json({ error: `asset ${assetId} not found`, code: 'NOT_FOUND' })
+      return
+    }
+    let abs: string
+    try {
+      abs = assetService.absolutePathFor(projectId, assetId)
+    } catch (err) {
+      if (err instanceof AssetNotFoundError) {
+        res.status(404).json({ error: err.message, code: 'NOT_FOUND' })
+        return
+      }
+      throw err
+    }
+    if (!fs.existsSync(abs)) {
+      res.status(404).json({ error: 'asset blob missing on disk', code: 'NOT_FOUND' })
+      return
+    }
+    if (def.mimeType) res.setHeader('content-type', def.mimeType)
+    res.setHeader('cache-control', 'private, max-age=300')
+    fs.createReadStream(abs).pipe(res)
+  }))
 
   return router
 }

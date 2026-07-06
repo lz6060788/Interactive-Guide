@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import { createDraftProject, normalizeProject } from '../../src/domain/project-normalizer.js'
 import { PROJECT_DEFAULTS } from '../../src/config/project-defaults.js'
 
+void PROJECT_DEFAULTS
+
 test('normalizeProject fills panorama.cameraBounds and initialViewport from defaults', () => {
   const draft = createDraftProject({ id: 'p1', title: 'T' })
   draft.panorama.assetId = 'asset-pano'
@@ -13,7 +15,7 @@ test('normalizeProject fills panorama.cameraBounds and initialViewport from defa
   assert.equal(normalized.panorama.initialViewport.zoom, PROJECT_DEFAULTS.panorama.minZoom)
 })
 
-test('normalizeProject fills focusRect radius and maskOpacity from defaults', () => {
+test('normalizeProject leaves focusRect undefined for atlas-only items (catalog-only field)', () => {
   const draft = createDraftProject({ id: 'p1', title: 'T' })
   draft.panorama.assetId = 'asset-pano'
   draft.assets.byId['asset-pano'] = { id: 'asset-pano', kind: 'image', sourcePath: 'x' }
@@ -33,9 +35,10 @@ test('normalizeProject fills focusRect radius and maskOpacity from defaults', ()
   }
   const normalized = normalizeProject(draft)
   const item = normalized.panorama.items['item-a']
-  assert.equal(item.focusRect.radius, PROJECT_DEFAULTS.panorama.focusRect.radius)
-  assert.equal(item.focusRect.maskOpacity, PROJECT_DEFAULTS.panorama.focusRect.maskOpacity)
-  assert.equal(item.focusRect.width, PROJECT_DEFAULTS.panorama.focusRect.width)
+  // focusRect is catalog-only; atlas-only items carry no focusRect
+  // until the catalog inspector populates one.
+  assert.equal(item.focusRect, undefined)
+  assert.ok(item.marker, 'marker must still be populated from category centroid')
 })
 
 test('normalizeProject fills product hint texts and viewport animation from defaults', () => {
