@@ -43,7 +43,10 @@ import { MarkerRenderer } from './marker-renderer.js'
 import { CalloutRenderer } from './callout-renderer.js'
 import { SceneLauncher } from './scene-launcher.js'
 import { CardDrawerController } from './card-drawer-controller.js'
-import { ensureAtlasVisualStyles } from './atlas-visual-tokens.js'
+import {
+  ATLAS_BOTTOM_HINT_GRADIENT,
+  ensureAtlasVisualStyles,
+} from './atlas-visual-tokens.js'
 import { TransitionVideoController } from '../../../platform/transition-video/transition-video-controller.js'
 import { HostToolbarDomController } from '../../../platform/chrome/host-toolbar-dom.js'
 import { HOST_SHEET_BACK_ICON_SVG } from '../../../platform/chrome/host-toolbar-icons.js'
@@ -100,6 +103,7 @@ export class AtlasRuntime {
   private viewportLayer: HTMLElement | null = null
   private overlayLayer: HTMLElement | null = null
   private toolbar: HostToolbarDomController | null = null
+  private bottomGradientEl: HTMLElement | null = null
   private hintEl: HTMLElement | null = null
   private floatingBackEl: HTMLButtonElement | null = null
   private transitionController: TransitionVideoController | null = null
@@ -251,6 +255,7 @@ export class AtlasRuntime {
     this.overlayLayer = null
     this.toolbar?.destroy()
     this.toolbar = null
+    this.bottomGradientEl = null
     this.hintEl = null
     this.floatingBackEl = null
     this.transitionOverlayEl = null
@@ -455,6 +460,22 @@ export class AtlasRuntime {
 
   private mountChrome(): void {
     if (!this.manifest || !this.mountedEl) return
+    const bottomGradient = document.createElement('div')
+    bottomGradient.dataset.testid = 'atlas-runtime-bottom-gradient'
+    bottomGradient.style.position = 'absolute'
+    bottomGradient.style.left = '0'
+    bottomGradient.style.right = '0'
+    bottomGradient.style.bottom = '0'
+    bottomGradient.style.height = '86px'
+    bottomGradient.style.display = 'none'
+    bottomGradient.style.pointerEvents = 'none'
+    bottomGradient.style.opacity = '0'
+    bottomGradient.style.transition = 'opacity 220ms ease'
+    bottomGradient.style.zIndex = '21'
+    bottomGradient.style.background = ATLAS_BOTTOM_HINT_GRADIENT
+    this.mountedEl.appendChild(bottomGradient)
+    this.bottomGradientEl = bottomGradient
+
     if (this.manifest.config.chrome.showToolbar !== false) {
       this.toolbar = new HostToolbarDomController({
         root: this.mountedEl,
@@ -473,6 +494,7 @@ export class AtlasRuntime {
             void nav.share({ title: this.manifest?.projectTitle ?? '' }).catch(() => {})
           }
         },
+        showGradient: false,
         testIds: {
           toolbar: 'atlas-runtime-toolbar',
           back: 'atlas-runtime-back',
@@ -505,6 +527,7 @@ export class AtlasRuntime {
     floatingBack.style.height = '32px'
     floatingBack.style.borderRadius = '6.85714px'
     floatingBack.style.background = 'rgba(255, 255, 255, 0.8)'
+    floatingBack.style.color = 'rgba(0, 0, 0, 0.84)'
     floatingBack.style.display = 'none'
     floatingBack.style.alignItems = 'center'
     floatingBack.style.justifyContent = 'center'
@@ -539,6 +562,7 @@ export class AtlasRuntime {
       hint.style.left = '50%'
       hint.style.bottom = '24px'
       hint.style.transform = 'translateX(-50%)'
+      hint.style.display = 'none'
       hint.style.fontWeight = '500'
       hint.style.fontSize = '13px'
       hint.style.lineHeight = '18px'
@@ -546,6 +570,8 @@ export class AtlasRuntime {
       hint.style.whiteSpace = 'nowrap'
       hint.style.textAlign = 'center'
       hint.style.pointerEvents = 'none'
+      hint.style.opacity = '0'
+      hint.style.transition = 'opacity 220ms ease'
       hint.style.zIndex = '22'
       const stagger = ['0s', '0.12s', '0.24s', '0.24s', '0.12s', '0s']
       const arrows = typeof (hint as HTMLElement & { querySelectorAll?: unknown }).querySelectorAll === 'function'
@@ -557,6 +583,7 @@ export class AtlasRuntime {
       })
       this.mountedEl.appendChild(hint)
       this.hintEl = hint
+      this.syncHintChromeVisibility()
     }
   }
 
@@ -618,6 +645,18 @@ export class AtlasRuntime {
     this.floatingBackEl.style.bottom = drawerHeight > 0
       ? `${drawerHeight + 24}px`
       : '24px'
+  }
+
+  private syncHintChromeVisibility(): void {
+    const shouldShow = this.manifest?.config.chrome.showHints !== false && !!this.manifest?.config.hintText
+    if (this.bottomGradientEl) {
+      this.bottomGradientEl.style.display = shouldShow ? 'block' : 'none'
+      this.bottomGradientEl.style.opacity = shouldShow ? '1' : '0'
+    }
+    if (this.hintEl) {
+      this.hintEl.style.display = shouldShow ? 'block' : 'none'
+      this.hintEl.style.opacity = shouldShow ? '1' : '0'
+    }
   }
 
   private viewportForItem(item: AtlasItemEntry): Viewport {

@@ -30,6 +30,7 @@ export interface HostToolbarDomOptions {
   textColor: string
   onBack: () => void
   onShare: () => void
+  showGradient?: boolean
   testIds?: HostToolbarDomTestIds
   zIndexBase?: number
 }
@@ -58,6 +59,7 @@ export class HostToolbarDomController {
     gradient.style.pointerEvents = 'none'
     gradient.style.zIndex = String(zIndexBase - 1)
     gradient.style.background = HOST_TOOLBAR_TOP_GRADIENT
+    gradient.style.display = this.options.showGradient === false ? 'none' : 'block'
 
     const toolbar = document.createElement('div')
     if (this.options.testIds?.toolbar) toolbar.dataset.testid = this.options.testIds.toolbar

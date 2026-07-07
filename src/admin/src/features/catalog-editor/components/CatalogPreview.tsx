@@ -206,30 +206,43 @@ export function CatalogPreview({ project }: { project: GuideProject }): JSX.Elem
               }}
             />
             {activeScene ? (
-              <SceneHostOverlay
-                projectTitle={project.title}
-                activeScene={activeScene}
-                infoOpen={sceneInfoOpen}
-                onClose={closeActiveScene}
-                onShare={handleSceneShare}
-                onOpenInfo={() => setSceneInfoOpen(true)}
-                onCloseInfo={() => setSceneInfoOpen(false)}
+              <div
+                style={{
+                  width: viewport.width,
+                  height: viewport.height,
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  overflow: 'hidden',
+                  transform: `scale(${previewScale})`,
+                  transformOrigin: 'top left',
+                }}
               >
-                <iframe
-                  ref={iframeRef}
-                  title={activeScene.sceneTitle}
-                  src={activeScene.src}
-                  onLoad={handleSceneLoad}
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    border: '0',
-                    background: '#020617',
-                  }}
-                />
-              </SceneHostOverlay>
+                <SceneHostOverlay
+                  projectTitle={project.title}
+                  activeScene={activeScene}
+                  infoOpen={sceneInfoOpen}
+                  onClose={closeActiveScene}
+                  onShare={handleSceneShare}
+                  onOpenInfo={() => setSceneInfoOpen(true)}
+                  onCloseInfo={() => setSceneInfoOpen(false)}
+                >
+                  <iframe
+                    ref={iframeRef}
+                    title={activeScene.sceneTitle}
+                    src={activeScene.src}
+                    onLoad={handleSceneLoad}
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      width: '100%',
+                      height: '100%',
+                      border: '0',
+                      background: '#020617',
+                    }}
+                  />
+                </SceneHostOverlay>
+              </div>
             ) : null}
           </div>
         </div>

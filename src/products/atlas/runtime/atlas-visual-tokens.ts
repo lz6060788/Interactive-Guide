@@ -34,6 +34,8 @@ export const ATLAS_DRAWER_CARD_ACTIVE_BG = 'rgba(51, 102, 255, 0.10)'
 export const ATLAS_DRAWER_SCROLL_SETTLE_MS = 140
 export const ATLAS_DRAWER_SCROLL_LOCK_MS = 420
 export const ATLAS_MARKER_ANIMATION = 'atlas-marker-breathe 2.8s ease-in-out infinite'
+export const ATLAS_BOTTOM_HINT_GRADIENT =
+  'linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.6) 100%)'
 export const ATLAS_MARKER_CLASSIC_SVG =
   '<svg width="21" height="21" viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="10.5" cy="10.5" r="10.25" fill="white" fill-opacity="0.1" stroke="white" stroke-width="0.5"/><circle cx="10.5" cy="10.5" r="4.5" fill="white"/></svg>'
 export const ATLAS_MARKER_SELECTED_SVG =
@@ -49,6 +51,17 @@ export function ensureAtlasVisualStyles(doc: Document): void {
     @keyframes atlas-marker-breathe {
       0%, 100% { transform: scale(1); opacity: 0.96; }
       50% { transform: scale(1.06); opacity: 1; }
+    }
+
+    [data-testid="atlas-card-drawer-list"] {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    [data-testid="atlas-card-drawer-list"]::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
     }
   `
   doc.head?.appendChild(style)

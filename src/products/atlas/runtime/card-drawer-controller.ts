@@ -137,6 +137,9 @@ export class CardDrawerController {
     list.style.display = 'flex'
     list.style.gap = `${ATLAS_DRAWER_GAP_PX}px`
     list.style.overflowX = 'auto'
+    list.style.overflowY = 'hidden'
+    ;(list.style as CSSStyleDeclaration & { msOverflowStyle?: string }).msOverflowStyle = 'none'
+    ;(list.style as CSSStyleDeclaration & { scrollbarWidth?: string }).scrollbarWidth = 'none'
     list.style.scrollSnapType = 'x proximity'
     list.style.paddingBottom = '2px'
     list.style.pointerEvents = 'auto'
