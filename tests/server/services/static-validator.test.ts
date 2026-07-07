@@ -16,12 +16,16 @@ function mkTmp(): string {
 function writeAtlasManifest(dir: string, manifest: object): void {
   const atlasDir = path.join(dir, 'atlas')
   fs.mkdirSync(atlasDir, { recursive: true })
+  fs.writeFileSync(path.join(atlasDir, 'index.html'), '<!doctype html>')
+  fs.writeFileSync(path.join(atlasDir, 'app.js'), 'console.log("atlas")')
   fs.writeFileSync(path.join(atlasDir, 'manifest.json'), JSON.stringify(manifest))
 }
 
 function writeCatalogManifest(dir: string, manifest: object): void {
   const catDir = path.join(dir, 'catalog')
   fs.mkdirSync(catDir, { recursive: true })
+  fs.writeFileSync(path.join(catDir, 'index.html'), '<!doctype html>')
+  fs.writeFileSync(path.join(catDir, 'app.js'), 'console.log("catalog")')
   fs.writeFileSync(path.join(catDir, 'manifest.json'), JSON.stringify(manifest))
 }
 
@@ -90,4 +94,24 @@ test('validateRelease flags missing asset files', () => {
   const report = validateRelease(dir)
   assert.equal(report.ok, false)
   assert.ok(report.failures.some((f) => f.code === 'MISSING_FILE'))
+})
+
+test('validateRelease flags missing shell entry files', () => {
+  const dir = mkTmp()
+  const atlasDir = path.join(dir, 'atlas')
+  const catalogDir = path.join(dir, 'catalog')
+  fs.mkdirSync(atlasDir, { recursive: true })
+  fs.mkdirSync(catalogDir, { recursive: true })
+  fs.writeFileSync(path.join(atlasDir, 'manifest.json'), JSON.stringify({
+    panorama: { url: './assets/images/pano/image.jpg' },
+    scenes: [],
+  }))
+  fs.writeFileSync(path.join(catalogDir, 'manifest.json'), JSON.stringify({
+    panorama: { url: './assets/images/pano/image.jpg' },
+    scenes: [],
+  }))
+  const report = validateRelease(dir)
+  assert.equal(report.ok, false)
+  assert.ok(report.failures.some((f) => f.file?.endsWith(path.join('atlas', 'index.html'))))
+  assert.ok(report.failures.some((f) => f.file?.endsWith(path.join('catalog', 'app.js'))))
 })

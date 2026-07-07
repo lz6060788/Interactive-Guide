@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: 重构修复 Phase D（进行中）— Atlas 底部横向卡片抽屉与分类/项目联动 (2026-07-06)
+Last sync: Phase 17 修复 + SceneBridge / Scene Chrome / Shared Scene Host / SceneHostController / Product Shell Runtime Host / Preview-Release Static Routes / Legacy Asset Release Fix 同步 (2026-07-07)
 
 ### Modules
 
@@ -17,6 +17,7 @@ Last sync: 重构修复 Phase D（进行中）— Atlas 底部横向卡片抽屉
 
 | Doc | Description |
 |-----|-------------|
+| [Phase 17 修复](development/phase17-atlas-html-scene-route-transition-2026-07-06.md) | Atlas HTML Scene category route / transition video / preview scene iframe / navigation save + demo scene 迁移到 SceneBridge v1.0.0 + scene 复用宿主 chrome + Atlas/Catalog 共用 scene host + 平台层 SceneHostController 抽离 + draft/release 宿主页骨架落盘 + preview/release 静态文件路由闭环 + 真实 runtime 宿主接入产物链 + legacy 资产路径发布修复 (2026-07-06 / 2026-07-07) |
 | [Phase 16 修复](development/phase16-five-fixes-2026-07-01.md) | 拖动缩放 / Hotspot-Callout 一致性 / 删焦点矩形 / 底部详情面板 / Zoom 阈值 (2026-07-01) |
 | [Phase 15 修复](development/phase15-preview-url-hotspot-callout-2026-07-01.md) | AtlasPreview 底图 URL / Hotspot 视觉 / Callout 线+Pin 视觉对齐运行时 (2026-07-01) |
 | [Phase 14 修复](development/phase14-six-detail-fixes-2026-07-01.md) | AtlasRuntime mount 竞态 / IME 输入 / 面包屑 / Hotspot 视觉 / 工具栏激活态 / 画布平移 (2026-07-01) |

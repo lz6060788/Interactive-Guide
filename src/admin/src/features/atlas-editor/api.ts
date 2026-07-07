@@ -10,12 +10,19 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../../lib/api-client'
-import type { GuideProject, PanoramaModel, IndustryChain, AtlasProductConfig } from '@domain/project-types'
+import type {
+  GuideProject,
+  PanoramaModel,
+  IndustryChain,
+  AtlasProductConfig,
+  ExperienceNavigation,
+} from '@domain/project-types'
 
 export const atlasKeys = {
   project: (id: string) => ['projects', 'detail', id] as const,
   panorama: (id: string) => ['projects', 'detail', id, 'panorama'] as const,
   atlasConfig: (id: string) => ['projects', 'detail', id, 'atlas-config'] as const,
+  navigation: (id: string) => ['projects', 'detail', id, 'navigation'] as const,
   assetBlob: (id: string, assetId: string) =>
     ['projects', id, 'asset-blob', assetId] as const,
 }
@@ -65,6 +72,21 @@ export function useUpdateAtlasConfig(projectId: string) {
       apiFetch<GuideProject>(`/projects/${projectId}/products/atlas`, {
         method: 'PUT',
         body: input.atlas,
+        expectedRevision: input.expectedRevision,
+      }),
+    onSuccess: (project) => {
+      qc.setQueryData(atlasKeys.project(projectId), project)
+    },
+  })
+}
+
+export function useUpdateNavigation(projectId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { navigation: ExperienceNavigation; expectedRevision: number }) =>
+      apiFetch<GuideProject>(`/projects/${projectId}/navigation`, {
+        method: 'PUT',
+        body: input.navigation,
         expectedRevision: input.expectedRevision,
       }),
     onSuccess: (project) => {

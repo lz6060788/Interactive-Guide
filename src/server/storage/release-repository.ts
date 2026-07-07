@@ -37,6 +37,10 @@ export class ReleaseRepository {
     fs.mkdirSync(this.root, { recursive: true })
   }
 
+  rootDir(): string {
+    return this.root
+  }
+
   releaseDir(projectId: string, version: string): string {
     return path.join(this.root, projectId, version)
   }

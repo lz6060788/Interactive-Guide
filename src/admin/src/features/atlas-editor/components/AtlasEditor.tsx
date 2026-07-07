@@ -26,6 +26,7 @@ import {
   useProject,
   useUpdateAtlasConfig,
   useUpdateKnowledge,
+  useUpdateNavigation,
   useUpdatePanorama,
 } from '../api'
 import { useAtlasEditorStore } from '../store'
@@ -52,6 +53,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
   const updatePanorama = useUpdatePanorama(projectId)
   const updateKnowledge = useUpdateKnowledge(projectId)
   const updateAtlasConfig = useUpdateAtlasConfig(projectId)
+  const updateNavigation = useUpdateNavigation(projectId)
 
   const serverProject = projectQuery.data
 
@@ -60,6 +62,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
   const [pendingPanorama, setPendingPanorama] = useState<boolean>(false)
   const [pendingConfig, setPendingConfig] = useState<boolean>(false)
   const [pendingKnowledge, setPendingKnowledge] = useState<boolean>(false)
+  const [pendingNavigation, setPendingNavigation] = useState<boolean>(false)
 
   useEffect(() => {
     if (serverProject) {
@@ -67,6 +70,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
       setPendingPanorama(false)
       setPendingConfig(false)
       setPendingKnowledge(false)
+      setPendingNavigation(false)
     }
   }, [serverProject])
 
@@ -110,30 +114,50 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
     [setDirty],
   )
 
+  const handlePatchNavigation = useCallback(
+    (mutator: (n: GuideProject['navigation']) => GuideProject['navigation']) => {
+      setDraft((prev) => (prev ? { ...prev, navigation: mutator(prev.navigation) } : prev))
+      setPendingNavigation(true)
+      setDirty(true)
+    },
+    [setDirty],
+  )
+
   const handleSave = async () => {
     if (!draft) return
     setSaveError(null)
-    const rev = draft.metadata.revision
     try {
+      let current = draft
       if (pendingKnowledge) {
-        await updateKnowledge.mutateAsync({
-          knowledge: draft.knowledge,
-          expectedRevision: rev,
+        current = await updateKnowledge.mutateAsync({
+          knowledge: current.knowledge,
+          expectedRevision: current.metadata.revision,
         })
         setPendingKnowledge(false)
       }
       if (pendingPanorama) {
-        await updatePanorama.mutateAsync({ panorama: draft.panorama, expectedRevision: rev })
+        current = await updatePanorama.mutateAsync({
+          panorama: current.panorama,
+          expectedRevision: current.metadata.revision,
+        })
         setPendingPanorama(false)
       }
+      if (pendingNavigation) {
+        current = await updateNavigation.mutateAsync({
+          navigation: current.navigation,
+          expectedRevision: current.metadata.revision,
+        })
+        setPendingNavigation(false)
+      }
       if (pendingConfig) {
-        await updateAtlasConfig.mutateAsync({
-          atlas: draft.products.atlas,
-          expectedRevision: rev,
+        current = await updateAtlasConfig.mutateAsync({
+          atlas: current.products.atlas,
+          expectedRevision: current.metadata.revision,
         })
         setPendingConfig(false)
       }
-      if (pendingKnowledge || pendingPanorama || pendingConfig) {
+      setDraft(current)
+      if (pendingKnowledge || pendingPanorama || pendingConfig || pendingNavigation) {
         setDirty(false)
       }
     } catch (e) {
@@ -209,6 +233,16 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
       const { [categoryId]: _removed, ...rest } = p.categories
       return { ...p, categories: rest }
     })
+    handlePatchNavigation((n) => ({
+      routes: n.routes.filter((route) => {
+        if (route.from.kind === 'panorama' && route.from.categoryId === categoryId) return false
+        if (route.from.kind === 'panorama' && route.from.itemId) {
+          const item = draft?.knowledge.items[route.from.itemId]
+          if (item?.categoryId === categoryId) return false
+        }
+        return true
+      }),
+    }))
     if (selection?.kind === 'category' && selection.id === categoryId) {
       setSelection(null)
     }
@@ -271,6 +305,11 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
       const { [itemId]: _removed, ...rest } = p.items
       return { ...p, items: rest }
     })
+    handlePatchNavigation((n) => ({
+      routes: n.routes.filter(
+        (route) => !(route.from.kind === 'panorama' && route.from.itemId === itemId),
+      ),
+    }))
     if (selection?.kind === 'item' && selection.id === itemId) {
       setSelection(null)
     }
@@ -317,8 +356,12 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
     )
   }
 
-  const isSaving = updatePanorama.isPending || updateAtlasConfig.isPending || updateKnowledge.isPending
-  const isDirty = pendingPanorama || pendingConfig || pendingKnowledge
+  const isSaving =
+    updatePanorama.isPending ||
+    updateAtlasConfig.isPending ||
+    updateKnowledge.isPending ||
+    updateNavigation.isPending
+  const isDirty = pendingPanorama || pendingConfig || pendingKnowledge || pendingNavigation
 
   return (
     <Grid templateColumns="260px 1fr 320px" h="100%" bg="bg">
@@ -345,6 +388,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
           hasUnsavedPanorama={pendingPanorama}
           hasUnsavedConfig={pendingConfig}
           hasUnsavedKnowledge={pendingKnowledge}
+          hasUnsavedNavigation={pendingNavigation}
         />
         {saveError && (
           <Alert.Root
@@ -382,9 +426,11 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
         onPatchAtlasConfig={handlePatchAtlasConfig}
         onPatchPanorama={handlePatchPanorama}
         onPatchKnowledge={handlePatchKnowledge}
+        onPatchNavigation={handlePatchNavigation}
         hasUnsavedConfig={pendingConfig}
         hasUnsavedPanorama={pendingPanorama}
         hasUnsavedKnowledge={pendingKnowledge}
+        hasUnsavedNavigation={pendingNavigation}
         onSaveRequested={() => void handleSave()}
         isSaving={isSaving}
       />

@@ -161,7 +161,21 @@ export class CatalogRuntime {
     const to = route.to
     if (to.kind === 'scene') {
       const scene = this.manifest.scenes.find((s) => s.sceneId === to.sceneId)
-      if (scene) this.sceneLauncher.launch(scene)
+      if (scene) this.sceneLauncher.launch(scene, to.viewId)
+      return
+    }
+    if (to.kind === 'panorama') {
+      if (to.itemId) {
+        this.selectItem(to.itemId)
+        return
+      }
+      if (to.categoryId) {
+        const category = this.findCategoryById(to.categoryId)
+        if (!category) return
+        this.emit({ type: 'categoryfocus', categoryId: category.id, viewport: category.viewport })
+        this.emit({ type: 'analytics:expose', target: { kind: 'category', id: category.id } })
+        this.animateViewport(category.viewport)
+      }
     }
   }
 
@@ -184,6 +198,16 @@ export class CatalogRuntime {
     for (const stage of this.manifest.stages) {
       for (const cat of stage.categories) {
         if (cat.itemIds.includes(itemId)) return cat
+      }
+    }
+    return null
+  }
+
+  private findCategoryById(categoryId: string): CatalogCategoryEntry | null {
+    if (!this.manifest) return null
+    for (const stage of this.manifest.stages) {
+      for (const cat of stage.categories) {
+        if (cat.id === categoryId) return cat
       }
     }
     return null

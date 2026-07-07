@@ -141,6 +141,35 @@ export function createAssetsRouter(
     fs.createReadStream(abs).pipe(res)
   }))
 
+  router.get(/^\/projects\/([^/]+)\/assets\/html-bundle\/([^/]+)\/(.+)$/, handle((req, res) => {
+    const params = req.params as unknown as Record<string, string | undefined>
+    const projectId = String(params['0'] ?? '')
+    const assetId = String(params['1'] ?? '')
+    const rawFilePath = String(params['2'] ?? '')
+    const filePath = String(rawFilePath || '').trim()
+    if (!filePath) {
+      res.status(400).json({ error: 'file path is required', code: 'BAD_REQUEST' })
+      return
+    }
+    let abs: string
+    try {
+      abs = assetService.absoluteHtmlBundleFilePathFor(projectId, assetId, filePath)
+    } catch (err) {
+      if (err instanceof AssetNotFoundError) {
+        res.status(404).json({ error: err.message, code: 'NOT_FOUND' })
+        return
+      }
+      throw err
+    }
+    if (!fs.existsSync(abs)) {
+      res.status(404).json({ error: 'html bundle file missing on disk', code: 'NOT_FOUND' })
+      return
+    }
+    res.setHeader('content-type', mimeForSceneFile(abs))
+    res.setHeader('cache-control', 'private, max-age=300')
+    fs.createReadStream(abs).pipe(res)
+  }))
+
   return router
 }
 
@@ -193,4 +222,20 @@ function pickVideoExt(mime: string, req: Request): string {
   if (mime.includes('quicktime')) return 'mov'
   const fromName = String(req.query.filename ?? '').split('.').pop()
   return fromName || 'mp4'
+}
+
+function mimeForSceneFile(absPath: string): string {
+  const lower = absPath.toLowerCase()
+  if (lower.endsWith('.html')) return 'text/html; charset=utf-8'
+  if (lower.endsWith('.js') || lower.endsWith('.mjs')) return 'text/javascript; charset=utf-8'
+  if (lower.endsWith('.css')) return 'text/css; charset=utf-8'
+  if (lower.endsWith('.json')) return 'application/json; charset=utf-8'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.mp4')) return 'video/mp4'
+  if (lower.endsWith('.webm')) return 'video/webm'
+  return 'application/octet-stream'
 }

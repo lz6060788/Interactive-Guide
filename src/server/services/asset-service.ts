@@ -101,6 +101,18 @@ export class AssetService {
     return this.assets.absolutePathFor(projectId, def.sourcePath)
   }
 
+  absoluteHtmlBundleFilePathFor(projectId: string, assetId: string, filePath: string): string {
+    const project = this.projects.tryGet(projectId)
+    if (!project) {
+      throw new AssetNotFoundError(assetId)
+    }
+    const def = project.assets.byId[assetId]
+    if (!def || def.kind !== 'html-bundle') {
+      throw new AssetNotFoundError(assetId)
+    }
+    return this.assets.absoluteHtmlBundleFilePathFor(projectId, assetId, filePath)
+  }
+
   private register(projectId: string, reg: RegisterResult, options: RegisterAssetOptions): AssetDefinition {
     const project = this.projects.get(projectId)
     if (project.assets.byId[reg.definition.id]) {

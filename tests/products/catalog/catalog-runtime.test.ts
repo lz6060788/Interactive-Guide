@@ -25,7 +25,7 @@ function fakeImage(): HTMLImageElement {
   } as unknown as HTMLImageElement
 }
 
-function makeLoader(opened: { sceneId?: string } = {}): CatalogRuntimeAssetLoader & {
+function makeLoader(opened: { sceneId?: string; viewId?: string } = {}): CatalogRuntimeAssetLoader & {
   events: string[]
 } {
   const events: string[] = []
@@ -33,9 +33,10 @@ function makeLoader(opened: { sceneId?: string } = {}): CatalogRuntimeAssetLoade
     events,
     resolveUrl: (u: string) => u,
     loadImage: async (_url: string) => fakeImage(),
-    openScene: (scene: CatalogHtmlSceneManifest) => {
+    openScene: (scene: CatalogHtmlSceneManifest, viewId?: string) => {
       events.push('open:' + scene.sceneId)
       opened.sceneId = scene.sceneId
+      opened.viewId = viewId
     },
   }
 }
@@ -155,13 +156,14 @@ test('CatalogRuntime.selectItem emits itemselect, analytics:click, and viewport 
 })
 
 test('CatalogRuntime.openRoute triggers the scene opener for scene targets', async () => {
-  const loader = makeLoader()
+  const opened: { sceneId?: string; viewId?: string } = {}
+  const loader = makeLoader(opened)
   const m = minimalManifest()
   m.routes = [
     {
       id: 'r1',
       from: { kind: 'panorama' },
-      to: { kind: 'scene', sceneId: 's-1' },
+      to: { kind: 'scene', sceneId: 's-1', viewId: 'v1' },
       transition: { kind: 'video', assetId: 'v-1', onFailure: 'cut' },
     },
   ]
@@ -180,6 +182,28 @@ test('CatalogRuntime.openRoute triggers the scene opener for scene targets', asy
   await rt.mount(container)
   rt.openRoute('r1')
   assert.equal(loader.events[0], 'open:s-1')
+  assert.equal(opened.viewId, 'v1')
+  rt.destroy()
+})
+
+test('CatalogRuntime.openRoute handles panorama targets by selecting an item', async () => {
+  const loader = makeLoader()
+  const events: CatalogEvent[] = []
+  const m = minimalManifest()
+  m.routes = [
+    {
+      id: 'r-panorama',
+      from: { kind: 'scene', sceneId: 's-1', viewId: 'v1' },
+      to: { kind: 'panorama', itemId: 'item-1' },
+    },
+  ]
+  const rt = new CatalogRuntime({ assets: loader })
+  rt.loadManifest(m)
+  rt.on((event) => events.push(event))
+  const container = new FakeEl() as unknown as HTMLElement
+  await rt.mount(container)
+  rt.openRoute('r-panorama')
+  assert.ok(events.some((event) => event.type === 'itemselect' && event.itemId === 'item-1'))
   rt.destroy()
 })
 

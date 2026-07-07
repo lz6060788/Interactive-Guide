@@ -5,7 +5,7 @@
 `rocket.html` 设计为在 iframe 中由宿主应用加载，存在两个导致无法直接调试的问题：
 
 1. **相对路径依赖**：通过 `./lib/three.module.js` 等相对路径加载 Three.js 模块，直接双击打开文件会因 CORS / 协议限制导致 ES module import 失败。
-2. **初始化依赖 postMessage**：入场动画由宿主发送 `host:node-init` 消息触发。没有宿主，火箭始终停留在屏幕底部的 `idle` 状态，无法交互。
+2. **初始化依赖 postMessage**：入场动画由宿主通过 `SceneBridge v1.0.0` 发送 `host:init` 消息触发。没有宿主，火箭始终停留在屏幕底部的 `idle` 状态，无法交互。
 
 ## 方案概览
 
@@ -47,15 +47,27 @@ npx serve -l 8789
   if (!params.has('debug')) return;
   function sendInit() {
     window.postMessage({
-      channel: 'interactive-guide:html-node-bridge',
+      channel: 'interactive-guide:scene-bridge',
       version: '1.0.0',
       source: 'interactive-guide-host',
       kind: 'event',
-      type: 'host:node-init',
+      type: 'host:init',
       requestId: null,
       payload: {
         activationId: 'debug-' + Date.now(),
-        node: { id: 'rocket' }
+        sessionId: 'debug-session',
+        product: 'atlas',
+        scene: {
+          id: 'debug-scene',
+          title: document.title || 'Debug Scene',
+          entryUrl: window.location.href
+        },
+        runtime: {
+          product: 'atlas',
+          projectId: 'debug-project',
+          sceneId: 'debug-scene',
+          viewId: 'debug-view'
+        }
       }
     }, '*');
   }
@@ -111,7 +123,7 @@ npx serve -l 8789
 ## 5. 交互状态机
 
 ```
-idle ──[node-init]──→ entering ──[动画完成]──→ complete
+idle ──[host:init]──→ entering ──[动画完成]──→ complete
                                                       │
                                               [点击部件]──→ exploded ──[点击部件]──→ focused
                                                                               │
@@ -127,26 +139,18 @@ idle ──[node-init]──→ entering ──[动画完成]──→ complete
 
 ---
 
-## 6. 模拟路由跳转
+## 6. 协议说明
 
-点击带有公司标签的部件会触发 `html:request-route` 消息。调试环境下宿主不响应，控制台会看到超时警告（正常行为）。
+当前 demo scene 已经直接切换到新的 `SceneBridge v1.0.0` 协议，不再保留旧 `interactive-guide:html-node-bridge` 兼容层。
 
-如需调试路由逻辑，可另开一个 Console 监听并模拟回复：
+调试时请按下面的约束理解：
 
-```js
-window.addEventListener('message', function(e) {
-  const d = e.data;
-  if (d && d.channel === 'interactive-guide:html-node-bridge' && d.type === 'html:request-route') {
-    console.log('[调试] 路由请求:', d.payload);
-    window.postMessage({
-      channel: 'interactive-guide:html-node-bridge', version: '1.0.0',
-      source: 'interactive-guide-host', kind: 'response',
-      type: 'html:request-route', requestId: d.requestId,
-      payload: { ok: true, payload: { mocked: true } }
-    }, '*');
-  }
-});
-```
+1. 宿主进入 scene：发送 `host:init`
+2. 宿主离开 scene：发送 `host:exit`
+3. scene 主动请求返回：发送 `scene:request-back`
+4. scene 主动请求路由：发送 `scene:request-route`
+
+另外，旧版 scene 内部的“股票跳转”测试逻辑已经移除，不再需要模拟 `html:request-route` 的旧响应格式。
 
 ---
 

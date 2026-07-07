@@ -1,48 +1,50 @@
-# HTML节点通信协议与接入指南
+# HTML SceneBridge 协议与接入指南
 
 ## 1. 背景与目标
 
-当前运行时已经支持两类节点内容：
+> 2026-07-07 更新：当前项目已经不再使用旧 `interactive-guide:html-node-bridge`。实际生效协议为 `SceneBridge v1.0.0`，代码落点是 `src/platform/scene-bridge/scene-bridge.ts`。下文已经按当前 Atlas/Catalog 双产品架构修正为新协议语义。
 
-- 图片节点：由 `PlayerHost + PlayerCore` 直接渲染与导航。
-- HTML 节点：通过 `iframe` 承载独立 HTML 页面，再由宿主层统一管理显示、热点与切换时序。
+当前运行时已经支持两类场景内容：
 
-随着 HTML 节点承担更多交互逻辑，需要建立一套稳定、可扩展、与渲染核心解耦的通信协议。当前阶段优先落地两个核心能力：
+- 全景场景：由产品 runtime 直接渲染与导航。
+- HTML Scene：通过 `iframe` 承载独立 HTML 页面，再由宿主层统一管理显示、激活与切换时序。
 
-1. HTML 节点可以通知运行时返回到当前节点的上一个节点。
-2. 运行时切换到 HTML 节点后，可以通知该 HTML 节点执行初始化逻辑。
-3. HTML 节点可以把业务路由地址交给宿主，由宿主统一执行页面跳转。
+随着 HTML Scene 承担更多交互逻辑，需要建立一套稳定、可扩展、与产品 runtime 解耦的通信协议。当前阶段优先落地三个核心能力：
+
+1. HTML Scene 可以通知宿主返回上一个全景状态。
+2. 宿主切换到 HTML Scene 后，可以通知该 Scene 执行初始化或退出逻辑。
+3. HTML Scene 可以把 routeId 交给宿主，由宿主统一执行路线跳转。
 
 本设计遵循以下原则：
 
-- `PlayerCore` 只负责导航状态机与转场内核，不感知 `postMessage` 细节。
-- `PlayerHost` 只作为宿主协调层，通过独立 bridge 模块承接 HTML 通信。
+- 产品 runtime 只负责导航状态、转场和顶层 UI，不感知 `postMessage` 细节。
+- Scene 宿主层只作为 iframe 协调层，通过独立 bridge 模块承接 HTML Scene 通信。
 - 通信协议采用统一消息信封，后续新增命令时不需要重做整套链路。
-- HTML 节点只依赖浏览器标准 `window.postMessage`，不强依赖运行时内部对象。
+- HTML Scene 只依赖浏览器标准 `window.postMessage`，不强依赖运行时内部对象。
 
 ## 2. 模块分层
 
 ### 2.1 运行时职责
 
-- `PlayerCore`
-  - 维护 `currentNodeId / history / transition` 等运行时状态。
-  - 提供 `handleBack()`、`handleHotspotClick()` 等导航能力。
+- 产品 Runtime
+  - 维护当前 viewport、active scene、route transition 等运行时状态。
+  - 提供 `openRoute()`、`dismissTransientExperience()` 等导航能力。
   - 不直接监听 `window.message`。
 
-- `PlayerHost`
+- Scene Host
   - 负责 `iframe` 生命周期、显示隐藏、加载就绪判断。
-  - 在 HTML 节点真正成为当前可交互节点后，触发 bridge 发送初始化事件。
-  - 接收 bridge 回调，再委托给 `PlayerCore.handleBack()` 等核心能力。
+  - 在 HTML Scene 真正成为当前可交互场景后，触发 bridge 发送初始化事件。
+  - 接收 bridge 回调，再委托给产品 runtime 执行返回或 route 打开。
 
-- `HtmlNodeBridge`
+- `SceneBridge`
   - 独立封装协议常量、消息解析、来源校验、request/response 分发。
-  - 只暴露 `syncActiveNode()` / `clearActiveNode()` 等宿主级 API。
-  - 保证协议扩展时，`PlayerHost` 不需要继续堆积零散的 `window.message` 分支。
+  - 暴露统一的 envelope / targetOrigin / 类型定义。
+  - 保证协议扩展时，宿主层不需要继续堆积零散的 `window.message` 分支。
 
 ### 2.2 当前落点
 
-- 通信模块：`src/runtime/player-core/html-node-bridge.ts`
-- 宿主接入：`src/runtime/player-core/player-host.ts`
+- 通信模块：`src/platform/scene-bridge/scene-bridge.ts`
+- Atlas 预览宿主接入：`src/admin/src/features/atlas-editor/components/AtlasPreview.tsx`
 
 ## 3. 协议设计
 
@@ -51,10 +53,10 @@
 所有正式消息都使用统一 envelope：
 
 ```ts
-interface HtmlNodeBridgeEnvelope<TType extends string = string, TPayload = unknown> {
-  channel: 'interactive-guide:html-node-bridge'
+interface SceneBridgeEnvelope<TType extends string = string, TPayload = unknown> {
+  channel: 'interactive-guide:scene-bridge'
   version: '1.0.0'
-  source: 'interactive-guide-host' | 'interactive-guide-html-node'
+  source: 'interactive-guide-host' | 'interactive-guide-scene'
   kind: 'event' | 'request' | 'response'
   type: TType
   requestId?: string
@@ -83,33 +85,33 @@ interface HtmlNodeBridgeEnvelope<TType extends string = string, TPayload = unkno
 
 ### 3.2 当前已实现的消息类型
 
-#### A. 宿主 -> HTML 节点
+#### A. 宿主 -> HTML Scene
 
-`host:node-init`
+`host:init`
 
 用途：
 
-- 当 HTML 节点成为当前可交互节点时，通知页面执行初始化逻辑。
-- 该事件会在每次“进入该 HTML 节点”时重新发送一次，而不是只在 iframe 首次 load 时发送。
+- 当 HTML Scene 成为当前可交互场景时，通知页面执行初始化逻辑。
+- 该事件会在每次“进入该 HTML Scene”时重新发送一次，而不是只在 iframe 首次 load 时发送。
 - 这样可以兼容 iframe 缓存复用场景，避免页面只初始化一次导致二次进入状态错误。
 
 消息体：
 
 ```ts
-interface HtmlNodeInitPayload {
+interface SceneBridgeInitPayload {
   activationId: string
   sessionId: string
-  node: {
+  product: 'atlas' | 'catalog'
+  scene: {
     id: string
     title: string
-    htmlUrl?: string
-    imageUrl?: string
-    contentType?: 'image' | 'html'
+    entryUrl: string
   }
   runtime: {
-    currentNodeId: string
-    historyDepth: number
-    canGoBack: boolean
+    product: 'atlas' | 'catalog'
+    projectId: string
+    sceneId: string
+    viewId: string
   }
 }
 ```
@@ -117,119 +119,70 @@ interface HtmlNodeInitPayload {
 字段说明：
 
 - `activationId`
-  - 当前这次进入 HTML 节点的激活 ID。
-  - 同一个 iframe 被反复进入时会变化，HTML 页面可据此判断是否需要重置内部状态。
+- 当前这次进入 HTML Scene 的激活 ID。
+- 同一个 iframe 被反复进入时会变化，HTML 页面可据此判断是否需要重置内部状态。
 - `sessionId`
   - 宿主实例 ID，用于后续扩展多实例调试或埋点。
-- `node`
-  - 当前节点的基础信息。
+- `scene`
+  - 当前 HTML Scene 的基础信息。
 - `runtime`
-  - 当前运行时状态摘要，方便 HTML 节点按需显示“是否可返回”等 UI。
+  - 当前运行时状态摘要，方便 HTML Scene 按需显示当前产品、项目和视图上下文。
 
-#### B. HTML 节点 -> 宿主
+#### B. HTML Scene -> 宿主
 
-`html:request-back`
+`scene:request-back`
 
 用途：
 
-- HTML 节点请求运行时返回历史栈中的上一节点。
-- 最终仍然走 `PlayerCore.handleBack()`，不会绕过运行时既有导航链路。
+- HTML Scene 请求宿主返回全景场景。
+- 最终仍然走产品 runtime 的关闭 / 返回链路，不绕过既有导航逻辑。
 
 请求体：
 
 ```ts
-interface HtmlNodeBackRequestPayload {
-  reason?: string
-}
-```
-
-响应体：
-
-```ts
-{
-  ok: boolean
-  payload: {
-    handled: boolean
-    runtime: {
-      currentNodeId: string
-      historyDepth: number
-      canGoBack: boolean
-    }
-  } | {
-    message: string
-  }
-}
+interface SceneBridgeBackRequestPayload {}
 ```
 
 语义说明：
 
-- `ok = true`
-  - 表示宿主已经成功处理该请求。
-- `payload.handled = false`
-  - 表示请求本身合法，但当前没有上一节点可退回。
-- `ok = false`
-  - 表示宿主处理过程出现异常。
+- 当前 AtlasPreview 实现里，`scene:request-back` 是单向请求：宿主收到后直接关闭 iframe scene，并向场景回发 `host:exit`。
 
-`html:request-route`
+`scene:request-route`
 
 用途：
 
-- HTML 节点把业务路由地址交给宿主执行跳转。
+- HTML Scene 把 routeId 交给宿主执行跳转。
 - 页面本身不直接修改顶层 `window.location`，从而保持与运行时宿主解耦。
-- 适用于点击股票标的、业务卡片等需要跳出当前节点上下文的场景。
+- 适用于从 scene 请求进入另一个场景或路线的场景。
 
 请求体：
 
 ```ts
-interface HtmlNodeRouteRequestPayload {
-  route: string
-  reason?: string
+interface SceneBridgeRouteRequestPayload {
+  routeId: string
   openMode?: 'current-tab' | 'new-tab'
 }
 ```
 
-响应体：
-
-```ts
-{
-  ok: boolean
-  payload: {
-    handled: boolean
-    route: string
-    openMode: 'current-tab' | 'new-tab'
-  } | {
-    message: string
-  }
-}
-```
-
 语义说明：
 
-- `route`
-  - HTML 页面希望宿主打开的业务路由，既可以是绝对 URL，也可以是如 `client.html?...` 这样的宿主内路由地址。
+- `routeId`
+  - HTML Scene 希望宿主打开的路线 ID，由 Atlas/Catalog runtime 在 manifest 里解析。
 - `openMode`
   - `current-tab` 表示优先在当前页跳转。
   - `new-tab` 表示优先由宿主新开页。
-- `payload.handled = false`
-  - 表示宿主收到请求，但由于策略限制或浏览器拦截等原因，没有真正执行跳转。
 
 ### 3.3 兼容策略
 
-为避免已有 HTML 节点立即失效，运行时仍兼容旧消息：
-
-```ts
-{ type: 'hotspot-click', edgeId: string }
-```
-
-该旧消息依然只对“当前激活中的 HTML iframe”生效。后续新接入建议统一迁移到正式协议 envelope。
+当前 demo scene 已经直接迁移到新协议，不再保留旧 `interactive-guide:html-node-bridge` 兼容层。新接入请直接使用 `SceneBridge v1.0.0`。
 
 ## 4. 生命周期与时序
 
 ### 4.1 HTML 节点初始化时机
 
-`host:node-init` 不是在 iframe `load` 事件一触发就发送，而是在以下条件同时满足后发送：
+`host:init` 不是在 iframe `load` 事件一触发就发送，而是在以下条件同时满足后发送：
 
-1. 当前节点的 `contentType === 'html'`
+1. 当前产品当前激活内容为 HTML Scene
 2. 对应 iframe 已加载完成
 3. 当前不处于切换动画遮挡阶段
 4. 该 iframe 已被宿主判定为当前激活节点
@@ -241,39 +194,33 @@ interface HtmlNodeRouteRequestPayload {
 
 ### 4.2 返回请求时机
 
-HTML 页面在任意用户操作后都可以发 `html:request-back`。宿主会先校验消息来源是否为当前激活 iframe，再决定是否调用 `PlayerCore.handleBack()`。
-
-如果当前没有历史栈可回退：
-
-- 不报错
-- 返回 `ok: true`
-- 但 `handled: false`
+HTML 页面在任意用户操作后都可以发 `scene:request-back`。宿主会先校验消息来源是否为当前激活 iframe，再决定是否关闭 scene overlay 并回发 `host:exit`。
 
 ## 5. 实现要点
 
 ### 5.1 解耦方式
 
-本次实现没有让 `PlayerCore` 直接依赖 `window` 或 `postMessage`，而是采用：
+本次实现没有让产品 runtime 直接依赖具体 scene 代码，而是采用：
 
 ```text
 HTML iframe
-  -> HtmlNodeBridge
-  -> PlayerHost
-  -> PlayerCore
+  -> SceneBridge
+  -> Scene Host
+  -> Product Runtime
 ```
 
 这样带来的好处：
 
 - 协议层变化不会污染核心导航内核。
-- 未来新增 `html:request-navigate-by-edge`、`html:report-ready`、`host:update-context` 等能力时，只需要扩展 bridge。
+- 未来新增 `scene:request-focus-item`、`scene:event-ready`、`host:update-context` 等能力时，只需要扩展 bridge。
 - 未来继续新增业务动作时，HTML 页面只需要继续发正式协议请求，不需要直接依赖宿主实现细节。
-- 预览模式与独立运行时模式天然复用同一套桥接逻辑，因为它们都共用 `PlayerHost`。
+- 预览模式与独立运行时模式天然复用同一套桥接逻辑，因为它们都共用 `SceneBridge`。
 
 ### 5.2 消息来源校验
 
-`HtmlNodeBridge` 会校验：
+`SceneBridge` 会校验：
 
-- `channel` 是否为 `interactive-guide:html-node-bridge`
+- `channel` 是否为 `interactive-guide:scene-bridge`
 - `version` 是否为 `1.0.0`
 - `source` 是否为约定值
 - `event.source` 是否等于当前激活 iframe 的 `contentWindow`
@@ -285,7 +232,7 @@ HTML iframe
 
 ### 5.3 初始化去重
 
-宿主会给每次进入 HTML 节点生成新的 `activationId`。bridge 只在新的激活周期内发一次 `host:node-init`，避免同一轮渲染重复下发初始化事件。
+宿主会给每次进入 HTML Scene 生成新的 `activationId`。bridge 只在新的激活周期内发一次 `host:init`，避免同一轮渲染重复下发初始化事件。
 
 ## 6. HTML 节点接入指南
 
@@ -297,9 +244,9 @@ HTML 页面只需要监听父窗口消息，并在需要时调用 `window.parent
 
 ```html
 <script>
-  const CHANNEL = 'interactive-guide:html-node-bridge'
+  const CHANNEL = 'interactive-guide:scene-bridge'
   const VERSION = '1.0.0'
-  const HTML_SOURCE = 'interactive-guide-html-node'
+  const HTML_SOURCE = 'interactive-guide-scene'
 
   function buildEnvelope(kind, type, payload, requestId) {
     return {
@@ -330,21 +277,21 @@ HTML 页面只需要监听父窗口消息，并在需要时调用 `window.parent
 
   window.addEventListener('message', (event) => {
     const data = event.data
-    if (!data || data.channel !== 'interactive-guide:html-node-bridge') return
+    if (!data || data.channel !== 'interactive-guide:scene-bridge') return
     if (data.version !== '1.0.0') return
     if (data.source !== 'interactive-guide-host') return
     if (data.kind !== 'event') return
 
-    if (data.type === 'host:node-init') {
+    if (data.type === 'host:init') {
       currentActivationId = data.payload?.activationId ?? null
 
       const runtime = data.payload?.runtime
-      const node = data.payload?.node
+      const scene = data.payload?.scene
 
-      console.log('HTML 节点初始化', {
+      console.log('HTML Scene 初始化', {
         activationId: currentActivationId,
-        nodeId: node?.id,
-        canGoBack: runtime?.canGoBack,
+        sceneId: scene?.id,
+        product: runtime?.product,
       })
 
       initHtmlNode(data.payload)
@@ -355,7 +302,7 @@ HTML 页面只需要监听父窗口消息，并在需要时调用 `window.parent
     // 在这里做每次进入节点都需要执行的事情：
     // 1. 重置滚动位置
     // 2. 重启节点内动画
-    // 3. 根据 runtime.canGoBack 刷新返回按钮状态
+    // 3. 根据 runtime.product / viewId 刷新顶部状态
     // 4. 拉起节点内局部数据初始化
   }
 <\/script>
@@ -371,27 +318,21 @@ HTML 页面只需要监听父窗口消息，并在需要时调用 `window.parent
     return new Promise((resolve, reject) => {
       const handleMessage = (event) => {
         const data = event.data
-        if (!data || data.channel !== 'interactive-guide:html-node-bridge') return
+        if (!data || data.channel !== 'interactive-guide:scene-bridge') return
         if (data.version !== '1.0.0') return
         if (data.source !== 'interactive-guide-host') return
-        if (data.kind !== 'response') return
-        if (data.type !== 'html:request-back') return
-        if (data.requestId !== requestId) return
+        if (data.kind !== 'event') return
+        if (data.type !== 'host:exit') return
 
         window.removeEventListener('message', handleMessage)
 
-        if (data.payload?.ok === false) {
-          reject(new Error(data.payload?.payload?.message || '返回失败'))
-          return
-        }
-
-        resolve(data.payload?.payload)
+        resolve(data.payload)
       }
 
       window.addEventListener('message', handleMessage)
 
       window.parent.postMessage(
-        buildEnvelope('request', 'html:request-back', { reason }, requestId),
+        buildEnvelope('request', 'scene:request-back', { reason }, requestId),
         '*',
       )
     })
@@ -399,50 +340,47 @@ HTML 页面只需要监听父窗口消息，并在需要时调用 `window.parent
 
   async function onBackButtonClick() {
     const result = await requestBack()
-    if (!result?.handled) {
-      console.log('当前没有可返回的上一节点')
-    }
+    console.log('scene 已收到宿主退出事件', result)
   }
 <\/script>
 ```
 
 ### 6.4 接入建议
 
-- 把“节点进入初始化”逻辑统一放到 `host:node-init` 里，不要只依赖页面首次 `DOMContentLoaded`。
-- 如果页面里有自定义返回按钮，统一调用 `html:request-back`，不要自己猜测上一节点 URL。
-- 如果页面里有业务跳转入口，统一调用 `html:request-route`，由宿主决定当前页跳转还是新开页。
-- 如果页面内部已经有热点跳转逻辑，短期仍可沿用旧 `hotspot-click`，但新页面建议逐步迁移到正式 envelope 协议。
-- 页面内部如果有定时器、视频、动画状态，建议在每次 `host:node-init` 时做一次显式重置。
+- 把“场景进入初始化”逻辑统一放到 `host:init` 里，不要只依赖页面首次 `DOMContentLoaded`。
+- 如果页面里有自定义返回按钮，统一调用 `scene:request-back`，不要自己猜测宿主 URL。
+- 如果页面里有业务跳转入口，统一调用 `scene:request-route`，由宿主决定如何解析 routeId。
+- 页面内部如果有定时器、视频、动画状态，建议在每次 `host:init` 时做一次显式重置，并在 `host:exit` 时收尾。
 
 ## 7. 后续可扩展方向
 
 当前协议已经为以下能力预留了扩展空间：
 
-- `html:request-navigate-by-edge`
-  - HTML 页面按 edgeId 请求沿现有边导航。
-- `html:request-get-runtime-state`
-  - HTML 页面主动拉取当前运行时摘要。
-- `html:event-ready`
-  - HTML 页面声明“节点内部资源已就绪”，供宿主决定是否继续交互或清理 loading。
+- `scene:request-focus-item`
+  - HTML Scene 请求宿主高亮某个知识项。
+- `scene:request-get-runtime-state`
+  - HTML Scene 主动拉取当前运行时摘要。
+- `scene:event-ready`
+  - HTML Scene 声明“场景内部资源已就绪”，供宿主决定是否继续交互或清理 loading。
 - `host:update-context`
   - 宿主在不重进节点的情况下，向 HTML 页面推送运行时上下文变更。
 
 扩展时只需：
 
-1. 在 `html-node-bridge.ts` 中新增消息类型与 payload 类型。
+1. 在 `scene-bridge.ts` 中新增消息类型与 payload 类型。
 2. 在 bridge 的 request 分发中增加处理器。
 3. 在文档中补充消息契约。
 
-不需要直接修改 `PlayerCore` 的状态机设计。
+不需要直接修改产品 runtime 的核心状态机设计。
 
 ## 8. 本次实现结论
 
 本次方案已经实现：
 
-- HTML 节点通过正式协议请求“返回上一节点”
-- HTML 节点通过正式协议把业务路由交给宿主执行跳转
-- 运行时在切换到 HTML 节点后发送初始化事件
+- HTML Scene 通过正式协议请求“返回全景”
+- HTML Scene 通过正式协议把 routeId 交给宿主执行跳转
+- 宿主在切换到 HTML Scene 后发送初始化事件，并在退出时发送 `host:exit`
 - 协议封装为独立 bridge 模块，避免通信逻辑和渲染核心耦合
-- 保留旧 `hotspot-click` 兼容入口，降低已有页面迁移成本
+- demo scene 已直接迁移到新协议，不再保留旧 bridge 兼容层
 
-这为后续扩展 HTML 富交互节点打下了稳定基础，同时仍然保持 `PlayerHost` 与 `PlayerCore` 的分层边界不被破坏。
+这为后续扩展 HTML 富交互场景打下了稳定基础，同时仍然保持 scene 宿主层与产品 runtime 的分层边界不被破坏。

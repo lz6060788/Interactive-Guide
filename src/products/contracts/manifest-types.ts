@@ -41,6 +41,7 @@ export interface HtmlSceneManifest {
     id: string
     title: string
     activationMessage: { type: string; payload?: Record<string, unknown> }
+    chrome?: { textColor?: string }
   }>
   /** Bridge protocol used by this scene (always 1.0.0 in Phase 1-5). */
   protocol: { channel: 'interactive-guide:scene-bridge'; version: '1.0.0' }

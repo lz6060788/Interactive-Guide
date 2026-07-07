@@ -372,6 +372,66 @@ test('AtlasRuntime.openRoute triggers the scene opener for scene targets', async
   rt.destroy()
 })
 
+test('AtlasRuntime hotspot click opens html-scene categories through their panorama route', async () => {
+  const loader = makeLoader()
+  const manifest = minimalManifest()
+  manifest.categories[0].experience = { kind: 'html-scene', sceneId: 's-1', viewId: 'view-1' }
+  manifest.routes = [
+    {
+      id: 'route-panorama-category-cat-1-to-scene',
+      from: { kind: 'panorama', categoryId: 'cat-1' },
+      to: { kind: 'scene', sceneId: 's-1', viewId: 'view-1' },
+    },
+  ]
+  manifest.scenes = [
+    {
+      sceneId: 's-1',
+      title: 'Scene 1',
+      entryUrl: './scenes/s-1/index.html',
+      views: [{ id: 'view-1', title: 'V', activationMessage: { type: 'init' } }],
+      protocol: { channel: 'interactive-guide:scene-bridge', version: '1.0.0' },
+    },
+  ]
+  const rt = new AtlasRuntime({ assets: loader })
+  rt.loadManifest(manifest)
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
+  await rt.mount(container)
+
+  const hotspot = findByTestId(containerEl, 'atlas-hotspot-cat-1')
+  hotspot?.children[1]?.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.equal(loader.events.at(-1), 'open:s-1')
+  rt.destroy()
+})
+
+test('AtlasRuntime.openRoute handles panorama targets by focusing the requested item', async () => {
+  const loader = makeLoader()
+  const events: AtlasEvent[] = []
+  const manifest = minimalManifest()
+  manifest.routes = [
+    {
+      id: 'route-scene-back-to-item',
+      from: { kind: 'scene', sceneId: 's-1', viewId: 'view-1' },
+      to: { kind: 'panorama', itemId: 'item-1' },
+    },
+  ]
+  const rt = new AtlasRuntime({ assets: loader })
+  rt.loadManifest(manifest)
+  rt.on((event) => events.push(event))
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  const container = containerEl as unknown as HTMLElement
+  await rt.mount(container)
+
+  rt.openRoute('route-scene-back-to-item')
+
+  assert.ok(events.some((event) => event.type === 'itemclick' && event.itemId === 'item-1'))
+  rt.destroy()
+})
+
 test('AtlasRuntime.mount survives destroy() called during awaited image load', async () => {
   // Reproduces the race that crashed the editor preview: useEffect cleanup
   // calls destroy() (sets mountedEl=null) before mount's awaited loadImage

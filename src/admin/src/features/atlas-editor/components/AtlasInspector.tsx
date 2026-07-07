@@ -31,6 +31,8 @@ import type {
   ItemSpatialLayout,
   ItemCallout,
   CategoryExperienceBinding,
+  ExperienceNavigation,
+  AssetDefinition,
 } from '@domain/project-types'
 import {
   Box,
@@ -62,9 +64,13 @@ interface Props {
   onPatchAtlasConfig: (mutator: (cfg: AtlasProductConfig) => AtlasProductConfig) => void
   onPatchPanorama: (mutator: (p: GuideProject['panorama']) => GuideProject['panorama']) => void
   onPatchKnowledge: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
+  onPatchNavigation: (
+    mutator: (n: GuideProject['navigation']) => GuideProject['navigation'],
+  ) => void
   hasUnsavedConfig: boolean
   hasUnsavedPanorama: boolean
   hasUnsavedKnowledge: boolean
+  hasUnsavedNavigation: boolean
   onSaveRequested: () => void
   isSaving: boolean
 }
@@ -75,9 +81,11 @@ export function AtlasInspector({
   onPatchAtlasConfig,
   onPatchPanorama,
   onPatchKnowledge,
+  onPatchNavigation,
   hasUnsavedConfig,
   hasUnsavedPanorama,
   hasUnsavedKnowledge,
+  hasUnsavedNavigation,
   onSaveRequested,
   isSaving,
 }: Props): JSX.Element {
@@ -115,7 +123,8 @@ export function AtlasInspector({
           categoryId={selection.id}
           onPatchPanorama={onPatchPanorama}
           onPatchKnowledge={onPatchKnowledge}
-          hasUnsaved={hasUnsavedPanorama || hasUnsavedKnowledge}
+          onPatchNavigation={onPatchNavigation}
+          hasUnsaved={hasUnsavedPanorama || hasUnsavedKnowledge || hasUnsavedNavigation}
           onSaveRequested={onSaveRequested}
           isSaving={isSaving}
         />
@@ -388,6 +397,9 @@ interface CategoryInspectorProps {
   onPatchKnowledge: (
     mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge'],
   ) => void
+  onPatchNavigation: (
+    mutator: (n: GuideProject['navigation']) => GuideProject['navigation'],
+  ) => void
   hasUnsaved: boolean
   onSaveRequested: () => void
   isSaving: boolean
@@ -398,6 +410,7 @@ function CategoryInspector({
   categoryId,
   onPatchPanorama,
   onPatchKnowledge,
+  onPatchNavigation,
   hasUnsaved,
   onSaveRequested,
   isSaving,
@@ -490,7 +503,7 @@ function CategoryInspector({
             category={category}
             project={project}
             onPatch={onPatchKnowledge}
-            onPatchPanorama={onPatchPanorama}
+            onPatchNavigation={onPatchNavigation}
           />
         </FieldGroup>
 
@@ -620,19 +633,31 @@ function ExperienceForm({
   category,
   project,
   onPatch,
-  onPatchPanorama: _onPatchPanorama,
+  onPatchNavigation,
 }: {
-  category: { id: string; experience: CategoryExperienceBinding }
+  category: { id: string; title?: string; experience: CategoryExperienceBinding }
   project: GuideProject
   onPatch: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
-  onPatchPanorama: (
-    mutator: (p: GuideProject['panorama']) => GuideProject['panorama'],
+  onPatchNavigation: (
+    mutator: (n: GuideProject['navigation']) => GuideProject['navigation'],
   ) => void
 }): JSX.Element {
   const exp = category.experience
   const [kind, setKind] = useState<'panorama' | 'html-scene'>(exp.kind)
   const [sceneId, setSceneId] = useState<string>(exp.kind === 'html-scene' ? exp.sceneId : '')
   const [viewId, setViewId] = useState<string>(exp.kind === 'html-scene' ? exp.viewId : '')
+  const route = useMemo(
+    () => findCategorySceneRoute(project.navigation, category.id),
+    [project.navigation, category.id],
+  )
+  const transition = route?.transition
+  const videoAssets = useMemo(
+    () =>
+      Object.values(project.assets.byId)
+        .filter((asset): asset is AssetDefinition => asset.kind === 'video')
+        .sort((a, b) => a.id.localeCompare(b.id)),
+    [project.assets.byId],
+  )
 
   useEffect(() => {
     setKind(category.experience.kind)
@@ -650,8 +675,12 @@ function ExperienceForm({
           { value: 'html-scene', label: 'HTML Scene' },
         ]}
         onChange={(v) => {
-          setKind(v as 'panorama' | 'html-scene')
-          onPatch((k) => patchCategoryExperience(k, category.id, v as 'panorama' | 'html-scene'))
+          const nextKind = v as 'panorama' | 'html-scene'
+          setKind(nextKind)
+          onPatch((k) => patchCategoryExperience(k, category.id, nextKind))
+          if (nextKind === 'panorama') {
+            onPatchNavigation((navigation) => removeCategorySceneRoute(navigation, category.id))
+          }
         }}
       />
       {kind === 'html-scene' && (
@@ -671,6 +700,9 @@ function ExperienceForm({
               setSceneId(v)
               onPatch((k) =>
                 patchCategoryExperience(k, category.id, 'html-scene', v, undefined),
+              )
+              onPatchNavigation((navigation) =>
+                syncCategorySceneRoute(navigation, category.id, v, viewId),
               )
             }}
           />
@@ -692,10 +724,91 @@ function ExperienceForm({
               onPatch((k) =>
                 patchCategoryExperience(k, category.id, 'html-scene', undefined, v),
               )
+              onPatchNavigation((navigation) =>
+                syncCategorySceneRoute(navigation, category.id, sceneId, v),
+              )
             }}
           />
+          {sceneId && viewId && (
+            <>
+              <ChakraToggleRow
+                label="启用过渡视频"
+                checked={Boolean(transition)}
+                onToggle={() => {
+                  onPatchNavigation((navigation) =>
+                    patchCategorySceneRouteTransition(
+                      navigation,
+                      category.id,
+                      sceneId,
+                      viewId,
+                      transition
+                        ? undefined
+                        : {
+                            kind: 'video',
+                            assetId: videoAssets[0]?.id ?? '',
+                            timeoutMs: 8000,
+                            onFailure: 'cut',
+                          },
+                    ),
+                  )
+                }}
+              />
+              {transition && (
+                <>
+                  <LabeledSelect
+                    label="过渡视频"
+                    value={transition.assetId}
+                    options={
+                      videoAssets.length === 0
+                        ? [{ value: '', label: '（暂无视频资源，先去 Settings 上传）' }]
+                        : videoAssets.map((asset) => ({ value: asset.id, label: asset.id }))
+                    }
+                    onChange={(assetId) => {
+                      onPatchNavigation((navigation) =>
+                        patchCategorySceneRouteTransition(navigation, category.id, sceneId, viewId, {
+                          ...transition,
+                          assetId,
+                        }),
+                      )
+                    }}
+                  />
+                  <NumberFieldPlain
+                    label="转场超时 (ms)"
+                    value={transition.timeoutMs ?? 8000}
+                    min={500}
+                    max={30000}
+                    step={100}
+                    onChange={(value) => {
+                      onPatchNavigation((navigation) =>
+                        patchCategorySceneRouteTransition(navigation, category.id, sceneId, viewId, {
+                          ...transition,
+                          timeoutMs: Math.max(500, Math.round(value)),
+                        }),
+                      )
+                    }}
+                  />
+                  <LabeledSelect
+                    label="失败策略"
+                    value={transition.onFailure}
+                    options={[
+                      { value: 'cut', label: 'cut：视频失败则中止进入' },
+                      { value: 'abort-navigation', label: 'abort-navigation：失败则直接进入' },
+                    ]}
+                    onChange={(value) => {
+                      onPatchNavigation((navigation) =>
+                        patchCategorySceneRouteTransition(navigation, category.id, sceneId, viewId, {
+                          ...transition,
+                          onFailure: value as 'cut' | 'abort-navigation',
+                        }),
+                      )
+                    }}
+                  />
+                </>
+              )}
+            </>
+          )}
           <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
-            HTML 场景需先在 Settings → HTML 场景 上传 zip 包并创建视图，再回到这里绑定。
+            HTML 场景需先在 Settings → HTML 场景 上传 zip 包并创建视图。绑定 scene/view 后，Atlas 会为该分类生成一条 panorama → scene 的 route；若启用过渡视频，则点击 hotspot 会先播视频再进入 scene。
           </Text>
         </>
       )}
@@ -1130,4 +1243,80 @@ function patchCategoryExperience(
       }),
     })),
   } as GuideProject['knowledge']
+}
+
+function categorySceneRouteId(categoryId: string): string {
+  return `route-panorama-category-${categoryId}-to-scene`
+}
+
+function findCategorySceneRoute(
+  navigation: ExperienceNavigation,
+  categoryId: string,
+): ExperienceNavigation['routes'][number] | undefined {
+  return navigation.routes.find((route) => route.id === categorySceneRouteId(categoryId))
+}
+
+function syncCategorySceneRoute(
+  navigation: ExperienceNavigation,
+  categoryId: string,
+  sceneId: string,
+  viewId: string,
+): ExperienceNavigation {
+  if (!sceneId || !viewId) {
+    return removeCategorySceneRoute(navigation, categoryId)
+  }
+  const routeId = categorySceneRouteId(categoryId)
+  const existing = findCategorySceneRoute(navigation, categoryId)
+  const nextRoute = {
+    id: routeId,
+    from: { kind: 'panorama', categoryId } as const,
+    to: { kind: 'scene', sceneId, viewId } as const,
+    ...(existing?.transition ? { transition: existing.transition } : {}),
+  }
+  return {
+    routes: [
+      ...navigation.routes.filter((route) => route.id !== routeId),
+      nextRoute,
+    ],
+  }
+}
+
+function removeCategorySceneRoute(
+  navigation: ExperienceNavigation,
+  categoryId: string,
+): ExperienceNavigation {
+  const routeId = categorySceneRouteId(categoryId)
+  return {
+    routes: navigation.routes.filter((route) => route.id !== routeId),
+  }
+}
+
+function patchCategorySceneRouteTransition(
+  navigation: ExperienceNavigation,
+  categoryId: string,
+  sceneId: string,
+  viewId: string,
+  transition:
+    | {
+        kind: 'video'
+        assetId: string
+        timeoutMs?: number
+        onFailure: 'cut' | 'abort-navigation'
+      }
+    | undefined,
+): ExperienceNavigation {
+  if (!sceneId || !viewId) return navigation
+  const routeId = categorySceneRouteId(categoryId)
+  const base = syncCategorySceneRoute(navigation, categoryId, sceneId, viewId)
+  return {
+    routes: base.routes.map((route) =>
+      route.id === routeId
+        ? {
+            ...route,
+            ...(transition && transition.assetId ? { transition } : {}),
+            ...(transition && !transition.assetId ? { transition: undefined } : {}),
+          }
+        : route,
+    ),
+  }
 }

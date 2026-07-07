@@ -10,13 +10,20 @@ import { Compass } from 'lucide-react'
 import { AtlasRuntime, type AtlasRuntimeAssetLoader } from '@products/atlas/runtime/atlas-runtime'
 import { compileAtlas } from '@products/atlas/compiler/atlas-compiler'
 import type { GuideProject } from '@domain/project-types'
-import { assetBlobUrl } from '../../projects/api'
+import { SceneHostController } from '../../../../../platform/scene-host/scene-host-controller'
+import { createProjectAssetUrlResolver } from '../../projects/asset-url-resolver'
+import { SceneHostOverlay, type SceneHostOverlayState } from '../../../components/SceneHostOverlay'
 
 export function AtlasPreview({ project }: { project: GuideProject }): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
   const runtimeRef = useRef<AtlasRuntime | null>(null)
+  const sceneHostRef = useRef<SceneHostController | null>(null)
+  const sessionIdRef = useRef(`atlas-preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
+  const [activeScene, setActiveScene] = useState<SceneHostOverlayState | null>(null)
+  const [sceneInfoOpen, setSceneInfoOpen] = useState(false)
   const panoramaMissing = !project.panorama.assetId
   const panoramaAssetMissing =
     !panoramaMissing && !project.assets.byId[project.panorama.assetId]
@@ -53,20 +60,23 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
   useEffect(() => {
     if (blocked) return
     if (!hostRef.current) return
-    const projectId = project.id
-    // Asset closure: the compiler asks for a URL per sourcePath. The
-    // release build packages them as `./assets/...`, but in the editor
-    // we serve them via the backend's `/api/projects/:id/assets/blob/:aid`
-    // endpoint (proxied by Vite). Build a sourcePath → assetId lookup
-    // table once per project change.
-    const bySourcePath = new Map<string, string>()
-    for (const asset of Object.values(project.assets.byId)) {
-      bySourcePath.set(asset.sourcePath, asset.id)
-    }
-    const resolveSourcePath = (_id: string, sourcePath: string): string => {
-      const aid = bySourcePath.get(sourcePath)
-      return aid ? assetBlobUrl(projectId, aid) : `./${sourcePath}`
-    }
+    const resolveSourcePath = createProjectAssetUrlResolver(project)
+    const sceneHost = new SceneHostController({
+      product: 'atlas',
+      projectId: project.id,
+      sessionId: sessionIdRef.current,
+      baseHref: window.location.href,
+      getIframeWindow: () => iframeRef.current?.contentWindow ?? null,
+      onRequestBack: () => {
+        runtimeRef.current?.dismissTransientExperience()
+        setSceneInfoOpen(false)
+        setActiveScene(null)
+      },
+      onRequestRoute: (routeId) => {
+        runtimeRef.current?.openRoute(routeId)
+      },
+    })
+    sceneHostRef.current = sceneHost
     const loader: AtlasRuntimeAssetLoader = {
       resolveUrl: (u: string) => u,
       loadImage: async (url: string) => {
@@ -75,7 +85,11 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
         await img.decode().catch(() => {})
         return img
       },
-      openScene: () => {},
+      openScene: (scene, viewId) => {
+        const nextScene = sceneHost.openScene(scene, viewId)
+        setSceneInfoOpen(false)
+        setActiveScene({ ...nextScene })
+      },
     }
     const rt = new AtlasRuntime({ assets: loader })
     runtimeRef.current = rt
@@ -89,10 +103,38 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
       }
     }
     return () => {
+      sceneHost.closeScene()
+      sceneHostRef.current = null
       rt.destroy()
       runtimeRef.current = null
     }
   }, [project, blocked])
+
+  const closeActiveScene = () => {
+    sceneHostRef.current?.closeScene()
+    runtimeRef.current?.dismissTransientExperience()
+    setSceneInfoOpen(false)
+    setActiveScene(null)
+  }
+
+  const handleSceneShare = () => {
+    const nav = globalThis.navigator
+    if (!nav?.share) return
+    void nav
+      .share({
+        title: project.title,
+      })
+      .catch(() => {})
+  }
+
+  useEffect(() => {
+    if (!activeScene) return
+    return sceneHostRef.current?.bindMessages(window)
+  }, [activeScene])
+
+  const handleSceneLoad = () => {
+    sceneHostRef.current?.handleSceneLoad()
+  }
 
   return (
     <div
@@ -168,6 +210,32 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
                 transformOrigin: 'top left',
               }}
             />
+            {activeScene ? (
+              <SceneHostOverlay
+                projectTitle={project.title}
+                activeScene={activeScene}
+                infoOpen={sceneInfoOpen}
+                onClose={closeActiveScene}
+                onShare={handleSceneShare}
+                onOpenInfo={() => setSceneInfoOpen(true)}
+                onCloseInfo={() => setSceneInfoOpen(false)}
+              >
+                <iframe
+                  ref={iframeRef}
+                  title={activeScene.sceneTitle}
+                  src={activeScene.src}
+                  onLoad={handleSceneLoad}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    border: '0',
+                    background: '#020617',
+                  }}
+                />
+              </SceneHostOverlay>
+            ) : null}
           </div>
         </div>
       ) : null}

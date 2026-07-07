@@ -13,6 +13,8 @@ import {
   buildAssetClosure,
   computeReferencedAssetIds,
 } from './asset-closure.js'
+import { writeBrowserRuntimePackage } from './browser-runtime-packager.js'
+import { buildProductShell } from './product-shell.js'
 
 export type DraftProduct = 'atlas' | 'catalog'
 
@@ -20,6 +22,7 @@ export interface DraftBuildResult {
   product: DraftProduct
   entryUrl: string
   manifestPath: string
+  draftDir: string
 }
 
 export class DraftBuildService {
@@ -30,6 +33,10 @@ export class DraftBuildService {
     this.projects = projects
     this.root = path.join(opts.dataDir ?? path.resolve('data'), 'draft-builds')
     fs.mkdirSync(this.root, { recursive: true })
+  }
+
+  rootDir(): string {
+    return this.root
   }
 
   buildDraft(projectId: string, product: DraftProduct, now: () => string = () => new Date().toISOString()): DraftBuildResult {
@@ -52,7 +59,7 @@ export class DraftBuildService {
       transitionAssetIds,
     )
 
-    const { closure } = buildAssetClosure({
+    const { closure, assets } = buildAssetClosure({
       projectId,
       assets: project.assets.byId,
       referencedAssetIds,
@@ -60,19 +67,58 @@ export class DraftBuildService {
 
     const draftDir = path.join(this.root, projectId, `${product}-${Date.now()}`)
     fs.mkdirSync(draftDir, { recursive: true })
+    const productDir = path.join(draftDir, product)
+    fs.mkdirSync(productDir, { recursive: true })
 
     const manifest =
       product === 'atlas'
         ? compileAtlas(project, closure, now).manifest
         : compileCatalog(project, closure, now).manifest
 
-    const manifestPath = path.join(draftDir, 'manifest.json')
+    const runtimePackage = writeBrowserRuntimePackage({
+      entrySourcePath: path.join(
+        path.resolve('src'),
+        'product-shell',
+        'browser',
+        product === 'atlas' ? 'atlas-entry.ts' : 'catalog-entry.ts',
+      ),
+      outputDir: productDir,
+    })
+    const shellFiles = buildProductShell(product, runtimePackage.entryModulePath)
+    fs.writeFileSync(path.join(productDir, 'index.html'), shellFiles['index.html'])
+    fs.writeFileSync(path.join(productDir, 'app.js'), shellFiles['app.js'])
+    const manifestPath = path.join(productDir, 'manifest.json')
     fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
+    this.copyReferencedAssets(project, assets, productDir)
 
     return {
       product,
-      entryUrl: `./${product}/index.html?draft=${encodeURIComponent(manifestPath)}`,
+      entryUrl: `./${product}/index.html`,
       manifestPath,
+      draftDir,
     }
   }
+
+  private copyReferencedAssets(
+    project: GuideProject,
+    assets: Array<{ id: string; kind: string; sourcePath: string }>,
+    productDir: string,
+  ): void {
+    const projectAssetsRoot = this.projects.resolveAssetDir(project.id)
+    for (const asset of assets) {
+      const normalizedSourcePath = normalizeAssetSourcePath(asset.sourcePath)
+      const sourceAbsolutePath = path.join(projectAssetsRoot, normalizedSourcePath)
+      const targetAbsolutePath = path.join(productDir, 'assets', normalizedSourcePath)
+      fs.mkdirSync(path.dirname(targetAbsolutePath), { recursive: true })
+      if (asset.kind === 'html-bundle') {
+        fs.cpSync(sourceAbsolutePath, targetAbsolutePath, { recursive: true })
+      } else {
+        fs.copyFileSync(sourceAbsolutePath, targetAbsolutePath)
+      }
+    }
+  }
+}
+
+function normalizeAssetSourcePath(sourcePath: string): string {
+  return sourcePath.startsWith('assets/') ? sourcePath.slice('assets/'.length) : sourcePath
 }

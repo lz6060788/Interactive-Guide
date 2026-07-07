@@ -40,6 +40,7 @@ export interface AtlasHtmlSceneManifest {
     id: string
     title: string
     activationMessage: { type: string; payload?: Record<string, unknown> }
+    chrome?: { textColor?: string }
   }>
   /** Bridge protocol used by this scene (always 1.0.0). */
   protocol: { channel: 'interactive-guide:scene-bridge'; version: '1.0.0' }
@@ -83,6 +84,13 @@ export interface AtlasItemEntry {
   }
 }
 
+export interface AtlasRouteTransitionAsset {
+  url: string
+  posterUrl?: string
+  timeoutMs?: number
+  onFailure: 'abort-navigation' | 'cut'
+}
+
 export interface AtlasManifest {
   schemaVersion: SchemaVersion
   product: 'atlas'
@@ -99,6 +107,7 @@ export interface AtlasManifest {
   items: AtlasItemEntry[]
   scenes: AtlasHtmlSceneManifest[]
   routes: ExperienceRoute[]
+  routeTransitions?: Record<string, AtlasRouteTransitionAsset>
   config: {
     viewport: { width: number; height: number }
     hintText?: string

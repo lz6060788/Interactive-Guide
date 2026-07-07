@@ -1,195 +1,239 @@
 /**
- * CatalogPreview — list rendering of the current stage's categories.
- *
- * This is a lightweight in-page preview. The full catalog runtime lives
- * in @products/catalog/runtime; mounting it would require the full
- * runtime asset loader. For the editor's WYSIWYG, a faithful list is
- * enough.
+ * CatalogPreview — mounts the real CatalogRuntime so editor preview and
+ * runtime share the same list / focus / scene-enter behavior.
  */
-import type {
-  GuideProject,
-  IndustryCategory,
-} from '@domain/project-types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Compass } from 'lucide-react'
+import { compileCatalog } from '@products/catalog/compiler/catalog-compiler'
+import { CatalogRuntime, type CatalogRuntimeAssetLoader } from '@products/catalog/runtime/catalog-runtime'
+import type { GuideProject } from '@domain/project-types'
+import { SceneHostController } from '../../../../../platform/scene-host/scene-host-controller'
+import { SceneHostOverlay, type SceneHostOverlayState } from '../../../components/SceneHostOverlay'
+import { createProjectAssetUrlResolver } from '../../projects/asset-url-resolver'
 
-interface Props {
-  project: GuideProject
-}
+export function CatalogPreview({ project }: { project: GuideProject }): JSX.Element {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const runtimeRef = useRef<CatalogRuntime | null>(null)
+  const sceneHostRef = useRef<SceneHostController | null>(null)
+  const sessionIdRef = useRef(`catalog-preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
+  const [activeScene, setActiveScene] = useState<SceneHostOverlayState | null>(null)
+  const [sceneInfoOpen, setSceneInfoOpen] = useState(false)
+  const panoramaMissing = !project.panorama.assetId
+  const panoramaAssetMissing =
+    !panoramaMissing && !project.assets.byId[project.panorama.assetId]
+  const blocked = panoramaMissing || panoramaAssetMissing
+  const viewport = project.products.catalog.viewport
 
-export function CatalogPreview({ project }: Props): JSX.Element {
-  const cfg = project.products.catalog
-  const width = cfg.viewport.width
-  const height = Math.min(cfg.viewport.height, 720)
-  const stages = project.knowledge.stages as unknown as Array<{
-    key: string
-    label: string
-    categories: IndustryCategory[]
-  }>
+  useEffect(() => {
+    if (blocked) return
+    const stage = stageRef.current
+    if (!stage) return
+    const update = () => {
+      setStageSize({
+        width: stage.clientWidth,
+        height: stage.clientHeight,
+      })
+    }
+    update()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update)
+      return () => window.removeEventListener('resize', update)
+    }
+    const observer = new ResizeObserver(() => update())
+    observer.observe(stage)
+    return () => observer.disconnect()
+  }, [blocked])
+
+  const previewScale = useMemo(() => {
+    if (!stageSize.width || !stageSize.height) return 1
+    const horizontal = (stageSize.width - 8) / viewport.width
+    const vertical = (stageSize.height - 8) / viewport.height
+    return Math.min(1, horizontal, vertical)
+  }, [stageSize.height, stageSize.width, viewport.height, viewport.width])
+
+  useEffect(() => {
+    if (blocked) return
+    if (!hostRef.current) return
+    const resolveSourcePath = createProjectAssetUrlResolver(project)
+    const sceneHost = new SceneHostController({
+      product: 'catalog',
+      projectId: project.id,
+      sessionId: sessionIdRef.current,
+      baseHref: window.location.href,
+      getIframeWindow: () => iframeRef.current?.contentWindow ?? null,
+      onRequestBack: () => {
+        setSceneInfoOpen(false)
+        setActiveScene(null)
+      },
+      onRequestRoute: (routeId) => {
+        runtimeRef.current?.openRoute(routeId)
+      },
+    })
+    sceneHostRef.current = sceneHost
+    const loader: CatalogRuntimeAssetLoader = {
+      resolveUrl: (u: string) => u,
+      loadImage: async (url: string) => {
+        const img = new Image()
+        img.src = url
+        await img.decode().catch(() => {})
+        return img
+      },
+      openScene: (scene, viewId) => {
+        const nextScene = sceneHost.openScene(scene, viewId)
+        setSceneInfoOpen(false)
+        setActiveScene(nextScene)
+      },
+    }
+    const rt = new CatalogRuntime({ assets: loader })
+    runtimeRef.current = rt
+    try {
+      const { manifest } = compileCatalog(project, resolveSourcePath)
+      rt.loadManifest(manifest)
+      void rt.mount(hostRef.current)
+    } catch (e) {
+      if (hostRef.current) {
+        hostRef.current.textContent = `Catalog preview unavailable: ${(e as Error).message}`
+      }
+    }
+    return () => {
+      sceneHost.closeScene()
+      sceneHostRef.current = null
+      rt.destroy()
+      runtimeRef.current = null
+    }
+  }, [project, blocked])
+
+  const closeActiveScene = () => {
+    sceneHostRef.current?.closeScene()
+    setSceneInfoOpen(false)
+    setActiveScene(null)
+  }
+
+  const handleSceneShare = () => {
+    const nav = globalThis.navigator
+    if (!nav?.share) return
+    void nav
+      .share({
+        title: project.title,
+      })
+      .catch(() => {})
+  }
+
+  useEffect(() => {
+    if (!activeScene) return
+    return sceneHostRef.current?.bindMessages(window)
+  }, [activeScene])
+
+  const handleSceneLoad = () => {
+    sceneHostRef.current?.handleSceneLoad()
+  }
 
   return (
     <div
-      data-testid="catalog-preview-host"
       style={{
-        height: '100%',
-        background: 'var(--ig-colors-paper-sunken)',
+        background: '#0f172a',
+        padding: 8,
+        color: '#cbd5e1',
         display: 'flex',
         flexDirection: 'column',
-        padding: 12,
-        gap: 12,
-        overflow: 'auto',
+        height: '100%',
       }}
     >
-      <h4
-        style={{
-          margin: 0,
-          fontSize: 11,
-          fontWeight: 600,
-          color: 'var(--ig-colors-ink-muted)',
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-        }}
-      >
+      <h4 style={{ margin: '4px 0 8px', fontSize: 12, color: '#cbd5e1' }}>
         实时预览
       </h4>
-      <div
-        style={{
-          width,
-          height,
-          margin: '0 auto',
-          background: cfg.viewport.backgroundColor ?? '#ffffff',
-          borderRadius: 6,
-          padding: 16,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-          overflow: 'hidden',
-        }}
-      >
-        {cfg.hintText && (
-          <div
-            style={{
-              fontSize: 12,
-              color: 'var(--ig-colors-ink-muted)',
-              padding: '6px 0',
-              borderBottom: '1px solid var(--ig-colors-rule)',
-            }}
-          >
-            {cfg.hintText}
-          </div>
-        )}
+      {blocked ? (
         <div
-          style={{
-            display: 'flex',
-            gap: 4,
-            fontSize: 10,
-            fontWeight: 600,
-            color: 'var(--ig-colors-ink-faint)',
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {stages.map((s) => (
-            <span
-              key={s.key}
-              style={{
-                padding: '2px 8px',
-                borderRadius: 3,
-                background: 'var(--ig-colors-paper-sunken)',
-              }}
-            >
-              {s.label} · {s.categories.length}
-            </span>
-          ))}
-        </div>
-        <div
+          data-testid="catalog-preview-placeholder"
           style={{
             flex: 1,
-            overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
-            gap: cfg.theme.listDensity === 'compact' ? 6 : 12,
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            color: '#94a3b8',
+            fontSize: 12,
+            textAlign: 'center',
+            padding: 24,
           }}
         >
-          {stages.flatMap((s) =>
-            s.categories.map((c) => (
-              <PreviewCategoryCard key={c.id} cat={c} project={project} />
-            )),
-          )}
+          <Compass size={28} strokeWidth={1} style={{ opacity: 0.4 }} />
+          <div style={{ color: '#cbd5e1', fontWeight: 500 }}>
+            {panoramaMissing ? '尚未绑定全景底图' : '全景底图无效'}
+          </div>
+          <div style={{ maxWidth: 240, lineHeight: 1.5 }}>
+            到「项目设置 → 资源」上传一张图片后点「设为底图」。
+          </div>
         </div>
-      </div>
-    </div>
-  )
-}
-
-function PreviewCategoryCard({
-  cat,
-  project,
-}: {
-  cat: IndustryCategory
-  project: GuideProject
-}): JSX.Element {
-  const items = cat.itemIds
-    .map((id) => project.knowledge.items[id])
-    .filter(Boolean)
-  return (
-    <div
-      style={{
-        background: 'var(--ig-colors-paper-raised)',
-        border: '1px solid var(--ig-colors-rule)',
-        borderRadius: 6,
-        padding: 12,
-        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-      }}
-    >
-      <div
-        style={{
-          fontSize: 14,
-          fontWeight: 600,
-          color: 'var(--ig-colors-ink)',
-          marginBottom: 4,
-        }}
-      >
-        {cat.title}
-      </div>
-      <div
-        style={{
-          fontSize: 11,
-          color: 'var(--ig-colors-ink-muted)',
-          marginBottom: 8,
-        }}
-      >
-        {items.length} 个项目
-      </div>
-      {items.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {items.slice(0, 6).map((item) => (
-            <span
-              key={item.id}
-              className="mono"
+      ) : null}
+      {!blocked ? (
+        <div
+          ref={stageRef}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              width: viewport.width * previewScale,
+              height: viewport.height * previewScale,
+              position: 'relative',
+              flex: '0 0 auto',
+            }}
+          >
+            <div
+              ref={hostRef}
+              data-testid="catalog-preview-host"
               style={{
-                fontSize: 10,
-                color: 'var(--ig-colors-ink-muted)',
-                padding: '2px 6px',
-                background: 'var(--ig-colors-paper-sunken)',
-                border: '1px solid var(--ig-colors-rule)',
-                borderRadius: 3,
+                width: viewport.width,
+                height: viewport.height,
+                background: '#0f172a',
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                overflow: 'hidden',
+                transform: `scale(${previewScale})`,
+                transformOrigin: 'top left',
               }}
-            >
-              {item.title}
-            </span>
-          ))}
-          {items.length > 6 && (
-            <span
-              className="mono"
-              style={{
-                fontSize: 10,
-                color: 'var(--ig-colors-ink-faint)',
-              }}
-            >
-              +{items.length - 6}
-            </span>
-          )}
+            />
+            {activeScene ? (
+              <SceneHostOverlay
+                projectTitle={project.title}
+                activeScene={activeScene}
+                infoOpen={sceneInfoOpen}
+                onClose={closeActiveScene}
+                onShare={handleSceneShare}
+                onOpenInfo={() => setSceneInfoOpen(true)}
+                onCloseInfo={() => setSceneInfoOpen(false)}
+              >
+                <iframe
+                  ref={iframeRef}
+                  title={activeScene.sceneTitle}
+                  src={activeScene.src}
+                  onLoad={handleSceneLoad}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    border: '0',
+                    background: '#020617',
+                  }}
+                />
+              </SceneHostOverlay>
+            ) : null}
+          </div>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

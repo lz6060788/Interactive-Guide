@@ -79,6 +79,17 @@ function checkCatalogManifest(manifest: CatalogManifest, productDir: string): Va
 
 export function validateRelease(releaseDir: string): ValidationReport {
   const failures: ValidationFailure[] = []
+  for (const product of ['atlas', 'catalog'] as const) {
+    const productDir = path.join(releaseDir, product)
+    const indexFile = path.join(productDir, 'index.html')
+    const appFile = path.join(productDir, 'app.js')
+    if (!fs.existsSync(indexFile)) {
+      failures.push({ code: 'MISSING_FILE', message: `${product} entry html missing`, file: indexFile })
+    }
+    if (!fs.existsSync(appFile)) {
+      failures.push({ code: 'MISSING_FILE', message: `${product} app.js missing`, file: appFile })
+    }
+  }
   const atlasManifestPath = path.join(releaseDir, 'atlas', 'manifest.json')
   const catalogManifestPath = path.join(releaseDir, 'catalog', 'manifest.json')
 

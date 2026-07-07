@@ -152,6 +152,10 @@ export interface SceneFocusCommand {
   payload?: Record<string, unknown>
 }
 
+export interface SceneChromeConfig {
+  textColor?: string
+}
+
 export interface HtmlSceneView {
   id: string
   title: string
@@ -161,6 +165,7 @@ export interface HtmlSceneView {
   }
   categoryIds: string[]
   itemFocusMap?: Record<string, SceneFocusCommand>
+  chrome?: SceneChromeConfig
 }
 
 export interface HtmlScenePackage {

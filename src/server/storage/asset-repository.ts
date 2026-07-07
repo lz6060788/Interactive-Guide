@@ -125,7 +125,7 @@ export class AssetRepository {
       definition: {
         id: input.id,
         kind: 'html-bundle',
-        sourcePath: path.posix.join('assets/scenes', input.id),
+        sourcePath: path.posix.join('scenes', input.id),
         entryPath: 'index.html',
         size: input.bytes.length,
         sha256: hash(input.bytes),
@@ -151,6 +151,11 @@ export class AssetRepository {
   absolutePathFor(projectId: string, sourcePath: string): string {
     const safe = assertInsideProject(projectId, sourcePath)
     return path.join(this.projects.resolveAssetDir(projectId), safe)
+  }
+
+  absoluteHtmlBundleFilePathFor(projectId: string, assetId: string, filePath: string): string {
+    const safeFile = assertInsideProject(projectId, filePath)
+    return path.join(this.sceneDir(this.projects.resolveAssetDir(projectId), assetId), safeFile)
   }
 
   private imageDir(root: string, assetId: string): string {

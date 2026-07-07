@@ -72,6 +72,7 @@ export function HtmlScenePanel({ projectId, revision, project }: Props): JSX.Ele
             title: '概览',
             activationMessage: { type: DEFAULT_ACTIVATION },
             categoryIds: [],
+            chrome: { textColor: '#FFFFFF' },
           },
         ],
       },
@@ -420,14 +421,15 @@ function SceneCard({
                   ...scene,
                   views: [
                     ...scene.views,
-                    {
-                      id: `view-${Date.now().toString(36)}`,
-                      title: '新视图',
-                      activationMessage: { type: DEFAULT_ACTIVATION },
-                      categoryIds: [],
-                    },
-                  ],
-                })
+                     {
+                       id: `view-${Date.now().toString(36)}`,
+                       title: '新视图',
+                       activationMessage: { type: DEFAULT_ACTIVATION },
+                       categoryIds: [],
+                       chrome: { textColor: '#FFFFFF' },
+                     },
+                   ],
+                 })
               }
               data-testid={`btn-add-view-${scene.id}`}
             >
@@ -532,6 +534,38 @@ function ViewEditor({ view, allCategories, onChange, onRemove }: ViewEditorProps
           title="激活消息类型"
           placeholder="activation message type (e.g. scene.ready)"
         />
+        <HStack align="center" gap="2">
+          <Text fontSize="11px" color="ink.muted" minW="72px">
+            顶部文字色
+          </Text>
+          <ImeSafeInput
+            value={view.chrome?.textColor ?? ''}
+            onChange={(v) =>
+              onChange({
+                ...view,
+                chrome: {
+                  ...(view.chrome ?? {}),
+                  textColor: v,
+                },
+              })
+            }
+            size="xs"
+            w="120px"
+            fontSize="11px"
+            fontFamily="mono"
+            bg="bg.raised"
+            placeholder="#FFFFFF"
+            title="宿主顶部标题/返回/分享颜色"
+          />
+          <ChakraBox
+            width="18px"
+            height="18px"
+            borderRadius="999px"
+            borderWidth="1px"
+            borderColor="border"
+            bg={view.chrome?.textColor || 'transparent'}
+          />
+        </HStack>
         <HStack flexWrap="wrap" gap="1" pt="1">
           {allCategories.map((c) => {
             const active = view.categoryIds.includes(c.id)

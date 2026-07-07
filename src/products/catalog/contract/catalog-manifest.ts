@@ -34,6 +34,7 @@ export interface CatalogHtmlSceneManifest {
     id: string
     title: string
     activationMessage: { type: string; payload?: Record<string, unknown> }
+    chrome?: { textColor?: string }
   }>
   protocol: { channel: 'interactive-guide:scene-bridge'; version: '1.0.0' }
 }
@@ -101,6 +102,10 @@ export interface CatalogManifest {
     theme: {
       listDensity: 'compact' | 'comfortable'
       focusVariant: 'rect' | 'pill'
+      accentColor?: string
+      backgroundColor?: string
+      textColor?: string
+      maskOpacity?: number
     }
   }
   integrations: ProjectIntegrations

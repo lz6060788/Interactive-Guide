@@ -21,7 +21,7 @@
  */
 import type { GuideProject } from '../../../domain/project-types.js'
 import type { AssetDefinition } from '../../../domain/project-types.js'
-import type { AtlasManifest } from '../contract/atlas-manifest.js'
+import type { AtlasManifest, AtlasRouteTransitionAsset } from '../contract/atlas-manifest.js'
 
 export interface AtlasCompileResult {
   manifest: AtlasManifest
@@ -139,16 +139,25 @@ export function compileAtlas(
   const scenes = normalizedProject.scenes
     .filter((s) => reachableSceneIds.size === 0 || reachableSceneIds.has(s.id))
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((s) => ({
-      sceneId: s.id,
-      title: s.title,
-      entryUrl: assetClosure(
-        normalizedProject.id,
-        normalizedProject.assets.byId[s.assetId]?.sourcePath ?? `assets/scenes/${s.id}`,
-      ),
-      views: [...s.views].sort((a, b) => a.id.localeCompare(b.id)),
-      protocol: s.protocol,
-    }))
+    .map((s) => {
+      const sceneAsset = normalizedProject.assets.byId[s.assetId]
+      return {
+        sceneId: s.id,
+        title: s.title,
+        entryUrl: sceneAsset
+          ? assetClosure(normalizedProject.id, resolveSceneEntrySourcePath(sceneAsset))
+          : assetClosure(normalizedProject.id, `scenes/${s.id}/index.html`),
+        views: [...s.views]
+          .sort((a, b) => a.id.localeCompare(b.id))
+          .map((view) => ({
+            id: view.id,
+            title: view.title,
+            activationMessage: view.activationMessage,
+            ...(view.chrome ? { chrome: view.chrome } : {}),
+          })),
+        protocol: s.protocol,
+      }
+    })
 
   // Asset list (manifest's referenced assets)
   const referencedAssets = new Set<string>([panoramaAsset.id])
@@ -159,6 +168,35 @@ export function compileAtlas(
   const assets = Object.values(normalizedProject.assets.byId)
     .filter((a) => referencedAssets.has(a.id))
     .sort((a, b) => a.id.localeCompare(b.id))
+
+  const routeTransitions = Object.fromEntries(
+    reachableRoutes
+      .filter((route) => route.transition?.assetId)
+      .map((route) => {
+        const transition = route.transition!
+        const asset = normalizedProject.assets.byId[transition.assetId]
+        if (!asset) return null
+        const entry = [
+          route.id,
+          {
+            url: assetClosure(normalizedProject.id, asset.sourcePath),
+            ...(transition.posterAssetId
+              ? {
+                  posterUrl: resolvePosterUrl(
+                    normalizedProject,
+                    transition.posterAssetId,
+                    assetClosure,
+                  ),
+                }
+              : {}),
+            ...(transition.timeoutMs !== undefined ? { timeoutMs: transition.timeoutMs } : {}),
+            onFailure: transition.onFailure,
+          },
+        ] as const
+        return entry
+      })
+      .filter((entry): entry is readonly [string, AtlasRouteTransitionAsset] => Boolean(entry)),
+  )
 
   const manifest: AtlasManifest = {
     schemaVersion: '2.0.0',
@@ -181,6 +219,7 @@ export function compileAtlas(
     items: allItems,
     scenes,
     routes: [...reachableRoutes].sort((a, b) => a.id.localeCompare(b.id)),
+    ...(Object.keys(routeTransitions).length > 0 ? { routeTransitions } : {}),
     config: {
       viewport: normalizedProject.products.atlas.viewport,
       ...(normalizedProject.products.atlas.hintText
@@ -206,4 +245,24 @@ export function compileAtlas(
   }
 
   return { manifest, assets }
+}
+
+function resolveSceneEntrySourcePath(asset: AssetDefinition): string {
+  const base = asset.kind === 'html-bundle' ? stripLegacyAssetsPrefix(asset.sourcePath) : asset.sourcePath
+  const entryPath = asset.entryPath?.trim() || 'index.html'
+  return `${base.replace(/\/+$/, '')}/${entryPath.replace(/^\/+/, '')}`
+}
+
+function resolvePosterUrl(
+  project: GuideProject,
+  assetId: string,
+  assetClosure: AssetClosure,
+): string | undefined {
+  const poster = project.assets.byId[assetId]
+  if (!poster) return undefined
+  return assetClosure(project.id, poster.sourcePath)
+}
+
+function stripLegacyAssetsPrefix(sourcePath: string): string {
+  return sourcePath.startsWith('assets/') ? sourcePath.slice('assets/'.length) : sourcePath
 }

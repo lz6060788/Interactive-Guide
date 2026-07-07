@@ -75,6 +75,33 @@ test('POST /projects/:id/assets/html-bundle uploads and extracts a zip', async (
   cleanup()
 })
 
+test('GET /projects/:id/assets/html-bundle/:assetId/<file> streams bundle files', async () => {
+  const { app, cleanup } = bootApp()
+  const create = await request(app).post('/projects').send({ id: 'p1', title: 'T' })
+  const rev = create.body.data.metadata.revision
+  const zip = new AdmZip()
+  zip.addFile('index.html', Buffer.from('<!doctype html><script type="module" src="./lib/app.js"></script>'))
+  zip.addFile('lib/app.js', Buffer.from('console.log("ok")'))
+  zip.addFile('images/demo.jpg', Buffer.from('jpg-bytes'))
+  const bytes = zip.toBuffer()
+  await request(app)
+    .post('/projects/p1/assets/html-bundle?id=scene-rocket&expectedRevision=' + rev)
+    .set('content-type', 'application/zip')
+    .send(bytes)
+
+  const html = await request(app).get('/projects/p1/assets/html-bundle/scene-rocket/index.html')
+  assert.equal(html.status, 200)
+  assert.match(String(html.text), /doctype html/i)
+
+  const js = await request(app).get('/projects/p1/assets/html-bundle/scene-rocket/lib/app.js')
+  assert.equal(js.status, 200)
+  assert.match(String(js.text), /console\.log/)
+
+  const image = await request(app).get('/projects/p1/assets/html-bundle/scene-rocket/images/demo.jpg')
+  assert.equal(image.status, 200)
+  cleanup()
+})
+
 test('DELETE /projects/:id/assets/:assetId removes the asset', async () => {
   const { app, cleanup, dir } = bootApp()
   const create = await request(app).post('/projects').send({ id: 'p1', title: 'T' })

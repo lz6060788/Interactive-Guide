@@ -84,8 +84,9 @@ test('compileCatalog throws when panorama.assetId points at a non-image', () => 
 
 test('compileCatalog is deterministic across runs', () => {
   const p = sample()
-  const a = compileCatalog(p, closure)
-  const b = compileCatalog(p, closure)
+  const fixedNow = () => '2026-07-07T00:00:00.000Z'
+  const a = compileCatalog(p, closure, fixedNow)
+  const b = compileCatalog(p, closure, fixedNow)
   assert.equal(JSON.stringify(a.manifest), JSON.stringify(b.manifest))
 })
 
@@ -151,4 +152,31 @@ test('compileCatalog includes only scenes reachable via navigation', () => {
   const { manifest } = compileCatalog(p, closure)
   const ids = manifest.scenes.map((s) => s.sceneId).sort()
   assert.deepEqual(ids, ['s-reachable'])
+})
+
+test('compileCatalog normalizes legacy assets/ scene bundle paths into entryUrl', () => {
+  const p = sample()
+  p.scenes.push({
+    id: 's-legacy',
+    title: 'Legacy',
+    assetId: 'asset-scene-legacy',
+    views: [{ id: 'v1', title: 'V', activationMessage: { type: 'init' } }],
+    protocol: { channel: 'interactive-guide:scene-bridge', version: '1.0.0' },
+  })
+  p.assets.byId['asset-scene-legacy'] = {
+    id: 'asset-scene-legacy',
+    kind: 'html-bundle',
+    sourcePath: 'assets/scenes/legacy-scene',
+    entryPath: 'index.html',
+  }
+  p.navigation.routes = [
+    {
+      id: 'r-legacy',
+      from: { kind: 'panorama' },
+      to: { kind: 'scene', sceneId: 's-legacy', viewId: 'v1' },
+    },
+  ]
+
+  const { manifest } = compileCatalog(p, closure)
+  assert.equal(manifest.scenes[0]?.entryUrl, './scenes/legacy-scene/index.html')
 })

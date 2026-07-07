@@ -29,6 +29,7 @@ interface Props {
   hasUnsavedPanorama: boolean
   hasUnsavedConfig: boolean
   hasUnsavedKnowledge?: boolean
+  hasUnsavedNavigation?: boolean
 }
 
 interface ToolDef {
@@ -56,6 +57,7 @@ export function AtlasToolbar({
   hasUnsavedPanorama,
   hasUnsavedConfig,
   hasUnsavedKnowledge = false,
+  hasUnsavedNavigation = false,
 }: Props): JSX.Element {
   return (
     <Flex
@@ -86,7 +88,7 @@ export function AtlasToolbar({
         ))}
       </HStack>
       <HStack align="center" gap="2">
-        {(hasUnsavedPanorama || hasUnsavedConfig || hasUnsavedKnowledge) && (
+        {(hasUnsavedPanorama || hasUnsavedConfig || hasUnsavedKnowledge || hasUnsavedNavigation) && (
           <Text
             fontFamily="mono"
             fontSize="10px"
@@ -97,6 +99,7 @@ export function AtlasToolbar({
             {[
               hasUnsavedKnowledge && 'knowledge',
               hasUnsavedPanorama && 'panorama',
+              hasUnsavedNavigation && 'navigation',
               hasUnsavedConfig && 'config',
             ]
               .filter(Boolean)

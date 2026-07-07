@@ -113,9 +113,23 @@ export function compileCatalog(
       title: s.title,
       entryUrl: assetClosure(
         normalizedProject.id,
-        normalizedProject.assets.byId[s.assetId]?.sourcePath ?? `assets/scenes/${s.id}`,
+        resolveSceneEntrySourcePath(
+          normalizedProject.assets.byId[s.assetId] ?? {
+            id: s.assetId,
+            kind: 'html-bundle',
+            sourcePath: `assets/scenes/${s.id}`,
+            entryPath: 'index.html',
+          },
+        ),
       ),
-      views: [...s.views].sort((a, b) => a.id.localeCompare(b.id)),
+      views: [...s.views]
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map((view) => ({
+          id: view.id,
+          title: view.title,
+          activationMessage: view.activationMessage,
+          ...(view.chrome ? { chrome: view.chrome } : {}),
+        })),
       protocol: s.protocol,
     }))
 
@@ -161,4 +175,14 @@ export function compileCatalog(
   }
 
   return { manifest, assets }
+}
+
+function resolveSceneEntrySourcePath(asset: AssetDefinition): string {
+  const base = asset.kind === 'html-bundle' ? stripLegacyAssetsPrefix(asset.sourcePath) : asset.sourcePath
+  const entryPath = asset.entryPath?.trim() || 'index.html'
+  return `${base.replace(/\/+$/, '')}/${entryPath.replace(/^\/+/, '')}`
+}
+
+function stripLegacyAssetsPrefix(sourcePath: string): string {
+  return sourcePath.startsWith('assets/') ? sourcePath.slice('assets/'.length) : sourcePath
 }

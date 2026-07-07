@@ -15,7 +15,9 @@ import {
   buildAssetClosure,
   computeReferencedAssetIds,
 } from './asset-closure.js'
+import { writeBrowserRuntimePackage } from './browser-runtime-packager.js'
 import { validateRelease, type ValidationReport } from './static-validator.js'
+import { buildProductShell } from './product-shell.js'
 
 export interface ReleaseBuildResult {
   projectId: string
@@ -98,7 +100,7 @@ export class ReleaseService {
       transitionAssetIds,
     )
 
-    const { closure } = buildAssetClosure({
+    const { closure, assets } = buildAssetClosure({
       projectId: project.id,
       assets: project.assets.byId,
       referencedAssetIds,
@@ -111,8 +113,44 @@ export class ReleaseService {
 
     const productDir = path.join(tmpDir, product)
     fs.mkdirSync(productDir, { recursive: true })
+    const runtimePackage = writeBrowserRuntimePackage({
+      entrySourcePath: path.join(
+        path.resolve('src'),
+        'product-shell',
+        'browser',
+        product === 'atlas' ? 'atlas-entry.ts' : 'catalog-entry.ts',
+      ),
+      outputDir: productDir,
+    })
+    const shellFiles = buildProductShell(product, runtimePackage.entryModulePath)
+    fs.writeFileSync(path.join(productDir, 'index.html'), shellFiles['index.html'])
+    fs.writeFileSync(path.join(productDir, 'app.js'), shellFiles['app.js'])
     fs.writeFileSync(path.join(productDir, 'manifest.json'), JSON.stringify(manifest, null, 2))
+    this.copyReferencedAssets(project, assets, productDir)
   }
+
+  private copyReferencedAssets(
+    project: GuideProject,
+    assets: Array<{ id: string; kind: string; sourcePath: string }>,
+    productDir: string,
+  ): void {
+    const projectAssetsRoot = this.projects.resolveAssetDir(project.id)
+    for (const asset of assets) {
+      const normalizedSourcePath = normalizeAssetSourcePath(asset.sourcePath)
+      const sourceAbsolutePath = path.join(projectAssetsRoot, normalizedSourcePath)
+      const targetAbsolutePath = path.join(productDir, 'assets', normalizedSourcePath)
+      fs.mkdirSync(path.dirname(targetAbsolutePath), { recursive: true })
+      if (asset.kind === 'html-bundle') {
+        fs.cpSync(sourceAbsolutePath, targetAbsolutePath, { recursive: true })
+      } else {
+        fs.copyFileSync(sourceAbsolutePath, targetAbsolutePath)
+      }
+    }
+  }
+}
+
+function normalizeAssetSourcePath(sourcePath: string): string {
+  return sourcePath.startsWith('assets/') ? sourcePath.slice('assets/'.length) : sourcePath
 }
 
 export class ReleaseValidationError extends Error {

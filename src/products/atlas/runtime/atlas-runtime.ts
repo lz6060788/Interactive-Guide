@@ -44,6 +44,11 @@ import { CalloutRenderer } from './callout-renderer.js'
 import { SceneLauncher } from './scene-launcher.js'
 import { CardDrawerController } from './card-drawer-controller.js'
 import { ensureAtlasVisualStyles } from './atlas-visual-tokens.js'
+import { TransitionVideoController } from '../../../platform/transition-video/transition-video-controller.js'
+import {
+  HOST_INFO_SHEET_DEFAULT_SECTIONS,
+  HOST_INFO_SHEET_TITLE,
+} from '../../../platform/chrome/host-info-sheet.js'
 
 const BACK_ICON_SVG = `
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -68,18 +73,6 @@ const SHEET_BACK_ICON_SVG = `
 const DEFAULT_HOTSPOT_MIN_ZOOM = 1
 const DEFAULT_CALLOUT_MIN_ZOOM = 2
 const DEFAULT_ITEM_MARKER_MIN_ZOOM = 2
-const INFO_SHEET_DEFAULT_TITLE = '说明'
-const INFO_SHEET_DEFAULT_SECTIONS = [
-  {
-    heading: '资料来源',
-    body: '本产业链图谱基于民生证券、华泰证券、国信证券等公开研报，以及行业公开资料、网络公开信息整理。节点分类、层级关系、说明文案及部分可视化形式由 AI 辅助归纳、生成和编辑，可能存在遗漏、简化或不准确之处。',
-  },
-  {
-    heading: '免责声明',
-    body: '相关内容仅用于产业链结构理解和产品功能展示，不构成投资建议、采购建议、技术选型建议或商业决策依据。如需用于正式研究或决策，请以权威机构、企业公告、原始研报及人工核验结果为准。页面中的场景图、设备图和空间关系为 AI 生成示意图，不代表真实基地、设备比例或企业布局。',
-  },
-]
-
 export interface AtlasRuntimeAssetLoader {
   resolveUrl(url: string): string
   loadImage(url: string): Promise<HTMLImageElement>
@@ -135,6 +128,8 @@ export class AtlasRuntime {
   private infoBackdropEl: HTMLElement | null = null
   private infoSheetEl: HTMLElement | null = null
   private infoOpen = false
+  private transitionController: TransitionVideoController | null = null
+  private transitionOverlayEl: HTMLElement | null = null
 
   constructor(opts: AtlasRuntimeOptions) {
     this.listeners = opts.listeners ?? []
@@ -183,6 +178,7 @@ export class AtlasRuntime {
     this.overlayLayer = overlayLayer
 
     this.mountChrome()
+    this.mountTransitionOverlay()
 
     // Panorama image
     const imgUrl = this.opts.assets.resolveUrl(this.manifest.panorama.url)
@@ -252,6 +248,9 @@ export class AtlasRuntime {
 
     // Scene launcher
     this.sceneLauncher = new SceneLauncher(this.opts.assets.openScene, this.listeners)
+    this.transitionController = new TransitionVideoController({
+      mountRoot: this.transitionOverlayEl ?? undefined,
+    })
 
     this.mountedAt = this.now()
   }
@@ -269,6 +268,8 @@ export class AtlasRuntime {
     this.markers = null
     this.callouts = null
     this.sceneLauncher = null
+    this.transitionController?.cancel()
+    this.transitionController = null
     this.drawer?.destroy()
     this.drawer = null
     this.manifest = null
@@ -280,6 +281,7 @@ export class AtlasRuntime {
     this.infoBackdropEl = null
     this.infoSheetEl = null
     this.infoOpen = false
+    this.transitionOverlayEl = null
   }
 
   /**
@@ -306,6 +308,14 @@ export class AtlasRuntime {
    * transition" buttons).
    */
   openRoute(routeId: string): void {
+    void this.openRouteInternal(routeId)
+  }
+
+  dismissTransientExperience(): void {
+    this.transitionController?.cancel()
+  }
+
+  private async openRouteInternal(routeId: string): Promise<void> {
     if (!this.manifest || !this.sceneLauncher) return
     const route = this.manifest.routes.find((r) => r.id === routeId)
     if (!route) return
@@ -314,8 +324,43 @@ export class AtlasRuntime {
     if (to.kind === 'scene') {
       const scene = this.manifest.scenes.find((s) => s.sceneId === to.sceneId)
       if (scene) {
-        this.sceneLauncher.launch(scene)
+        const viewId = to.viewId ?? scene.views[0]?.id
+        const transition = this.manifest.routeTransitions?.[route.id]
+        if (transition && this.transitionController) {
+          const play = this.transitionController.play({
+            url: transition.url,
+            posterUrl: transition.posterUrl,
+            timeoutMs: transition.timeoutMs,
+            policy: transition.onFailure,
+          })
+          if (transition.onFailure === 'abort-navigation') {
+            this.sceneLauncher.launch(scene, viewId)
+            void play.catch(() => {})
+            return
+          }
+          try {
+            await play
+          } catch {
+            return
+          }
+        }
+        this.sceneLauncher.launch(scene, viewId)
       }
+      return
+    }
+    if (to.kind === 'panorama') {
+      if (to.itemId) {
+        this.handleDrawerItemClick(to.itemId)
+        return
+      }
+      if (to.categoryId) {
+        this.focusCategory(to.categoryId)
+        return
+      }
+      this.clearActiveItem()
+      this.drawer?.close()
+      this.camera?.animateTo(this.manifest.panorama.initialViewport)
+      this.updateFloatingBackButton()
     }
   }
 
@@ -340,6 +385,13 @@ export class AtlasRuntime {
   private handleCategoryClick(categoryId: string): void {
     this.emit({ type: 'hotspotclick', categoryId })
     this.emit({ type: 'analytics:click', target: { kind: 'category', id: categoryId } })
+    const category = this.manifest?.categories.find((entry) => entry.id === categoryId)
+    if (
+      category?.experience.kind === 'html-scene' &&
+      this.tryOpenSceneRouteForCategory(categoryId, category.experience.sceneId, category.experience.viewId)
+    ) {
+      return
+    }
     this.focusCategory(categoryId)
   }
 
@@ -390,6 +442,43 @@ export class AtlasRuntime {
     this.markers?.activate(null)
     this.activateItemSelection(null, { scrollIntoView: false })
     this.updateFloatingBackButton()
+  }
+
+  private tryOpenSceneRouteForCategory(
+    categoryId: string,
+    sceneId: string,
+    viewId: string,
+  ): boolean {
+    if (!this.manifest || !this.sceneLauncher) return false
+    const route = this.manifest.routes.find(
+      (entry) =>
+        entry.from.kind === 'panorama' &&
+        entry.from.categoryId === categoryId &&
+        entry.to.kind === 'scene' &&
+        entry.to.sceneId === sceneId &&
+        entry.to.viewId === viewId,
+    )
+    if (route) {
+      this.openRoute(route.id)
+      return true
+    }
+    const scene = this.manifest.scenes.find((entry) => entry.sceneId === sceneId)
+    if (!scene) return false
+    this.sceneLauncher.launch(scene, viewId)
+    return true
+  }
+
+  private mountTransitionOverlay(): void {
+    if (!this.mountedEl) return
+    const overlay = document.createElement('div')
+    overlay.dataset.testid = 'atlas-transition-overlay'
+    overlay.style.position = 'absolute'
+    overlay.style.inset = '0'
+    overlay.style.pointerEvents = 'none'
+    overlay.style.zIndex = '45'
+    overlay.style.display = 'none'
+    this.mountedEl.appendChild(overlay)
+    this.transitionOverlayEl = overlay
   }
 
   private mountChrome(): void {
@@ -566,7 +655,7 @@ export class AtlasRuntime {
     infoHeader.style.minHeight = '28px'
 
     const infoTitle = document.createElement('div')
-    infoTitle.textContent = INFO_SHEET_DEFAULT_TITLE
+    infoTitle.textContent = HOST_INFO_SHEET_TITLE
     infoTitle.style.fontWeight = '600'
     infoTitle.style.fontSize = '16px'
     infoTitle.style.lineHeight = '22px'
@@ -601,7 +690,7 @@ export class AtlasRuntime {
     infoContent.style.minHeight = '0'
     infoContent.style.paddingRight = '2px'
 
-    for (const section of INFO_SHEET_DEFAULT_SECTIONS) {
+    for (const section of HOST_INFO_SHEET_DEFAULT_SECTIONS) {
       const sectionEl = document.createElement('section')
       const headingEl = document.createElement('div')
       headingEl.textContent = section.heading

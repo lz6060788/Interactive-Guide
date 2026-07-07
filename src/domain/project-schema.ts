@@ -137,6 +137,10 @@ export const SceneFocusCommandSchema = z.object({
   payload: z.record(z.string(), z.unknown()).optional(),
 })
 
+export const SceneChromeConfigSchema = z.object({
+  textColor: z.string().optional(),
+})
+
 export const HtmlSceneViewSchema = z.object({
   // id/title/activationMessage.type may be '' while the user is typing
   // (transient empty state mid-edit). Release-tier validation
@@ -150,6 +154,7 @@ export const HtmlSceneViewSchema = z.object({
   }),
   categoryIds: z.array(z.string().min(1)),
   itemFocusMap: z.record(z.string(), SceneFocusCommandSchema).optional(),
+  chrome: SceneChromeConfigSchema.optional(),
 })
 
 export const HtmlScenePackageSchema = z.object({

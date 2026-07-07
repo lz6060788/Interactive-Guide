@@ -94,6 +94,26 @@ test('compileAtlas rewrites asset URLs through the closure', () => {
 
 test('compileAtlas includes routes reachable from panorama or scene', () => {
   const p = sample()
+  p.assets.byId['asset-scene'] = {
+    id: 'asset-scene',
+    kind: 'html-bundle',
+    sourcePath: 'assets/scenes/asset-scene',
+    entryPath: 'index.html',
+  }
+  p.assets.byId['asset-vid'] = {
+    id: 'asset-vid',
+    kind: 'video',
+    sourcePath: 'assets/videos/asset-vid/video.mp4',
+  }
+  p.scenes = [
+    {
+      id: 's-rocket',
+      title: 'Rocket Scene',
+      assetId: 'asset-scene',
+      protocol: { channel: 'interactive-guide:scene-bridge', version: '1.0.0' },
+      views: [{ id: 'v-overview', title: 'Overview', activationMessage: { type: 'init' }, categoryIds: [] }],
+    },
+  ]
   p.navigation.routes = [
     {
       id: 'r1',
@@ -105,6 +125,8 @@ test('compileAtlas includes routes reachable from panorama or scene', () => {
   const { manifest } = compileAtlas(p, closure)
   assert.equal(manifest.routes.length, 1)
   assert.equal(manifest.routes[0].id, 'r1')
+  assert.equal(manifest.scenes[0].entryUrl, './scenes/asset-scene/index.html')
+  assert.equal(manifest.routeTransitions?.['r1']?.url, './assets/videos/asset-vid/video.mp4')
 })
 
 test('compileAtlas preserves authored category.itemIds order for drawer and first-callout focus', () => {

@@ -11,6 +11,7 @@ import type {
   AssetDefinition,
   GuideProject,
   HtmlScenePackage,
+  ExperienceNavigation,
 } from '@domain/project-types'
 
 export interface ListEntry {
@@ -165,6 +166,15 @@ export function assetBlobUrl(projectId: string, assetId: string): string {
   return `/api/projects/${projectId}/assets/blob/${assetId}`
 }
 
+export function assetHtmlBundleFileUrl(
+  projectId: string,
+  assetId: string,
+  filePath: string = 'index.html',
+): string {
+  const normalized = filePath.replace(/^\/+/, '')
+  return `/api/projects/${projectId}/assets/html-bundle/${assetId}/${normalized}`
+}
+
 // ─── Scenes ────────────────────────────────────────────────
 
 export interface UpdateScenesInput {
@@ -179,6 +189,26 @@ export function useUpdateProjectScenes(id: string) {
       apiFetch<GuideProject>(`/projects/${id}/scenes`, {
         method: 'PUT',
         body: input.scenes,
+        expectedRevision: input.expectedRevision,
+      }),
+    onSuccess: (next) => {
+      qc.setQueryData(projectsKeys.detail(id), next)
+    },
+  })
+}
+
+export interface UpdateNavigationInput {
+  navigation: ExperienceNavigation
+  expectedRevision: number
+}
+
+export function useUpdateProjectNavigation(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: UpdateNavigationInput) =>
+      apiFetch<GuideProject>(`/projects/${id}/navigation`, {
+        method: 'PUT',
+        body: input.navigation,
         expectedRevision: input.expectedRevision,
       }),
     onSuccess: (next) => {
