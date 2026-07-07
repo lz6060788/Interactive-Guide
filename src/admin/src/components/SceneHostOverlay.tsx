@@ -1,8 +1,18 @@
-import { ArrowLeft, Info, Share2, X } from 'lucide-react'
 import {
   HOST_INFO_SHEET_DEFAULT_SECTIONS,
   HOST_INFO_SHEET_TITLE,
 } from '../../../platform/chrome/host-info-sheet'
+import {
+  HOST_BACK_ICON_SVG,
+  HOST_INFO_ICON_SVG,
+  HOST_SHARE_ICON_SVG,
+} from '../../../platform/chrome/host-toolbar-icons'
+import {
+  HOST_TOOLBAR_SIDE_OFFSET_PX,
+  HOST_TOOLBAR_TITLE_MAX_WIDTH_PX,
+  HOST_TOOLBAR_TOP_GRADIENT,
+  HOST_TOOLBAR_TOP_OFFSET_PX,
+} from '../../../platform/chrome/host-toolbar-tokens'
 
 export interface SceneHostOverlayState {
   src: string
@@ -36,8 +46,6 @@ export function SceneHostOverlay({
   children,
 }: Props): JSX.Element {
   const sceneChromeColor = activeScene.chromeTextColor || '#FFFFFF'
-  const topGradient =
-    'linear-gradient(180deg, rgba(2, 6, 23, 0.68) 0%, rgba(2, 6, 23, 0.18) 62%, rgba(2, 6, 23, 0) 100%)'
 
   return (
     <div
@@ -56,8 +64,8 @@ export function SceneHostOverlay({
           left: 0,
           right: 0,
           top: 0,
-          height: 88,
-          background: topGradient,
+          height: 96,
+          background: HOST_TOOLBAR_TOP_GRADIENT,
           pointerEvents: 'none',
           zIndex: 2,
         }}
@@ -78,8 +86,8 @@ export function SceneHostOverlay({
           aria-label="返回"
           style={{
             position: 'absolute',
-            left: 16,
-            top: 16,
+            left: HOST_TOOLBAR_SIDE_OFFSET_PX,
+            top: HOST_TOOLBAR_TOP_OFFSET_PX,
             width: 32,
             height: 32,
             border: '0',
@@ -91,14 +99,14 @@ export function SceneHostOverlay({
             cursor: 'pointer',
             pointerEvents: 'auto',
           }}
+          dangerouslySetInnerHTML={{ __html: HOST_BACK_ICON_SVG }}
         >
-          <ArrowLeft size={22} />
         </button>
         <div
           style={{
             position: 'absolute',
             left: '50%',
-            top: 16,
+            top: HOST_TOOLBAR_TOP_OFFSET_PX,
             transform: 'translateX(-50%)',
             display: 'flex',
             alignItems: 'center',
@@ -110,7 +118,7 @@ export function SceneHostOverlay({
           <div
             style={{
               minHeight: 24,
-              maxWidth: 220,
+              maxWidth: HOST_TOOLBAR_TITLE_MAX_WIDTH_PX,
               fontSize: 17,
               lineHeight: '24px',
               fontWeight: 700,
@@ -137,8 +145,8 @@ export function SceneHostOverlay({
               justifyContent: 'center',
               cursor: 'pointer',
             }}
+            dangerouslySetInnerHTML={{ __html: HOST_INFO_ICON_SVG }}
           >
-            <Info size={14} />
           </button>
         </div>
         <button
@@ -147,8 +155,8 @@ export function SceneHostOverlay({
           aria-label="分享"
           style={{
             position: 'absolute',
-            right: 16,
-            top: 16,
+            right: HOST_TOOLBAR_SIDE_OFFSET_PX,
+            top: HOST_TOOLBAR_TOP_OFFSET_PX,
             width: 24,
             height: 24,
             border: '0',
@@ -160,8 +168,8 @@ export function SceneHostOverlay({
             cursor: 'pointer',
             pointerEvents: 'auto',
           }}
+          dangerouslySetInnerHTML={{ __html: HOST_SHARE_ICON_SVG }}
         >
-          <Share2 size={20} />
         </button>
       </div>
       {children}
@@ -233,7 +241,7 @@ export function SceneHostOverlay({
                   justifyContent: 'center',
                 }}
               >
-                <X size={18} />
+                ×
               </button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18, overflowY: 'auto' }}>

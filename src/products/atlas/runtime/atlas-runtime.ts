@@ -45,31 +45,8 @@ import { SceneLauncher } from './scene-launcher.js'
 import { CardDrawerController } from './card-drawer-controller.js'
 import { ensureAtlasVisualStyles } from './atlas-visual-tokens.js'
 import { TransitionVideoController } from '../../../platform/transition-video/transition-video-controller.js'
-import {
-  HOST_INFO_SHEET_DEFAULT_SECTIONS,
-  HOST_INFO_SHEET_TITLE,
-} from '../../../platform/chrome/host-info-sheet.js'
-
-const BACK_ICON_SVG = `
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M15.25 5.5L8.75 12L15.25 18.5" stroke="#231815" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-`
-const INFO_ICON_SVG = `
-<svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M7.00977 0.00878906C10.5322 0.187363 13.333 3.10017 13.333 6.66699L13.3242 7.00977C13.1456 10.5321 10.2337 13.3328 6.66699 13.333L6.32324 13.3242C2.91459 13.1512 0.181596 10.4185 0.00878906 7.00977L0 6.66699C0 2.98509 2.98509 0 6.66699 0L7.00977 0.00878906ZM6.66699 1C3.53738 1 1 3.53738 1 6.66699C1.00018 9.79646 3.53749 12.333 6.66699 12.333C9.79635 12.3328 12.3328 9.79635 12.333 6.66699C12.333 3.53749 9.79646 1.00018 6.66699 1ZM7.16699 5.33301V10H6.16699V5.33301H7.16699ZM6.66699 3.33301C7.03503 3.33318 7.33301 3.63192 7.33301 4C7.33301 4.36808 7.03503 4.66682 6.66699 4.66699C6.2988 4.66699 6 4.36819 6 4C6 3.63181 6.2988 3.33301 6.66699 3.33301Z" fill="black" fill-opacity="0.4"/>
-</svg>
-`
-const SHARE_ICON_SVG = `
-<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M18.332 21.2057H5.39898C3.97063 21.2057 2.81152 20.0466 2.81152 18.6183V5.6844C2.81152 4.25605 4.01466 2.79468 5.44301 2.79468H12.6737V4.11042H5.44301C4.72756 4.11042 4.12726 4.71072 4.12726 5.42616L4.1061 18.6183C4.1061 19.3337 4.68607 19.9112 5.39898 19.9112L18.5928 19.89C19.3057 19.89 19.906 19.2897 19.906 18.5743V11.3436H21.2217V18.5743C21.2226 20.0043 19.7629 21.2057 18.332 21.2057ZM20.5656 8.71213C20.1922 8.71382 19.9068 8.41156 19.9068 8.0551L19.8882 4.91307L9.8813 14.456C9.61883 14.7066 9.19295 14.7066 8.93048 14.456C8.6697 14.2054 8.6697 13.799 8.93048 13.5492L18.8519 4.08925L15.9622 4.11042C15.5888 4.11042 15.3051 3.80815 15.3051 3.4534C15.3051 3.09694 15.5888 2.79637 15.9622 2.79468H20.5512C20.9246 2.79468 21.2226 3.08001 21.2226 3.43646V8.0551C21.2226 8.41156 20.9364 8.71213 20.5656 8.71213Z" fill="#231815"/>
-</svg>
-`
-const SHEET_BACK_ICON_SVG = `
-<svg width="16" height="13" viewBox="0 0 16 13" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-  <path d="M10.5065 2.13333H7.11988V0L2.50655 3.46339L7.11988 6.33333V4.2H10.4799C12.7999 4.2 13.5 4.35339 13.6665 7.38667C13.6665 9.70667 12.7999 10.5733 10.4799 10.5733H0.826546C0.533213 10.5733 0 10.5733 0 11.3534C0 12.8534 0.5 12.64 0.826546 12.64H10.5065C13.4132 12.64 15.7599 10.8534 15.7599 7.38667C15.7599 3.35339 13.3865 2.13333 10.5065 2.13333Z" fill="black" fill-opacity="0.84"/>
-</svg>
-`
+import { HostToolbarDomController } from '../../../platform/chrome/host-toolbar-dom.js'
+import { HOST_SHEET_BACK_ICON_SVG } from '../../../platform/chrome/host-toolbar-icons.js'
 const DEFAULT_HOTSPOT_MIN_ZOOM = 1
 const DEFAULT_CALLOUT_MIN_ZOOM = 2
 const DEFAULT_ITEM_MARKER_MIN_ZOOM = 2
@@ -122,12 +99,9 @@ export class AtlasRuntime {
   // Image + markers + callouts + bottom panel all live inside it.
   private viewportLayer: HTMLElement | null = null
   private overlayLayer: HTMLElement | null = null
-  private toolbarEl: HTMLElement | null = null
+  private toolbar: HostToolbarDomController | null = null
   private hintEl: HTMLElement | null = null
   private floatingBackEl: HTMLButtonElement | null = null
-  private infoBackdropEl: HTMLElement | null = null
-  private infoSheetEl: HTMLElement | null = null
-  private infoOpen = false
   private transitionController: TransitionVideoController | null = null
   private transitionOverlayEl: HTMLElement | null = null
 
@@ -275,12 +249,10 @@ export class AtlasRuntime {
     this.manifest = null
     this.viewportLayer = null
     this.overlayLayer = null
-    this.toolbarEl = null
+    this.toolbar?.destroy()
+    this.toolbar = null
     this.hintEl = null
     this.floatingBackEl = null
-    this.infoBackdropEl = null
-    this.infoSheetEl = null
-    this.infoOpen = false
     this.transitionOverlayEl = null
   }
 
@@ -484,99 +456,41 @@ export class AtlasRuntime {
   private mountChrome(): void {
     if (!this.manifest || !this.mountedEl) return
     if (this.manifest.config.chrome.showToolbar !== false) {
-      const toolbar = document.createElement('div')
-      toolbar.dataset.testid = 'atlas-runtime-toolbar'
-      toolbar.style.position = 'absolute'
-      toolbar.style.left = '0'
-      toolbar.style.right = '0'
-      toolbar.style.top = '0'
-      toolbar.style.bottom = '0'
-      toolbar.style.pointerEvents = 'none'
-      toolbar.style.zIndex = '30'
-
-      const backButton = this.createIconButton(
-        'atlas-runtime-back',
-        '返回上一页',
-        BACK_ICON_SVG,
-        () => {
+      this.toolbar = new HostToolbarDomController({
+        root: this.mountedEl,
+        title: this.manifest.projectTitle,
+        textColor: 'rgba(0, 0, 0, 0.84)',
+        onBack: () => {
           this.clearActiveItem()
           this.drawer?.close()
           this.camera?.animateTo(this.manifest!.panorama.initialViewport)
           this.updateFloatingBackButton()
         },
-      )
-      backButton.style.position = 'absolute'
-      backButton.style.left = '16px'
-      backButton.style.top = '16px'
-      backButton.style.width = '32px'
-      backButton.style.height = '32px'
-
-      const title = document.createElement('div')
-      title.dataset.testid = 'atlas-runtime-toolbar-title'
-      title.textContent = this.manifest.projectTitle
-      title.style.minHeight = '24px'
-      title.style.maxWidth = '220px'
-      title.style.fontSize = '17px'
-      title.style.lineHeight = '24px'
-      title.style.fontWeight = '700'
-      title.style.color = 'rgba(0, 0, 0, 0.84)'
-      title.style.whiteSpace = 'nowrap'
-      title.style.overflow = 'hidden'
-      title.style.textOverflow = 'ellipsis'
-      title.style.pointerEvents = 'none'
-
-      const center = document.createElement('div')
-      center.style.position = 'absolute'
-      center.style.left = '50%'
-      center.style.top = '16px'
-      center.style.transform = 'translateX(-50%)'
-      center.style.display = 'flex'
-      center.style.alignItems = 'center'
-      center.style.justifyContent = 'center'
-      center.style.gap = '4px'
-      center.style.maxWidth = 'calc(100% - 120px)'
-      center.style.pointerEvents = 'auto'
-
-      const infoButton = this.createIconButton(
-        'atlas-runtime-toolbar-icon',
-        '提示信息',
-        INFO_ICON_SVG,
-        () => this.toggleInfoSheet(),
-      )
-      infoButton.style.width = '24px'
-      infoButton.style.height = '24px'
-
-      const shareButton = this.createIconButton(
-        'atlas-runtime-share',
-        '分享',
-        SHARE_ICON_SVG,
-        () => {
+        onShare: () => {
           this.emit({ type: 'analytics:share', channel: 'toolbar' })
           const nav = (globalThis as typeof globalThis & { navigator?: Navigator }).navigator
           if (nav?.share) {
             void nav.share({ title: this.manifest?.projectTitle ?? '' }).catch(() => {})
           }
         },
-      )
-      shareButton.style.position = 'absolute'
-      shareButton.style.right = '16px'
-      shareButton.style.top = '16px'
-      shareButton.style.width = '24px'
-      shareButton.style.height = '24px'
-
-      center.appendChild(title)
-      center.appendChild(infoButton)
-      toolbar.appendChild(backButton)
-      toolbar.appendChild(center)
-      toolbar.appendChild(shareButton)
-      this.mountedEl.appendChild(toolbar)
-      this.toolbarEl = toolbar
+        testIds: {
+          toolbar: 'atlas-runtime-toolbar',
+          back: 'atlas-runtime-back',
+          title: 'atlas-runtime-toolbar-title',
+          info: 'atlas-runtime-toolbar-icon',
+          share: 'atlas-runtime-share',
+          infoBackdrop: 'atlas-runtime-info-backdrop',
+          infoSheet: 'atlas-runtime-info-sheet',
+        },
+        zIndexBase: 30,
+      })
+      this.toolbar.mount()
     }
 
     const floatingBack = this.createIconButton(
       'atlas-runtime-floating-back',
       '返回总图',
-      SHEET_BACK_ICON_SVG,
+      HOST_SHEET_BACK_ICON_SVG,
       () => {
         this.clearActiveItem()
         this.drawer?.close()
@@ -607,114 +521,6 @@ export class AtlasRuntime {
     }
     this.mountedEl.appendChild(floatingBack)
     this.floatingBackEl = floatingBack
-
-    const infoBackdrop = document.createElement('div')
-    infoBackdrop.dataset.testid = 'atlas-runtime-info-backdrop'
-    infoBackdrop.style.position = 'absolute'
-    infoBackdrop.style.inset = '0'
-    infoBackdrop.style.display = 'none'
-    infoBackdrop.style.background = 'rgba(0, 0, 0, 0.8)'
-    infoBackdrop.style.opacity = '0'
-    infoBackdrop.style.transition = 'opacity 220ms ease'
-    infoBackdrop.style.pointerEvents = 'none'
-    infoBackdrop.style.zIndex = '31'
-    infoBackdrop.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.closeInfoSheet()
-    })
-    this.mountedEl.appendChild(infoBackdrop)
-    this.infoBackdropEl = infoBackdrop
-
-    const infoSheet = document.createElement('div')
-    infoSheet.dataset.testid = 'atlas-runtime-info-sheet'
-    infoSheet.style.position = 'absolute'
-    infoSheet.style.left = '0'
-    infoSheet.style.right = '0'
-    infoSheet.style.bottom = '0'
-    infoSheet.style.display = 'none'
-    infoSheet.style.flexDirection = 'column'
-    infoSheet.style.gap = '16px'
-    infoSheet.style.padding = '18px 22px 24px'
-    infoSheet.style.borderTopLeftRadius = '8px'
-    infoSheet.style.borderTopRightRadius = '8px'
-    infoSheet.style.background = '#FFFFFF'
-    infoSheet.style.boxShadow = '0 -10px 36px rgba(15, 23, 42, 0.12)'
-    infoSheet.style.opacity = '0'
-    infoSheet.style.transition = 'opacity 220ms ease'
-    infoSheet.style.maxHeight = '50vh'
-    infoSheet.style.overflow = 'hidden'
-    infoSheet.style.boxSizing = 'border-box'
-    infoSheet.style.zIndex = '32'
-
-    const infoHeader = document.createElement('div')
-    infoHeader.style.position = 'relative'
-    infoHeader.style.display = 'flex'
-    infoHeader.style.alignItems = 'center'
-    infoHeader.style.justifyContent = 'center'
-    infoHeader.style.minHeight = '28px'
-
-    const infoTitle = document.createElement('div')
-    infoTitle.textContent = HOST_INFO_SHEET_TITLE
-    infoTitle.style.fontWeight = '600'
-    infoTitle.style.fontSize = '16px'
-    infoTitle.style.lineHeight = '22px'
-    infoTitle.style.color = 'rgba(0, 0, 0, 0.84)'
-
-    const infoClose = document.createElement('button')
-    infoClose.type = 'button'
-    infoClose.textContent = '×'
-    infoClose.style.position = 'absolute'
-    infoClose.style.right = '0'
-    infoClose.style.top = '50%'
-    infoClose.style.transform = 'translateY(-50%)'
-    infoClose.style.width = '28px'
-    infoClose.style.height = '28px'
-    infoClose.style.border = 'none'
-    infoClose.style.borderRadius = '999px'
-    infoClose.style.background = 'transparent'
-    infoClose.style.color = 'rgba(0, 0, 0, 0.36)'
-    infoClose.style.fontSize = '24px'
-    infoClose.style.cursor = 'pointer'
-    infoClose.addEventListener('click', (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      this.closeInfoSheet()
-    })
-
-    const infoContent = document.createElement('div')
-    infoContent.style.display = 'flex'
-    infoContent.style.flexDirection = 'column'
-    infoContent.style.gap = '18px'
-    infoContent.style.overflowY = 'auto'
-    infoContent.style.minHeight = '0'
-    infoContent.style.paddingRight = '2px'
-
-    for (const section of HOST_INFO_SHEET_DEFAULT_SECTIONS) {
-      const sectionEl = document.createElement('section')
-      const headingEl = document.createElement('div')
-      headingEl.textContent = section.heading
-      headingEl.style.fontWeight = '700'
-      headingEl.style.fontSize = '13px'
-      headingEl.style.lineHeight = '18px'
-      headingEl.style.color = 'rgba(0, 0, 0, 0.84)'
-      headingEl.style.marginBottom = '6px'
-      const bodyEl = document.createElement('div')
-      bodyEl.textContent = section.body
-      bodyEl.style.fontSize = '13px'
-      bodyEl.style.lineHeight = '22px'
-      bodyEl.style.color = 'rgba(0, 0, 0, 0.72)'
-      sectionEl.appendChild(headingEl)
-      sectionEl.appendChild(bodyEl)
-      infoContent.appendChild(sectionEl)
-    }
-
-    infoHeader.appendChild(infoTitle)
-    infoHeader.appendChild(infoClose)
-    infoSheet.appendChild(infoHeader)
-    infoSheet.appendChild(infoContent)
-    this.mountedEl.appendChild(infoSheet)
-    this.infoSheetEl = infoSheet
 
     if (this.manifest.config.chrome.showHints !== false && this.manifest.config.hintText) {
       ensureAtlasDragHintAnimationStyles(this.mountedEl.ownerDocument)
@@ -812,36 +618,6 @@ export class AtlasRuntime {
     this.floatingBackEl.style.bottom = drawerHeight > 0
       ? `${drawerHeight + 24}px`
       : '24px'
-  }
-
-  private toggleInfoSheet(): void {
-    if (this.infoOpen) {
-      this.closeInfoSheet()
-      return
-    }
-    this.infoOpen = true
-    if (this.infoBackdropEl) {
-      this.infoBackdropEl.style.display = 'block'
-      this.infoBackdropEl.style.opacity = '1'
-      this.infoBackdropEl.style.pointerEvents = 'auto'
-    }
-    if (this.infoSheetEl) {
-      this.infoSheetEl.style.display = 'flex'
-      this.infoSheetEl.style.opacity = '1'
-    }
-  }
-
-  private closeInfoSheet(): void {
-    this.infoOpen = false
-    if (this.infoBackdropEl) {
-      this.infoBackdropEl.style.opacity = '0'
-      this.infoBackdropEl.style.pointerEvents = 'none'
-      this.infoBackdropEl.style.display = 'none'
-    }
-    if (this.infoSheetEl) {
-      this.infoSheetEl.style.opacity = '0'
-      this.infoSheetEl.style.display = 'none'
-    }
   }
 
   private viewportForItem(item: AtlasItemEntry): Viewport {

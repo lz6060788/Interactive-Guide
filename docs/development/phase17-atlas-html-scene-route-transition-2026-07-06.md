@@ -441,3 +441,43 @@ Atlas 分类右侧属性面板新增：
 3. route.transition 是否绑定了 video asset
 4. compiler 是否把 scene entry 与 transition URL 编进 manifest
 5. preview/runtime 的 `openScene()` 是否真的能打开 scene
+
+## 6.6 2026-07-07 跟进：宿主顶部 chrome 不再分裂为三套实现
+
+在继续联调时，发现“HTML scene 顶部标题 / 图标样式仍然和全景图不一致”的根因不是某个颜色参数没传，而是代码结构上确实已经分裂成三套：
+
+- `AtlasRuntime.mountChrome()` 一套旧版 DOM
+- `product-toolbar` 一套 HTML scene runtime DOM
+- `SceneHostOverlay` 一套 admin preview React + lucide 图标
+
+这会带来三个后果：
+
+1. 图标 SVG、间距、渐变层高度很容易继续漂移
+2. HTML scene 的白字需求无法和 Atlas 的浅色 header 共用同一视觉基线
+3. 任何一个说明弹层或顶部交互修复，都必须改三处，回归成本很高
+
+因此本次进一步调整为：
+
+- 新增 `src/platform/chrome/host-toolbar-icons.ts`
+  - 统一返回 / 说明 / 分享 / 右下返回 SVG
+  - 全部改成 `currentColor`，让 HTML scene 可直接使用白字
+- 新增 `src/platform/chrome/host-toolbar-tokens.ts`
+  - 统一顶部 gradient、高度、左右留白、标题最大宽度
+- 新增 `src/platform/chrome/host-toolbar-dom.ts`
+  - 抽出共享 DOM 宿主顶部栏 + 说明弹层控制器
+  - Atlas / runtime scene host 都复用这层 DOM 结构
+- `AtlasRuntime`
+  - 保留“返回到初始全景镜头”的旧语义
+  - 只把顶部 chrome 的视觉和说明弹层改为共享实现
+  - 右下“返回总图”悬浮按钮仍由 Atlas 自己维护
+- `SceneHostOverlay`
+  - 改为直接复用同一套 SVG / spacing token
+  - 仍保留 HTML scene 自己的 `chromeTextColor`
+  - 返回行为继续走 scene host 的关闭逻辑，而不是套用 Atlas 语义
+
+这样处理后，宿主顶部栏终于回到“视觉结构共用一套、场景行为分别注入”的正确边界：
+
+- Panorama：浅色标题，返回初始全景状态
+- HTML scene：深色背景时可切白字，返回 scene overlay 关闭逻辑
+
+也就是说，后续若再调顶部 icon、说明弹层或标题布局，只需要改平台层一份视觉实现，不会再出现 preview / runtime / atlas 三边继续漂移。

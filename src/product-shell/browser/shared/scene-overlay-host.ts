@@ -88,6 +88,8 @@ export class SceneOverlayHost {
 
   closeScene(options: { preserveSrc?: boolean } = {}): void {
     this.controller.closeScene()
+    this.toolbar?.destroy()
+    this.toolbar = null
     this.overlayEl.style.display = 'none'
     this.overlayEl.style.pointerEvents = 'none'
     if (!options.preserveSrc) {
@@ -101,4 +103,3 @@ export class SceneOverlayHost {
     this.overlayEl.remove()
   }
 }
-
