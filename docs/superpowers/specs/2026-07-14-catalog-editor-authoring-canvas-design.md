@@ -44,3 +44,10 @@ Catalog editor
 - 编辑态能同时看见当前分类所有三级项目，能分别调整背景取景框、marker 与 focusRect。
 - 编辑态无一、二级按钮；运行时预览保留其发布态导航和列表。
 - 编辑后的四类坐标写回同一份 `panorama` 数据，切至预览后立即呈现相同配置。
+
+## 实施记录
+
+- `BrowserRouter` 已移动到 `ErrorBoundary` 外层；错误回退页的返回链接现在始终在 Router 上下文中渲染。
+- 已新增 `CatalogAuthoringCanvas`。编辑模式使用完整原图的 contain 投影，显示当前分类全部三级 marker、有效背景镜头蓝色取景框与当前项目红色聚焦框；拖动分别写回 `marker`、有效 `viewport` 和 `focusRect`。
+- `CatalogEditor` 的“运行时预览”继续使用 `CatalogEditorCanvas` / `CatalogScene`，并且仅在该模式渲染运行态的导航、局部背景、遮罩、列表和虚线。
+- 已增加编辑器模块存在性回归覆盖；全量测试、类型检查和 Admin 构建已通过。
