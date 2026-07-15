@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: Falcon 宿主预检 / 普通浏览器跳过 F10 / 存储芯片 revision 21 预览验收 (2026-07-15)
+Last sync: 双产品 HTML 项目标题 / 资料来源通用文案 / Catalog 聚焦框圆角 (2026-07-15)
 
 ### Modules
 
@@ -17,6 +17,8 @@ Last sync: Falcon 宿主预检 / 普通浏览器跳过 F10 / 存储芯片 revisi
 
 | Doc | Description |
 |-----|-------------|
+| [双产品 HTML 标题与资料来源文案设计](superpowers/specs/2026-07-15-product-title-source-copy-design.md) | Atlas/Catalog HTML 标题使用项目标题，共用资料来源默认文案去除机构名称 (2026-07-15) |
+| [Catalog 聚焦框固定圆角设计](superpowers/specs/2026-07-15-catalog-focus-radius-design.md) | Catalog 运行时与实时预览统一 12px 聚焦框圆角，保留 pill 主题行为 (2026-07-15) |
 | [Atlas F10 分享与 WeBlog 四事件设计](superpowers/specs/2026-07-15-atlas-f10-weblog-integration-design.md) | Atlas-only 四事件、Falcon 宿主预检、F10 分享/跳转与 revision 21 产物验收 (2026-07-15) |
 | [存储芯片产业链项目引导报告](development/memory-chip-project-bootstrap-report.md) | 3/9/27 知识映射、9/27 空间坐标、双产品编译验证与人工校准清单 (2026-07-15) |
 | [Phase 18 ES5 独立产物导出](development/phase18-es5-standalone-export-2026-07-15.md) | Atlas/Catalog 共用 ES5 IIFE 构建、静态预览、ZIP 下载和编辑器自动保存导出 (2026-07-15) |

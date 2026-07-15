@@ -8,7 +8,7 @@ export const HOST_INFO_SHEET_TITLE = '说明'
 export const HOST_INFO_SHEET_DEFAULT_SECTIONS: HostInfoSheetSection[] = [
   {
     heading: '资料来源',
-    body: '本产业链图谱基于民生证券、华泰证券、国信证券等公开研报，以及行业公开资料、网络公开信息整理。节点分类、层级关系、说明文案及部分可视化形式由 AI 辅助归纳、生成和编辑，可能存在遗漏、简化或不准确之处。',
+    body: '本产业链图谱基于公开研报，以及行业公开资料、网络公开信息整理。节点分类、层级关系、说明文案及部分可视化形式由 AI 辅助归纳、生成和编辑，可能存在遗漏、简化或不准确之处。',
   },
   {
     heading: '免责声明',

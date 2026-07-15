@@ -256,12 +256,43 @@ test('CatalogRuntime aligns the focus crop with the same panorama coordinates as
   const focus = (container as unknown as FakeEl).children.find(
     child => child.dataset.testid === 'catalog-focus-window',
   )
+  const connector = (container as unknown as FakeEl).children.find(
+    child => child.dataset.testid === 'catalog-focus-connector',
+  )
   assert.ok(focus, 'the selected item must render a focus crop')
   // The source image is 4:3 in this fixture. At zoom 2 the image begins at
   // (-512px, -384px) and the crop begins at (-307.2px, -230.4px). CSS
   // backgrounds are local to the crop, so they shift by the difference, not
   // by the backdrop origin itself.
   assert.equal(focus.style.backgroundPosition, '-204.8px -153.60000000000002px')
+  assert.equal(focus.style.borderRadius, '12px')
+  const cornerInset = 12 * (1 - Math.SQRT1_2) - 1.5
+  const expectedConnectorLeft =
+    Number.parseFloat(focus.style.left ?? '') +
+    Number.parseFloat(focus.style.width ?? '') -
+    cornerInset
+  const expectedConnectorTop = Number.parseFloat(focus.style.top ?? '') + cornerInset
+  assert.ok(
+    Math.abs(Number.parseFloat(connector?.style.left ?? '') - expectedConnectorLeft) < 0.001,
+  )
+  assert.ok(
+    Math.abs(Number.parseFloat(connector?.style.top ?? '') - expectedConnectorTop) < 0.001,
+  )
+  rt.destroy()
+})
+
+test('CatalogRuntime keeps the pill focus variant fully rounded', async () => {
+  const manifest = minimalManifest()
+  manifest.config.theme.focusVariant = 'pill'
+  const rt = new CatalogRuntime({ assets: makeLoader() })
+  rt.loadManifest(manifest)
+  const container = new FakeEl() as unknown as HTMLElement
+  await rt.mount(container)
+
+  const focus = (container as unknown as FakeEl).children.find(
+    child => child.dataset.testid === 'catalog-focus-window',
+  )
+  assert.ok(Math.abs(Number.parseFloat(focus?.style.borderRadius ?? '') - 153.6) < 0.001)
   rt.destroy()
 })
 

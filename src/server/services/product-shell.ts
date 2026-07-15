@@ -6,23 +6,22 @@ export interface ProductShellFiles {
 }
 
 export function buildProductShell(
-  product: ProductShellProduct,
+  projectTitle: string,
   appJs: string,
 ): ProductShellFiles {
   return {
-    'index.html': buildShellIndexHtml(product),
+    'index.html': buildShellIndexHtml(projectTitle),
     'app.js': appJs,
   }
 }
 
-function buildShellIndexHtml(product: ProductShellProduct): string {
-  const title = product === 'atlas' ? 'Atlas Runtime' : 'Catalog Runtime'
+function buildShellIndexHtml(projectTitle: string): string {
   return `<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>${escapeHtml(title)}</title>
+    <title>${escapeHtml(projectTitle)}</title>
     <style>
       :root {
         color-scheme: dark;

@@ -26,6 +26,8 @@ export interface CatalogSceneOptions {
 interface SceneGeometry { left: number; top: number; width: number; height: number; canvasWidth: number; canvasHeight: number }
 interface ProjectedFocusRect { left: number; top: number; width: number; height: number; radius: number; maskOpacity: number }
 
+const CATALOG_FOCUS_RADIUS_PX = 12
+
 /** Shared Catalog scene. Every visual layer consumes the same camera geometry. */
 export class CatalogScene {
   private readonly root: HTMLElement
@@ -174,7 +176,7 @@ export class CatalogScene {
     const projected = projectRect(item.focusRect, g)
     const target: ProjectedFocusRect = {
       ...projected,
-      radius: this.manifest.config.theme.focusVariant === 'pill' ? Math.min(projected.width, projected.height) / 2 : Math.max(0, item.focusRect.radius ?? .012) * 100,
+      radius: this.manifest.config.theme.focusVariant === 'pill' ? Math.min(projected.width, projected.height) / 2 : CATALOG_FOCUS_RADIUS_PX,
       maskOpacity: item.focusRect.maskOpacity ?? this.manifest.config.theme.maskOpacity ?? .42,
     }
     if (!this.displayedFocusRect || !this.displayedGeometry) {
@@ -259,7 +261,7 @@ export class CatalogScene {
     if (activeId) this.centerDetailItem(activeId, 'smooth')
   }
   private renderConnector(item: CatalogItemEntry | null, g: SceneGeometry): void { if (!item) { if (this.connector) this.connector.style.display = 'none'; return } const target = projectRect(item.focusRect, g); const r = this.displayedFocusRect ?? { ...target, radius: 0, maskOpacity: 0 }; this.renderConnectorFromRect(item, r) }
-  private renderConnectorFromRect(item: CatalogItemEntry, r: ProjectedFocusRect): void { if (!this.connector) return; const detail = this.detailById.get(item.id); if (!detail) { this.connector.style.display = 'none'; return }; const rootBounds = this.root.getBoundingClientRect(); const detailBounds = detail.getBoundingClientRect(); if (!rootBounds.width || !detailBounds.width) { this.connector.style.display = 'none'; return }; const canvasWidth = Number(this.root.clientWidth) || rootBounds.width; const canvasHeight = Number(this.root.clientHeight) || rootBounds.height; const sx = canvasWidth / rootBounds.width; const sy = canvasHeight / rootBounds.height; const x1 = r.left + r.width; const y1 = r.top; const x2 = (detailBounds.left - rootBounds.left) * sx; const y2 = (detailBounds.top - rootBounds.top) * sy; const dx = x2 - x1; const dy = y2 - y1; const length = Math.hypot(dx, dy); if (length < 2) { this.connector.style.display = 'none'; return }; Object.assign(this.connector.style, { display: 'block', left: `${x1}px`, top: `${y1}px`, width: `${length}px`, transform: `rotate(${Math.atan2(dy, dx)}rad)` }) }
+  private renderConnectorFromRect(item: CatalogItemEntry, r: ProjectedFocusRect): void { if (!this.connector) return; const detail = this.detailById.get(item.id); if (!detail) { this.connector.style.display = 'none'; return }; const rootBounds = this.root.getBoundingClientRect(); const detailBounds = detail.getBoundingClientRect(); if (!rootBounds.width || !detailBounds.width) { this.connector.style.display = 'none'; return }; const canvasWidth = Number(this.root.clientWidth) || rootBounds.width; const canvasHeight = Number(this.root.clientHeight) || rootBounds.height; const sx = canvasWidth / rootBounds.width; const sy = canvasHeight / rootBounds.height; const radius = Math.max(Math.min(r.radius, r.width / 2, r.height / 2), 0); const connectorPadding = 1.5; const cornerRatio = Math.SQRT1_2; const cornerBaseX = radius > 0 ? r.left + r.width - radius + radius * cornerRatio : r.left + r.width; const cornerBaseY = radius > 0 ? r.top + radius - radius * cornerRatio : r.top; const x1 = cornerBaseX + connectorPadding; const y1 = cornerBaseY - connectorPadding; const x2 = (detailBounds.left - rootBounds.left) * sx; const y2 = (detailBounds.top - rootBounds.top) * sy; const dx = x2 - x1; const dy = y2 - y1; const length = Math.hypot(dx, dy); if (length < 2) { this.connector.style.display = 'none'; return }; Object.assign(this.connector.style, { display: 'block', left: `${x1}px`, top: `${y1}px`, width: `${length}px`, transform: `rotate(${Math.atan2(dy, dx)}rad)` }) }
   private handleDetailScroll(): void {
     const active = this.activeItem()
     if (active && this.displayedFocusRect) this.renderConnectorFromRect(active, this.displayedFocusRect)

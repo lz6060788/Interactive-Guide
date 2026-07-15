@@ -58,7 +58,7 @@ export function buildStaticProduct(options: {
 
   fs.mkdirSync(productDir, { recursive: true })
   const runtime = buildBrowserRuntimeBundle({ product })
-  const shell = buildProductShell(product, runtime.appJs)
+  const shell = buildProductShell(project.title, runtime.appJs)
   fs.writeFileSync(path.join(productDir, 'index.html'), shell['index.html'])
   fs.writeFileSync(path.join(productDir, 'app.js'), shell['app.js'])
   const manifestPath = path.join(productDir, 'manifest.json')
