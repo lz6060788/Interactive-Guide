@@ -21,6 +21,21 @@ interface BootstrapInput {
     }>
   }
   panoramaImagePath?: string
+  spatial?: {
+    categories?: Record<string, {
+      hotspot: { x: number; y: number }
+      viewport?: { centerX: number; centerY: number; zoom: number }
+      activationZoom?: number
+      hotspotMinZoom?: number
+    }>
+    items?: Record<string, {
+      marker: { x: number; y: number }
+      focusRect?: { x: number; y: number; width: number; height: number; radius?: number; maskOpacity?: number }
+      viewportOverride?: { centerX: number; centerY: number; zoom: number }
+      callout?: { markerPosition: 'top' | 'bottom'; markerGapPx: number; minZoom?: number }
+      markerMinZoom?: number
+    }>
+  }
   htmlSceneBundles?: Array<{
     id: string
     title: string
@@ -86,6 +101,10 @@ interface BootstrapInput {
   keys are reported under `unmappedKnowledge`.
 - Duplicate IDs across categories/items/scene bundles land in `unmappedKnowledge`
   with `reason: "id already used"`.
+- `spatial` keys must use the final category/item IDs. Fully authored spatial
+  input clears the calibration queue; omitted entries remain explicitly queued.
+- Spatial coordinates are normalized to `[0,1]`; pixel coordinates from source
+  annotation images must be converted before they enter this contract.
 - The panorama image defaults to the project's first category viewport when
   no panorama image is supplied (the `autoPickPanoramaAsset` branch of the
   normalizer). In practice, always supply a real panorama.

@@ -24,10 +24,14 @@ import type {
   ExperienceLocation,
   ExperienceRoute,
   NormalizedPoint,
+  NormalizedFocusRect,
+  Viewport,
+  ItemCallout,
 } from '../domain/project-types.js'
 import { SCENE_PROTOCOL_CHANNEL, SCENE_PROTOCOL_VERSION } from '../domain/scene-protocol.js'
 import { validateReleaseProject, validateDraftProject } from '../domain/project-validator.js'
 import { normalizeProject, createDraftProject } from '../domain/project-normalizer.js'
+import { PROJECT_DEFAULTS } from '../config/project-defaults.js'
 
 export interface BootstrapInput {
   project: { id: string; title: string; version?: string; locale?: string }
@@ -44,6 +48,27 @@ export interface BootstrapInput {
     }>
   }
   panoramaImagePath?: string
+  spatial?: {
+    categories?: Record<
+      string,
+      {
+        hotspot: NormalizedPoint
+        viewport?: Viewport
+        activationZoom?: number
+        hotspotMinZoom?: number
+      }
+    >
+    items?: Record<
+      string,
+      {
+        marker: NormalizedPoint
+        focusRect?: NormalizedFocusRect
+        viewportOverride?: Viewport
+        callout?: ItemCallout
+        markerMinZoom?: number
+      }
+    >
+  }
   htmlSceneBundles?: Array<{
     id: string
     title: string
@@ -196,7 +221,7 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     assetDefinitions.push({
       id: `asset-${bundle.id}`,
       kind: 'html-bundle',
-      sourcePath: path.posix.join('assets/scenes', bundle.id),
+      sourcePath: path.posix.join('scenes', bundle.id),
       entryPath: bundle.entryPath ?? 'index.html',
       size: stat.size,
     })
@@ -215,7 +240,7 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
       assetDefinitions.push({
         id,
         kind: 'image',
-        sourcePath: path.posix.join('assets/images', id, `image.${ext}`),
+        sourcePath: path.posix.join('images', id, `image.${ext}`),
         size: stat.size,
       })
     }
@@ -234,7 +259,7 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     assetDefinitions.push({
       id,
       kind: 'video',
-      sourcePath: path.posix.join('assets/videos', id, `video.${ext}`),
+      sourcePath: path.posix.join('videos', id, `video.${ext}`),
       size: stat.size,
     })
     const route: ExperienceRoute = {
@@ -267,10 +292,27 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     project.integrations.share = { ...input.integrations.share }
   }
 
-  // Calibrate default layouts (centered focus rect, no marker offset)
+  // Apply authored layouts; entries without spatial input remain in the
+  // explicit calibration queue below.
   for (const stage of project.knowledge.stages) {
     for (const category of stage.categories) {
-      if (!project.panorama.categories[category.id]) {
+      const authored = input.spatial?.categories?.[category.id]
+      if (authored) {
+        project.panorama.categories[category.id] = {
+          hotspot: { ...authored.hotspot },
+          viewport: authored.viewport
+            ? { ...authored.viewport }
+            : {
+                centerX: authored.hotspot.x,
+                centerY: authored.hotspot.y,
+                zoom: PROJECT_DEFAULTS.panorama.categoryZoom,
+              },
+          activationZoom: authored.activationZoom ?? PROJECT_DEFAULTS.panorama.categoryZoom,
+          ...(authored.hotspotMinZoom !== undefined
+            ? { hotspotMinZoom: authored.hotspotMinZoom }
+            : {}),
+        }
+      } else if (!project.panorama.categories[category.id]) {
         project.panorama.categories[category.id] = {
           viewport: {
             centerX: SPATIAL_DEFAULT_CENTER.x,
@@ -279,8 +321,27 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
           },
         }
       }
+      for (const itemId of category.itemIds) {
+        const itemLayout = input.spatial?.items?.[itemId]
+        if (!itemLayout) continue
+        project.panorama.items[itemId] = {
+          marker: { ...itemLayout.marker },
+          ...(itemLayout.focusRect ? { focusRect: { ...itemLayout.focusRect } } : {}),
+          ...(itemLayout.viewportOverride
+            ? { viewportOverride: { ...itemLayout.viewportOverride } }
+            : {}),
+          ...(itemLayout.callout ? { callout: { ...itemLayout.callout } } : {}),
+          ...(itemLayout.markerMinZoom !== undefined
+            ? { markerMinZoom: itemLayout.markerMinZoom }
+            : {}),
+        }
+      }
     }
   }
+
+  project.products.atlas.categoryIds = project.knowledge.stages.flatMap(stage =>
+    stage.categories.map(category => category.id),
+  )
 
   // Asset registry update
   for (const def of assetDefinitions) {

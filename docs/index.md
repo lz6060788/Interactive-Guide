@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: Phase 18 ES5 独立产物构建 / 静态预览 / ZIP 下载 / 编辑器自动保存导出同步 (2026-07-15)
+Last sync: 存储芯片产业链项目引导 / 空间坐标导入 / 原子 bootstrap CLI (2026-07-15)
 
 ### Modules
 
@@ -17,6 +17,7 @@ Last sync: Phase 18 ES5 独立产物构建 / 静态预览 / ZIP 下载 / 编辑�
 
 | Doc | Description |
 |-----|-------------|
+| [存储芯片产业链项目引导报告](development/memory-chip-project-bootstrap-report.md) | 3/9/27 知识映射、9/27 空间坐标、双产品编译验证与人工校准清单 (2026-07-15) |
 | [Phase 18 ES5 独立产物导出](development/phase18-es5-standalone-export-2026-07-15.md) | Atlas/Catalog 共用 ES5 IIFE 构建、静态预览、ZIP 下载和编辑器自动保存导出 (2026-07-15) |
 | [Phase 17 修复](development/phase17-atlas-html-scene-route-transition-2026-07-06.md) | Atlas HTML Scene category route / transition video / preview scene iframe / navigation save + demo scene 迁移到 SceneBridge v1.0.0 + scene 复用宿主 chrome + Atlas/Catalog 共用 scene host + 平台层 SceneHostController 抽离 + draft/release 宿主页骨架落盘 + preview/release 静态文件路由闭环 + 真实 runtime 宿主接入产物链 + legacy 资产路径发布修复 (2026-07-06 / 2026-07-07) |
 | [Phase 16 修复](development/phase16-five-fixes-2026-07-01.md) | 拖动缩放 / Hotspot-Callout 一致性 / 删焦点矩形 / 底部详情面板 / Zoom 阈值 (2026-07-01) |

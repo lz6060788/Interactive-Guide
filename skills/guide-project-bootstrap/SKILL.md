@@ -12,7 +12,7 @@ This Skill scaffolds a new project from raw authoring materials:
 - One or more **HTML scene bundles** (zipped `index.html` + assets).
 - Optional **transition videos** referenced by experience routes.
 
-It writes the project to the on-disk repository via `ProjectService`, registers all assets via `AssetService`, and produces a `BootstrapReport` describing:
+It stages the project through `ProjectService`, registers all assets via `AssetService`, validates and compiles both products, then atomically moves the complete project into the configured data directory. It produces a `BootstrapReport` describing:
 
 - What was successfully wired (categories → experience, scenes → panorama hotspots, routes).
 - **Unmapped knowledge** (categories/items/scene ids that collided or had no slot).
@@ -32,16 +32,16 @@ It writes the project to the on-disk repository via `ProjectService`, registers 
 ## Workflow
 
 1. Read the knowledge file with `read_json_file` or the equivalent.
-2. Call `src/server/bootstrap.ts::assembleProject(input)` with the BootstrapInput shape.
-3. Call `ProjectService.create(project)` to persist the project.
-4. Call `AssetService.registerImage` / `registerHtmlBundle` / `registerVideo` for each asset.
-5. Read `result.report` to surface unmapped knowledge and the calibration queue to the operator.
+2. Add normalized `spatial` entries when calibrated hotspot, marker or focusRect data is available.
+3. Run `scripts/bootstrap-project.ts <input.json> [--data-dir DATA_DIR]`.
+4. The CLI assembles through `src/server/bootstrap.ts`, stages assets through `ProjectService` and `AssetService`, validates and compiles both products, then installs the project atomically.
+5. Read the emitted report to surface unmapped knowledge and pending calibration work to the operator.
 
 The skill outputs a BootstrapReport describing what to do next.
 
 ## Scripts
 
-- `scripts/bootstrap-project.ts` — CLI entry point that reads `input.json`, calls `assembleProject`, then pushes the result into the running server via HTTP. Useful when bootstrapping outside of Claude.
+- `scripts/bootstrap-project.ts` — CLI entry point that reads `input.json`, resolves relative asset paths from that file, stages and validates the complete project, then atomically installs it into `DATA_DIR`.
 - `scripts/validate-project.ts` — CLI entry point that re-runs `validateProject` against an existing `project.json` on disk.
 
 ## References
