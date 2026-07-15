@@ -12,7 +12,7 @@
  * feels instantaneous. Mutations are committed on Save (one PUT per
  * logical sub-section) so network chatter is bounded.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import type {
   GuideProject,
@@ -21,7 +21,7 @@ import type {
   AtlasProductConfig,
   IndustryChain,
 } from '@domain/project-types'
-import { Alert, Box, Flex, Grid, HStack, Text } from '@chakra-ui/react'
+import { Alert, Box, Flex, Grid, Text } from '@chakra-ui/react'
 import {
   useProject,
   useUpdateAtlasConfig,
@@ -31,12 +31,13 @@ import {
 } from '../api'
 import { useAtlasEditorStore } from '../store'
 import { StructurePanel } from './StructurePanel'
-import { AtlasToolbar, type Tool } from './AtlasToolbar'
+import { AtlasToolbar } from './AtlasToolbar'
 import { AtlasCanvas } from './AtlasCanvas'
 import { AtlasPreview } from './AtlasPreview'
 import { AtlasInspector } from './AtlasInspector'
 import { ApiError } from '../../../lib/api-client'
 import { useGlobalShortcuts } from '../../../hooks/useGlobalShortcuts'
+import { useProductExport } from '../../product-export/useProductExport'
 
 let _idCounter = 0
 function nextId(prefix: string): string {
@@ -63,16 +64,21 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
   const [pendingConfig, setPendingConfig] = useState<boolean>(false)
   const [pendingKnowledge, setPendingKnowledge] = useState<boolean>(false)
   const [pendingNavigation, setPendingNavigation] = useState<boolean>(false)
+  const hydratedProjectId = useRef<string | null>(null)
 
   useEffect(() => {
-    if (serverProject) {
+    // Segment mutation hooks update React Query after every successful PUT.
+    // Hydrate only when opening a project so an intermediate response cannot
+    // erase other locally edited segments while an auto-save is in progress.
+    if (serverProject && hydratedProjectId.current !== projectId) {
       setDraft(serverProject)
       setPendingPanorama(false)
       setPendingConfig(false)
       setPendingKnowledge(false)
       setPendingNavigation(false)
+      hydratedProjectId.current = projectId
     }
-  }, [serverProject])
+  }, [projectId, serverProject])
 
   const tool = useAtlasEditorStore((s) => s.tool)
   const setTool = useAtlasEditorStore((s) => s.setTool)
@@ -123,55 +129,79 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
     [setDirty],
   )
 
-  const handleSave = async () => {
-    if (!draft) return
+  const handleSave = async (): Promise<GuideProject> => {
+    if (!draft) throw new Error('项目尚未加载完成')
     setSaveError(null)
+    const hadChanges =
+      pendingKnowledge || pendingPanorama || pendingNavigation || pendingConfig
     try {
       let current = draft
       if (pendingKnowledge) {
-        current = await updateKnowledge.mutateAsync({
+        const saved = await updateKnowledge.mutateAsync({
           knowledge: current.knowledge,
           expectedRevision: current.metadata.revision,
         })
+        current = { ...current, knowledge: saved.knowledge, metadata: saved.metadata }
+        setDraft(current)
         setPendingKnowledge(false)
       }
       if (pendingPanorama) {
-        current = await updatePanorama.mutateAsync({
+        const saved = await updatePanorama.mutateAsync({
           panorama: current.panorama,
           expectedRevision: current.metadata.revision,
         })
+        current = { ...current, panorama: saved.panorama, metadata: saved.metadata }
+        setDraft(current)
         setPendingPanorama(false)
       }
       if (pendingNavigation) {
-        current = await updateNavigation.mutateAsync({
+        const saved = await updateNavigation.mutateAsync({
           navigation: current.navigation,
           expectedRevision: current.metadata.revision,
         })
+        current = { ...current, navigation: saved.navigation, metadata: saved.metadata }
+        setDraft(current)
         setPendingNavigation(false)
       }
       if (pendingConfig) {
-        current = await updateAtlasConfig.mutateAsync({
+        const saved = await updateAtlasConfig.mutateAsync({
           atlas: current.products.atlas,
           expectedRevision: current.metadata.revision,
         })
+        current = {
+          ...current,
+          products: { ...current.products, atlas: saved.products.atlas },
+          metadata: saved.metadata,
+        }
+        setDraft(current)
         setPendingConfig(false)
       }
-      setDraft(current)
-      if (pendingKnowledge || pendingPanorama || pendingConfig || pendingNavigation) {
-        setDirty(false)
-      }
+      if (hadChanges) setDirty(false)
+      return current
     } catch (e) {
+      let message: string
       if (e instanceof ApiError) {
         if (e.status === 409) {
-          setSaveError('保存冲突：当前项目已被另一处修改，请刷新后重试。')
+          message = '保存冲突：当前项目已被另一处修改，请刷新后重试。'
         } else {
-          setSaveError(`保存失败：${e.status} ${e.code}`)
+          message = `保存失败：${e.status} ${e.code}`
         }
       } else {
-        setSaveError((e as Error).message || '保存失败')
+        message = (e as Error).message || '保存失败'
       }
+      setSaveError(message)
+      throw e
     }
   }
+
+  const isDirty = pendingPanorama || pendingConfig || pendingKnowledge || pendingNavigation
+  const productExport = useProductExport({
+    projectId,
+    product: 'atlas',
+    currentRevision: draft?.metadata.revision ?? -1,
+    isDirty,
+    save: handleSave,
+  })
 
   const mapStages = (
     stages: IndustryChain['stages'],
@@ -329,7 +359,12 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
 
   useGlobalShortcuts({
     shortcuts: [
-      { key: 's', meta: true, description: 'Save', run: () => void handleSave() },
+      {
+        key: 's',
+        meta: true,
+        description: 'Save',
+        run: () => void handleSave().catch(() => undefined),
+      },
       { key: 'v', bare: true, description: 'Select tool', run: () => setTool('select') },
       { key: 'm', bare: true, description: 'Marker tool', run: () => setTool('marker') },
       { key: 'c', bare: true, description: 'Callout tool', run: () => setTool('callout') },
@@ -361,7 +396,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
     updateAtlasConfig.isPending ||
     updateKnowledge.isPending ||
     updateNavigation.isPending
-  const isDirty = pendingPanorama || pendingConfig || pendingKnowledge || pendingNavigation
+  const operationError = saveError ?? productExport.error
 
   return (
     <Grid templateColumns="260px 1fr 320px" h="100%" bg="bg">
@@ -382,15 +417,18 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
         <AtlasToolbar
           tool={tool}
           onToolChange={setTool}
-          onSave={() => void handleSave()}
+          onSave={() => void handleSave().catch(() => undefined)}
+          onPreview={() => void productExport.generatePreview()}
+          onDownload={() => void productExport.downloadZip()}
           isSaving={isSaving}
+          exportOperation={productExport.operation}
           isDirty={isDirty}
           hasUnsavedPanorama={pendingPanorama}
           hasUnsavedConfig={pendingConfig}
           hasUnsavedKnowledge={pendingKnowledge}
           hasUnsavedNavigation={pendingNavigation}
         />
-        {saveError && (
+        {operationError && (
           <Alert.Root
             status="error"
             size="sm"
@@ -402,7 +440,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
             <Alert.Indicator>
               <AlertTriangle size={14} />
             </Alert.Indicator>
-            <Alert.Title fontSize="12px">{saveError}</Alert.Title>
+            <Alert.Title fontSize="12px">{operationError}</Alert.Title>
           </Alert.Root>
         )}
         <Grid templateColumns="1fr 360px" flex="1" minH="0">
@@ -431,7 +469,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
         hasUnsavedPanorama={pendingPanorama}
         hasUnsavedKnowledge={pendingKnowledge}
         hasUnsavedNavigation={pendingNavigation}
-        onSaveRequested={() => void handleSave()}
+        onSaveRequested={() => void handleSave().catch(() => undefined)}
         isSaving={isSaving}
       />
     </Grid>

@@ -1,12 +1,15 @@
 /**
  * CatalogToolbar — Save button (and pending-state label).
  */
-import { Save, Layers } from 'lucide-react'
+import { Download, Eye, Save, Layers } from 'lucide-react'
 import { Button, Flex, HStack, Text } from '@chakra-ui/react'
 
 interface Props {
   onSave: () => void
+  onPreview: () => void
+  onDownload: () => void
   isSaving: boolean
+  exportOperation: 'preview' | 'download' | null
   isDirty: boolean
   hasUnsavedKnowledge?: boolean
   hasUnsavedPanorama?: boolean
@@ -15,7 +18,10 @@ interface Props {
 
 export function CatalogToolbar({
   onSave,
+  onPreview,
+  onDownload,
   isSaving,
+  exportOperation,
   isDirty,
   hasUnsavedKnowledge = false,
   hasUnsavedPanorama = false,
@@ -55,10 +61,37 @@ export function CatalogToolbar({
       </HStack>
       <HStack align="center" gap="2">
         <Button
+          variant="secondary"
+          size="sm"
+          onClick={onPreview}
+          loading={exportOperation === 'preview'}
+          disabled={exportOperation !== null && exportOperation !== 'preview'}
+          data-testid="btn-generate-preview"
+        >
+          <HStack gap="1.5">
+            <Eye size={14} />
+            生成预览
+          </HStack>
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onDownload}
+          loading={exportOperation === 'download'}
+          disabled={exportOperation !== null && exportOperation !== 'download'}
+          data-testid="btn-download-zip"
+        >
+          <HStack gap="1.5">
+            <Download size={14} />
+            下载 ZIP
+          </HStack>
+        </Button>
+        <Button
           variant="brand"
           size="sm"
           onClick={onSave}
-          loading={isSaving}
+          loading={isSaving && exportOperation === null}
+          disabled={exportOperation !== null}
           data-testid="btn-save"
         >
           <HStack gap="1.5">

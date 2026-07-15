@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: Phase 17 修复 + SceneBridge / Scene Chrome / Shared Scene Host / SceneHostController / Product Shell Runtime Host / Preview-Release Static Routes / Legacy Asset Release Fix 同步 (2026-07-07)
+Last sync: Phase 18 ES5 独立产物构建 / 静态预览 / ZIP 下载 / 编辑器自动保存导出同步 (2026-07-15)
 
 ### Modules
 
@@ -17,6 +17,7 @@ Last sync: Phase 17 修复 + SceneBridge / Scene Chrome / Shared Scene Host / Sc
 
 | Doc | Description |
 |-----|-------------|
+| [Phase 18 ES5 独立产物导出](development/phase18-es5-standalone-export-2026-07-15.md) | Atlas/Catalog 共用 ES5 IIFE 构建、静态预览、ZIP 下载和编辑器自动保存导出 (2026-07-15) |
 | [Phase 17 修复](development/phase17-atlas-html-scene-route-transition-2026-07-06.md) | Atlas HTML Scene category route / transition video / preview scene iframe / navigation save + demo scene 迁移到 SceneBridge v1.0.0 + scene 复用宿主 chrome + Atlas/Catalog 共用 scene host + 平台层 SceneHostController 抽离 + draft/release 宿主页骨架落盘 + preview/release 静态文件路由闭环 + 真实 runtime 宿主接入产物链 + legacy 资产路径发布修复 (2026-07-06 / 2026-07-07) |
 | [Phase 16 修复](development/phase16-five-fixes-2026-07-01.md) | 拖动缩放 / Hotspot-Callout 一致性 / 删焦点矩形 / 底部详情面板 / Zoom 阈值 (2026-07-01) |
 | [Phase 15 修复](development/phase15-preview-url-hotspot-callout-2026-07-01.md) | AtlasPreview 底图 URL / Hotspot 视觉 / Callout 线+Pin 视觉对齐运行时 (2026-07-01) |
@@ -57,6 +58,7 @@ Last sync: Phase 17 修复 + SceneBridge / Scene Chrome / Shared Scene Host / Sc
 
 | Doc | Date |
 |-----|------|
+| [ES5 独立产物导出实施计划](plans/2026-07-15-es5-standalone-export-implementation.md) | 2026-07-15 |
 | [重构后续修复与体验恢复计划](plans/2026-07-03-post-refactor-remediation-plan.md) | 2026-07-03 |
 | [双产品架构重构方案](plans/2026-06-29-双产品架构重构方案.md) | 2026-06-29 |
 | [双产品重构实施计划](plans/2026-06-30-dual-product-refactor.md) | 2026-06-30 |

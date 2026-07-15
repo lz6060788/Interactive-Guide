@@ -1,115 +1,122 @@
-import fs from 'node:fs'
 import path from 'node:path'
-import ts from 'typescript'
+import { transformSync } from '@babel/core'
+import presetEnv from '@babel/preset-env'
+import { parse } from 'acorn'
+import { buildSync } from 'esbuild'
+import type { ProductShellProduct } from './product-shell.js'
 
-export interface BrowserRuntimePackageResult {
-  entryModulePath: string
+export interface BrowserRuntimeBundleResult {
+  appJs: string
 }
 
-export function writeBrowserRuntimePackage(options: {
-  entrySourcePath: string
-  outputDir: string
-  sourceRoot?: string
-}): BrowserRuntimePackageResult {
-  const sourceRoot = options.sourceRoot ?? path.resolve('src')
-  const visited = new Set<string>()
-  const entrySourcePath = path.resolve(options.entrySourcePath)
+/**
+ * Bundle a product runtime into one browser IIFE and then lower every
+ * JavaScript syntax feature to ECMAScript 5. Browser API polyfills are
+ * intentionally outside this component's contract.
+ */
+export function buildBrowserRuntimeBundle(options: {
+  product: ProductShellProduct
+  entrySourcePath?: string
+}): BrowserRuntimeBundleResult {
+  const entrySourcePath = path.resolve(
+    options.entrySourcePath ??
+      path.join(
+        path.resolve('src'),
+        'product-shell',
+        'browser',
+        options.product === 'atlas' ? 'atlas-entry.ts' : 'catalog-entry.ts',
+      ),
+  )
+  const bootstrapExport =
+    options.product === 'atlas' ? 'bootstrapAtlasProduct' : 'bootstrapCatalogProduct'
+  const bootstrapSource = buildBootstrapSource(entrySourcePath, bootstrapExport)
 
-  visit(entrySourcePath)
+  const bundle = buildSync({
+    stdin: {
+      contents: bootstrapSource,
+      loader: 'ts',
+      resolveDir: path.dirname(entrySourcePath),
+      sourcefile: `${options.product}-runtime-bootstrap.ts`,
+    },
+    bundle: true,
+    write: false,
+    format: 'iife',
+    platform: 'browser',
+    target: 'es2017',
+    charset: 'utf8',
+    logLevel: 'silent',
+  }).outputFiles[0]?.text
 
-  const entryRelative = normalizePath(path.relative(sourceRoot, entrySourcePath))
-    .replace(/\.tsx?$/, '.js')
-  return {
-    entryModulePath: `./runtime/${entryRelative}`,
+  if (!bundle) {
+    throw new Error(`failed to bundle ${options.product} browser runtime`)
   }
 
-  function visit(sourceFilePath: string): void {
-    const resolved = path.resolve(sourceFilePath)
-    if (visited.has(resolved)) return
-    visited.add(resolved)
+  const transformed = transformSync(bundle, {
+    babelrc: false,
+    configFile: false,
+    comments: false,
+    compact: false,
+    sourceType: 'script',
+    presets: [
+      [
+        presetEnv,
+        {
+          // IE 11 is used only as a deterministic "ES5 syntax" transform
+          // target. The supported runtime remains iOS 13 and no polyfills are
+          // injected.
+          targets: { ie: '11' },
+          modules: false,
+          useBuiltIns: false,
+          bugfixes: false,
+        },
+      ],
+    ],
+  })
+  const appJs = transformed?.code
+  if (!appJs) {
+    throw new Error(`failed to transpile ${options.product} browser runtime to ES5`)
+  }
 
-    const sourceText = fs.readFileSync(resolved, 'utf8')
-    const sourceFile = ts.createSourceFile(
-      resolved,
-      sourceText,
-      ts.ScriptTarget.ES2022,
-      true,
-      resolved.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
-    )
+  assertEs5Syntax(appJs, options.product)
+  return { appJs: `${appJs}\n` }
+}
 
-    for (const specifier of collectRelativeSpecifiers(sourceFile)) {
-      const childPath = resolveRelativeSourceModule(resolved, specifier)
-      if (childPath) visit(childPath)
-    }
-
-    const transpiled = ts.transpileModule(sourceText, {
-      compilerOptions: {
-        module: ts.ModuleKind.ES2022,
-        target: ts.ScriptTarget.ES2022,
-        jsx: ts.JsxEmit.ReactJSX,
-      },
-      fileName: resolved,
-      reportDiagnostics: true,
+export function assertEs5Syntax(source: string, label = 'browser runtime'): void {
+  try {
+    parse(source, {
+      ecmaVersion: 5,
+      sourceType: 'script',
+      allowReserved: true,
     })
-
-    if (transpiled.diagnostics?.length) {
-      const messages = transpiled.diagnostics
-        .map((diag) => ts.flattenDiagnosticMessageText(diag.messageText, '\n'))
-        .join('; ')
-      throw new Error(`failed to transpile browser runtime module "${resolved}": ${messages}`)
-    }
-
-    const relativePath = normalizePath(path.relative(sourceRoot, resolved)).replace(/\.tsx?$/, '.js')
-    const outPath = path.join(options.outputDir, 'runtime', relativePath)
-    fs.mkdirSync(path.dirname(outPath), { recursive: true })
-    fs.writeFileSync(outPath, transpiled.outputText)
+  } catch (error) {
+    const detail = error as Error & { loc?: { line: number; column: number } }
+    const location = detail.loc ? ` at ${detail.loc.line}:${detail.loc.column}` : ''
+    throw new Error(`${label} contains non-ES5 JavaScript syntax${location}: ${detail.message}`)
   }
 }
 
-function collectRelativeSpecifiers(sourceFile: ts.SourceFile): string[] {
-  const specifiers: string[] = []
-  for (const stmt of sourceFile.statements) {
-    if (
-      ts.isImportDeclaration(stmt) &&
-      ts.isStringLiteral(stmt.moduleSpecifier) &&
-      stmt.moduleSpecifier.text.startsWith('.')
-    ) {
-      specifiers.push(stmt.moduleSpecifier.text)
-      continue
-    }
-    if (
-      ts.isExportDeclaration(stmt) &&
-      stmt.moduleSpecifier &&
-      ts.isStringLiteral(stmt.moduleSpecifier) &&
-      stmt.moduleSpecifier.text.startsWith('.')
-    ) {
-      specifiers.push(stmt.moduleSpecifier.text)
-    }
-  }
-  return specifiers
+function buildBootstrapSource(entrySourcePath: string, bootstrapExport: string): string {
+  const entrySpecifier = normalizePath(entrySourcePath)
+  return `
+import { ${bootstrapExport} } from ${JSON.stringify(entrySpecifier)}
+
+var app = document.getElementById('app')
+if (!app) {
+  throw new Error('runtime shell missing #app root')
 }
 
-function resolveRelativeSourceModule(importerPath: string, specifier: string): string | null {
-  const importerDir = path.dirname(importerPath)
-  const rawPath = path.resolve(importerDir, specifier)
-  const candidates = new Set<string>([
-    rawPath,
-    `${rawPath}.ts`,
-    `${rawPath}.tsx`,
-    rawPath.replace(/\.js$/i, '.ts'),
-    rawPath.replace(/\.js$/i, '.tsx'),
-    path.join(rawPath, 'index.ts'),
-    path.join(rawPath, 'index.tsx'),
-    path.join(rawPath.replace(/\.js$/i, ''), 'index.ts'),
-    path.join(rawPath.replace(/\.js$/i, ''), 'index.tsx'),
-  ])
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-      return candidate
-    }
-  }
-  return null
+var manifestUrl = new URL('./manifest.json', window.location.href).href
+Promise.resolve(${bootstrapExport}(app, manifestUrl)).catch(function (error) {
+  app.innerHTML = ''
+  var pre = document.createElement('pre')
+  pre.style.whiteSpace = 'pre-wrap'
+  pre.style.padding = '24px'
+  pre.style.color = '#F8FAFC'
+  pre.textContent = 'Runtime shell failed to load manifest:\\n' +
+    (error instanceof Error ? error.message : String(error))
+  app.appendChild(pre)
+})
+`
 }
 
 function normalizePath(value: string): string {

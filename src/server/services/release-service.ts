@@ -6,18 +6,10 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import type { GuideProject } from '../../domain/project-types.js'
 import { ProjectRepository } from '../storage/project-repository.js'
 import { ReleaseRepository, type ReleaseManifest } from '../storage/release-repository.js'
-import { compileAtlas } from '../../products/atlas/compiler/atlas-compiler.js'
-import { compileCatalog } from '../../products/catalog/compiler/catalog-compiler.js'
-import {
-  buildAssetClosure,
-  computeReferencedAssetIds,
-} from './asset-closure.js'
-import { writeBrowserRuntimePackage } from './browser-runtime-packager.js'
 import { validateRelease, type ValidationReport } from './static-validator.js'
-import { buildProductShell } from './product-shell.js'
+import { buildStaticProduct } from './static-product-builder.js'
 
 export interface ReleaseBuildResult {
   projectId: string
@@ -45,8 +37,20 @@ export class ReleaseService {
     fs.mkdirSync(tmpDir, { recursive: true })
 
     try {
-      this.writeProductFiles(project, tmpDir, 'atlas', now)
-      this.writeProductFiles(project, tmpDir, 'catalog', now)
+      buildStaticProduct({
+        project,
+        projects: this.projects,
+        product: 'atlas',
+        productDir: path.join(tmpDir, 'atlas'),
+        now,
+      })
+      buildStaticProduct({
+        project,
+        projects: this.projects,
+        product: 'catalog',
+        productDir: path.join(tmpDir, 'catalog'),
+        now,
+      })
 
       const report = validateRelease(tmpDir)
       if (!report.ok) {
@@ -77,80 +81,6 @@ export class ReleaseService {
     }
   }
 
-  private writeProductFiles(
-    project: GuideProject,
-    tmpDir: string,
-    product: 'atlas' | 'catalog',
-    now: () => string,
-  ): void {
-    if (!project.panorama.assetId) {
-      throw new Error(`project "${project.id}" has no panorama bound; cannot release ${product}`)
-    }
-    const sceneAssetIds = new Set(project.scenes.map((s) => s.assetId))
-    const reachableRoutes = project.navigation.routes.filter(
-      (r) => r.from.kind === 'panorama' || ('sceneId' in r.from && sceneAssetIds.has(r.from.sceneId)),
-    )
-    const transitionAssetIds = new Set<string>()
-    for (const r of reachableRoutes) {
-      if (r.transition?.assetId) transitionAssetIds.add(r.transition.assetId)
-    }
-    const referencedAssetIds = computeReferencedAssetIds(
-      project.panorama.assetId,
-      sceneAssetIds,
-      transitionAssetIds,
-    )
-
-    const { closure, assets } = buildAssetClosure({
-      projectId: project.id,
-      assets: project.assets.byId,
-      referencedAssetIds,
-    })
-
-    const manifest =
-      product === 'atlas'
-        ? compileAtlas(project, closure, now).manifest
-        : compileCatalog(project, closure, now).manifest
-
-    const productDir = path.join(tmpDir, product)
-    fs.mkdirSync(productDir, { recursive: true })
-    const runtimePackage = writeBrowserRuntimePackage({
-      entrySourcePath: path.join(
-        path.resolve('src'),
-        'product-shell',
-        'browser',
-        product === 'atlas' ? 'atlas-entry.ts' : 'catalog-entry.ts',
-      ),
-      outputDir: productDir,
-    })
-    const shellFiles = buildProductShell(product, runtimePackage.entryModulePath)
-    fs.writeFileSync(path.join(productDir, 'index.html'), shellFiles['index.html'])
-    fs.writeFileSync(path.join(productDir, 'app.js'), shellFiles['app.js'])
-    fs.writeFileSync(path.join(productDir, 'manifest.json'), JSON.stringify(manifest, null, 2))
-    this.copyReferencedAssets(project, assets, productDir)
-  }
-
-  private copyReferencedAssets(
-    project: GuideProject,
-    assets: Array<{ id: string; kind: string; sourcePath: string }>,
-    productDir: string,
-  ): void {
-    const projectAssetsRoot = this.projects.resolveAssetDir(project.id)
-    for (const asset of assets) {
-      const normalizedSourcePath = normalizeAssetSourcePath(asset.sourcePath)
-      const sourceAbsolutePath = path.join(projectAssetsRoot, normalizedSourcePath)
-      const targetAbsolutePath = path.join(productDir, 'assets', normalizedSourcePath)
-      fs.mkdirSync(path.dirname(targetAbsolutePath), { recursive: true })
-      if (asset.kind === 'html-bundle') {
-        fs.cpSync(sourceAbsolutePath, targetAbsolutePath, { recursive: true })
-      } else {
-        fs.copyFileSync(sourceAbsolutePath, targetAbsolutePath)
-      }
-    }
-  }
-}
-
-function normalizeAssetSourcePath(sourcePath: string): string {
-  return sourcePath.startsWith('assets/') ? sourcePath.slice('assets/'.length) : sourcePath
 }
 
 export class ReleaseValidationError extends Error {

@@ -7,9 +7,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { AtlasManifest } from '../../products/atlas/contract/atlas-manifest.js'
 import type { CatalogManifest } from '../../products/catalog/contract/catalog-manifest.js'
+import { assertEs5Syntax } from './browser-runtime-packager.js'
+import type { ProductShellProduct } from './product-shell.js'
 
 export interface ValidationFailure {
-  code: 'BAD_URL' | 'ABSOLUTE_PATH' | 'MISSING_FILE'
+  code: 'BAD_URL' | 'ABSOLUTE_PATH' | 'MISSING_FILE' | 'BAD_HTML' | 'BAD_SCRIPT'
   message: string
   file?: string
 }
@@ -81,39 +83,72 @@ export function validateRelease(releaseDir: string): ValidationReport {
   const failures: ValidationFailure[] = []
   for (const product of ['atlas', 'catalog'] as const) {
     const productDir = path.join(releaseDir, product)
-    const indexFile = path.join(productDir, 'index.html')
-    const appFile = path.join(productDir, 'app.js')
-    if (!fs.existsSync(indexFile)) {
-      failures.push({ code: 'MISSING_FILE', message: `${product} entry html missing`, file: indexFile })
-    }
-    if (!fs.existsSync(appFile)) {
-      failures.push({ code: 'MISSING_FILE', message: `${product} app.js missing`, file: appFile })
-    }
+    failures.push(...validateProduct(productDir, product).failures)
   }
-  const atlasManifestPath = path.join(releaseDir, 'atlas', 'manifest.json')
-  const catalogManifestPath = path.join(releaseDir, 'catalog', 'manifest.json')
+  return { ok: failures.length === 0, failures }
+}
 
-  if (fs.existsSync(atlasManifestPath)) {
-    try {
-      const atlas = JSON.parse(fs.readFileSync(atlasManifestPath, 'utf-8')) as AtlasManifest
-      failures.push(...checkAtlasManifest(atlas, path.join(releaseDir, 'atlas')))
-    } catch (err) {
+export function validateProduct(
+  productDir: string,
+  product: ProductShellProduct,
+): ValidationReport {
+  const failures: ValidationFailure[] = []
+  const indexFile = path.join(productDir, 'index.html')
+  const appFile = path.join(productDir, 'app.js')
+  const manifestFile = path.join(productDir, 'manifest.json')
+
+  if (!fs.existsSync(indexFile)) {
+    failures.push({ code: 'MISSING_FILE', message: `${product} entry html missing`, file: indexFile })
+  } else {
+    const html = fs.readFileSync(indexFile, 'utf8')
+    if (/type\s*=\s*["']module["']/i.test(html) || !/<script\s+src=["']\.\/app\.js["']><\/script>/i.test(html)) {
       failures.push({
-        code: 'BAD_URL',
-        message: `failed to parse atlas manifest: ${(err as Error).message}`,
+        code: 'BAD_HTML',
+        message: `${product} index.html must load ./app.js as a classic script`,
+        file: indexFile,
       })
     }
   }
-  if (fs.existsSync(catalogManifestPath)) {
+
+  if (!fs.existsSync(appFile)) {
+    failures.push({ code: 'MISSING_FILE', message: `${product} app.js missing`, file: appFile })
+  } else {
+    const appJs = fs.readFileSync(appFile, 'utf8')
     try {
-      const catalog = JSON.parse(fs.readFileSync(catalogManifestPath, 'utf-8')) as CatalogManifest
-      failures.push(...checkCatalogManifest(catalog, path.join(releaseDir, 'catalog')))
-    } catch (err) {
+      assertEs5Syntax(appJs, `${product} app.js`)
+    } catch (error) {
       failures.push({
-        code: 'BAD_URL',
-        message: `failed to parse catalog manifest: ${(err as Error).message}`,
+        code: 'BAD_SCRIPT',
+        message: (error as Error).message,
+        file: appFile,
       })
     }
   }
+
+  if (!fs.existsSync(manifestFile)) {
+    failures.push({
+      code: 'MISSING_FILE',
+      message: `${product} manifest.json missing`,
+      file: manifestFile,
+    })
+  } else {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as
+        | AtlasManifest
+        | CatalogManifest
+      failures.push(
+        ...(product === 'atlas'
+          ? checkAtlasManifest(manifest as AtlasManifest, productDir)
+          : checkCatalogManifest(manifest as CatalogManifest, productDir)),
+      )
+    } catch (error) {
+      failures.push({
+        code: 'BAD_URL',
+        message: `failed to parse ${product} manifest: ${(error as Error).message}`,
+        file: manifestFile,
+      })
+    }
+  }
+
   return { ok: failures.length === 0, failures }
 }

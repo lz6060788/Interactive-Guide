@@ -13,7 +13,7 @@ export async function bootstrapCatalogProduct(
   manifestUrl: string,
 ): Promise<void> {
   const manifest = await loadManifest<CatalogManifest>(manifestUrl)
-  const { shell, runtimeMount } = createShellFrame(app, manifest.config.viewport)
+  const { shell, runtimeMount } = createShellFrame(app)
   const assetLoader = new AssetLoader()
   const analytics = createRuntimeAnalytics(manifest.integrations, 'catalog', manifest.projectId)
   let runtime: CatalogRuntime | null = null

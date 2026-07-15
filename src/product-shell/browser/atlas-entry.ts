@@ -8,7 +8,7 @@ import { createRuntimeAnalytics } from './shared/runtime-analytics.js'
 
 export async function bootstrapAtlasProduct(app: HTMLElement, manifestUrl: string): Promise<void> {
   const manifest = await loadManifest<AtlasManifest>(manifestUrl)
-  const { shell, runtimeMount } = createShellFrame(app, manifest.config.viewport)
+  const { shell, runtimeMount } = createShellFrame(app)
   const assetLoader = new AssetLoader()
   const analytics = createRuntimeAnalytics(manifest.integrations, 'atlas', manifest.projectId)
   let runtime: AtlasRuntime | null = null

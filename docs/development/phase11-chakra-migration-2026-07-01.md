@@ -151,6 +151,11 @@ grep -rh 'data-testid=' src/admin/src/ | sed -E 's/.*data-testid="([^"]+)".*/\1/
 - 表格头用 `<Text fontFamily="sans-serif" fontSize="11px" fontWeight="600" letterSpacing="0.08em" textTransform="uppercase" color="ink.muted">` 复现原 monospace 大写效果
 - 同文件内的刷新 / 新建项目按钮从 body 提到 `<PageHeader>` 的 actions slot
 
+#### 2026-07-15 补正
+
+- Chakra `Table.Row asChild` 包裹 `RouterLink` 会生成 `<a><td>…</td></a>` 非法表格结构，浏览器会把数据单元格移出表格列布局。项目行已恢复标准 `<tr><td>` DOM，并使用固定 `colgroup` 与横向滚动保持表头、数据列对齐。
+- 项目行不再带默认 Atlas 跳转。PRODUCTS 列中的 Atlas、Catalog 是仅有的两个导航入口，分别进入各自编辑器，避免点击 Catalog 被整行 Atlas 链接截获。
+
 ### 8.3 面包屑 `>` 图标修复 + PageHeader 抽取
 4 个页面 (`pages/ProjectListPage.tsx` `AtlasEditorPage.tsx` `CatalogEditorPage.tsx` `ProjectSettingsPage.tsx`) 各自重复了一份 PageHeader / StatusFooter / TableSkeleton / Sep / fmtTime (~120 LOC × 4)。修正两个问题：
 

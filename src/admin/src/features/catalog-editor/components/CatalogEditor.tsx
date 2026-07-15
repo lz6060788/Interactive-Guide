@@ -8,7 +8,7 @@
  *   - Right: inspector (category metadata + items table)
  *   - Bottom: toolbar with Save / theme
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import type {
   GuideProject,
@@ -39,6 +39,7 @@ import { CatalogEditorCanvas } from './CatalogEditorCanvas'
 import { CatalogToolbar } from './CatalogToolbar'
 import { ApiError } from '../../../lib/api-client'
 import { useGlobalShortcuts } from '../../../hooks/useGlobalShortcuts'
+import { useProductExport } from '../../product-export/useProductExport'
 
 interface Props {
   projectId: string
@@ -62,15 +63,19 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
   const [pendingPanorama, setPendingPanorama] = useState<boolean>(false)
   const [canvasMode, setCanvasMode] = useState<'editor' | 'preview'>('editor')
   const [saveError, setSaveError] = useState<string | null>(null)
+  const hydratedProjectId = useRef<string | null>(null)
 
   useEffect(() => {
-    if (projectQuery.data) {
+    // Do not let intermediate segment-save responses replace unsaved local
+    // panorama/config data. A component instance hydrates once per project.
+    if (projectQuery.data && hydratedProjectId.current !== projectId) {
       setDraft(projectQuery.data)
       setPendingConfig(false)
       setPendingKnowledge(false)
       setPendingPanorama(false)
+      hydratedProjectId.current = projectId
     }
-  }, [projectQuery.data])
+  }, [projectId, projectQuery.data])
 
   const selection = useCatalogEditorStore((s) => s.selection)
   const setSelection = useCatalogEditorStore((s) => s.setSelection)
@@ -114,52 +119,78 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
     [setDirty],
   )
 
-  const handleSave = async () => {
-    if (!draft) return
+  const handleSave = async (): Promise<GuideProject> => {
+    if (!draft) throw new Error('项目尚未加载完成')
     setSaveError(null)
+    const hadChanges = pendingKnowledge || pendingPanorama || pendingConfig
     try {
       let current = draft
       if (pendingKnowledge) {
-        current = await updateKnowledge.mutateAsync({
+        const saved = await updateKnowledge.mutateAsync({
           knowledge: current.knowledge,
           expectedRevision: current.metadata.revision,
         })
+        current = { ...current, knowledge: saved.knowledge, metadata: saved.metadata }
+        setDraft(current)
         setPendingKnowledge(false)
       }
       if (pendingPanorama) {
-        current = await updatePanorama.mutateAsync({
+        const saved = await updatePanorama.mutateAsync({
           panorama: current.panorama,
           expectedRevision: current.metadata.revision,
         })
+        current = { ...current, panorama: saved.panorama, metadata: saved.metadata }
+        setDraft(current)
         setPendingPanorama(false)
       }
       if (pendingConfig) {
-        current = await updateCatalogConfig.mutateAsync({
+        const saved = await updateCatalogConfig.mutateAsync({
           catalog: current.products.catalog,
           expectedRevision: current.metadata.revision,
         })
+        current = {
+          ...current,
+          products: { ...current.products, catalog: saved.products.catalog },
+          metadata: saved.metadata,
+        }
+        setDraft(current)
         setPendingConfig(false)
       }
-      setDraft(current)
-      if (pendingKnowledge || pendingPanorama || pendingConfig) {
-        setDirty(false)
-      }
+      if (hadChanges) setDirty(false)
+      return current
     } catch (e) {
+      let message: string
       if (e instanceof ApiError) {
         if (e.status === 409) {
-          setSaveError('保存冲突：当前项目已被另一处修改，请刷新后重试。')
+          message = '保存冲突：当前项目已被另一处修改，请刷新后重试。'
         } else {
-          setSaveError(`保存失败：${e.status} ${e.code}`)
+          message = `保存失败：${e.status} ${e.code}`
         }
       } else {
-        setSaveError((e as Error).message || '保存失败')
+        message = (e as Error).message || '保存失败'
       }
+      setSaveError(message)
+      throw e
     }
   }
 
+  const isDirty = pendingKnowledge || pendingPanorama || pendingConfig
+  const productExport = useProductExport({
+    projectId,
+    product: 'catalog',
+    currentRevision: draft?.metadata.revision ?? -1,
+    isDirty,
+    save: handleSave,
+  })
+
   useGlobalShortcuts({
     shortcuts: [
-      { key: 's', meta: true, description: 'Save', run: () => void handleSave() },
+      {
+        key: 's',
+        meta: true,
+        description: 'Save',
+        run: () => void handleSave().catch(() => undefined),
+      },
       { key: 'Escape', bare: true, description: 'Clear selection', run: () => setSelection(null) },
     ],
   })
@@ -186,6 +217,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
   const stagesArr = draft.knowledge.stages as unknown as IndustryStage[]
   const activeStage = stagesArr.find((s) => s.key === selectedStage) ?? stagesArr[0]
   const isSaving = updateCatalogConfig.isPending || updateKnowledge.isPending || updatePanorama.isPending
+  const operationError = saveError ?? productExport.error
 
   /** Keep the authoring selection aligned with the runtime: a stage or category
    * always opens on its first available tertiary item. */
@@ -204,15 +236,18 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
   return (
     <Flex direction="column" h="100%" bg="bg">
       <CatalogToolbar
-        onSave={() => void handleSave()}
+        onSave={() => void handleSave().catch(() => undefined)}
+        onPreview={() => void productExport.generatePreview()}
+        onDownload={() => void productExport.downloadZip()}
         isSaving={isSaving}
-        isDirty={pendingKnowledge || pendingPanorama || pendingConfig}
+        exportOperation={productExport.operation}
+        isDirty={isDirty}
         hasUnsavedKnowledge={pendingKnowledge}
         hasUnsavedPanorama={pendingPanorama}
         hasUnsavedConfig={pendingConfig}
       />
 
-      {saveError && (
+      {operationError && (
         <Alert.Root
           status="error"
           size="sm"
@@ -224,7 +259,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
           <Alert.Indicator>
             <AlertTriangle size={14} />
           </Alert.Indicator>
-          <Alert.Title fontSize="12px">{saveError}</Alert.Title>
+          <Alert.Title fontSize="12px">{operationError}</Alert.Title>
         </Alert.Root>
       )}
 
@@ -391,7 +426,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
           onPatchCatalogConfig={handlePatchCatalogConfig}
           onPatchKnowledge={handlePatchKnowledge}
           onPatchPanorama={handlePatchPanorama}
-          onSaveRequested={() => void handleSave()}
+          onSaveRequested={() => void handleSave().catch(() => undefined)}
           hasUnsavedConfig={pendingConfig}
           isSaving={isSaving}
         />

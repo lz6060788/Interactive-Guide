@@ -1,30 +1,20 @@
-/**
- * DraftBuildService — compiles a single product (atlas or catalog)
- * preview for a project. Writes the manifest + asset closure into a
- * scratch directory and returns the entry URL the editor can mount.
- */
 import fs from 'node:fs'
 import path from 'node:path'
-import type { GuideProject } from '../../domain/project-types.js'
 import { ProjectRepository } from '../storage/project-repository.js'
-import { compileAtlas } from '../../products/atlas/compiler/atlas-compiler.js'
-import { compileCatalog } from '../../products/catalog/compiler/catalog-compiler.js'
-import {
-  buildAssetClosure,
-  computeReferencedAssetIds,
-} from './asset-closure.js'
-import { writeBrowserRuntimePackage } from './browser-runtime-packager.js'
-import { buildProductShell } from './product-shell.js'
+import { buildStaticProduct } from './static-product-builder.js'
 
 export type DraftProduct = 'atlas' | 'catalog'
 
 export interface DraftBuildResult {
   product: DraftProduct
-  entryUrl: string
+  sourceRevision: number
+  projectVersion: string
   manifestPath: string
   draftDir: string
+  productDir: string
 }
 
+/** Builds one validated product into the static draft proxy directory. */
 export class DraftBuildService {
   private readonly projects: ProjectRepository
   private readonly root: string
@@ -39,86 +29,41 @@ export class DraftBuildService {
     return this.root
   }
 
-  buildDraft(projectId: string, product: DraftProduct, now: () => string = () => new Date().toISOString()): DraftBuildResult {
+  buildDraft(
+    projectId: string,
+    product: DraftProduct,
+    now: () => string = () => new Date().toISOString(),
+  ): DraftBuildResult {
     const project = this.projects.get(projectId)
-    if (!project.panorama.assetId) {
-      throw new Error(`project "${projectId}" has no panorama bound; cannot draft build`)
-    }
-
-    const sceneAssetIds = new Set(project.scenes.map((s) => s.assetId))
-    const transitionAssetIds = new Set<string>()
-    const reachableRoutes = project.navigation.routes.filter(
-      (r) => r.from.kind === 'panorama' || ('sceneId' in r.from && sceneAssetIds.has(r.from.sceneId)),
-    )
-    for (const r of reachableRoutes) {
-      if (r.transition?.assetId) transitionAssetIds.add(r.transition.assetId)
-    }
-    const referencedAssetIds = computeReferencedAssetIds(
-      project.panorama.assetId,
-      sceneAssetIds,
-      transitionAssetIds,
-    )
-
-    const { closure, assets } = buildAssetClosure({
-      projectId,
-      assets: project.assets.byId,
-      referencedAssetIds,
-    })
-
-    const draftDir = path.join(this.root, projectId, `${product}-${Date.now()}`)
-    fs.mkdirSync(draftDir, { recursive: true })
+    const buildId = `${product}-${Date.now()}-${project.metadata.revision}`
+    const draftDir = path.join(this.root, projectId, buildId)
+    const temporaryDir = `${draftDir}__tmp`
     const productDir = path.join(draftDir, product)
-    fs.mkdirSync(productDir, { recursive: true })
 
-    const manifest =
-      product === 'atlas'
-        ? compileAtlas(project, closure, now).manifest
-        : compileCatalog(project, closure, now).manifest
+    if (fs.existsSync(temporaryDir)) fs.rmSync(temporaryDir, { recursive: true, force: true })
+    fs.mkdirSync(temporaryDir, { recursive: true })
 
-    const runtimePackage = writeBrowserRuntimePackage({
-      entrySourcePath: path.join(
-        path.resolve('src'),
-        'product-shell',
-        'browser',
-        product === 'atlas' ? 'atlas-entry.ts' : 'catalog-entry.ts',
-      ),
-      outputDir: productDir,
-    })
-    const shellFiles = buildProductShell(product, runtimePackage.entryModulePath)
-    fs.writeFileSync(path.join(productDir, 'index.html'), shellFiles['index.html'])
-    fs.writeFileSync(path.join(productDir, 'app.js'), shellFiles['app.js'])
-    const manifestPath = path.join(productDir, 'manifest.json')
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
-    this.copyReferencedAssets(project, assets, productDir)
-
-    return {
-      product,
-      entryUrl: `./${product}/index.html`,
-      manifestPath,
-      draftDir,
-    }
-  }
-
-  private copyReferencedAssets(
-    project: GuideProject,
-    assets: Array<{ id: string; kind: string; sourcePath: string }>,
-    productDir: string,
-  ): void {
-    const projectAssetsRoot = this.projects.resolveAssetDir(project.id)
-    for (const asset of assets) {
-      const normalizedSourcePath = normalizeAssetSourcePath(asset.sourcePath)
-      const sourceAbsolutePath = path.join(projectAssetsRoot, normalizedSourcePath)
-      const targetAbsolutePath = path.join(productDir, 'assets', normalizedSourcePath)
-      fs.mkdirSync(path.dirname(targetAbsolutePath), { recursive: true })
-      if (asset.kind === 'html-bundle') {
-        fs.cpSync(sourceAbsolutePath, targetAbsolutePath, { recursive: true })
-      } else {
-        fs.copyFileSync(sourceAbsolutePath, targetAbsolutePath)
+    try {
+      const result = buildStaticProduct({
+        project,
+        projects: this.projects,
+        product,
+        productDir: path.join(temporaryDir, product),
+        now,
+      })
+      if (fs.existsSync(draftDir)) fs.rmSync(draftDir, { recursive: true, force: true })
+      fs.renameSync(temporaryDir, draftDir)
+      return {
+        product,
+        sourceRevision: project.metadata.revision,
+        projectVersion: project.version,
+        manifestPath: path.join(productDir, path.basename(result.manifestPath)),
+        draftDir,
+        productDir,
       }
+    } catch (error) {
+      if (fs.existsSync(temporaryDir)) fs.rmSync(temporaryDir, { recursive: true, force: true })
+      throw error
     }
   }
-}
-
-function normalizeAssetSourcePath(sourcePath: string): string {
-  return sourcePath.startsWith('assets/') ? sourcePath.slice('assets/'.length) : sourcePath
 }

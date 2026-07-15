@@ -147,6 +147,17 @@ export class Camera {
     this.animationFrame = requestAnimationFrame(tick)
   }
 
+  /** Re-project the current camera after the host container changes size. */
+  refreshLayout(): void {
+    if (!this.el) return
+    const width = this.el.clientWidth || this.el.offsetWidth
+    const height = this.el.clientHeight || this.el.offsetHeight
+    if (width <= 0 || height <= 0) return
+    this.cancelAnimation()
+    this.viewport = this.clamp(this.viewport)
+    this.notify()
+  }
+
   reset(): void {
     if (!this.interaction.resetCameraEnabled) return
     this.animateTo(this.initial)

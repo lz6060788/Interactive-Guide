@@ -16,7 +16,10 @@ function mkTmp(): string {
 function writeAtlasManifest(dir: string, manifest: object): void {
   const atlasDir = path.join(dir, 'atlas')
   fs.mkdirSync(atlasDir, { recursive: true })
-  fs.writeFileSync(path.join(atlasDir, 'index.html'), '<!doctype html>')
+  fs.writeFileSync(
+    path.join(atlasDir, 'index.html'),
+    '<!doctype html><div id="app"></div><script src="./app.js"></script>',
+  )
   fs.writeFileSync(path.join(atlasDir, 'app.js'), 'console.log("atlas")')
   fs.writeFileSync(path.join(atlasDir, 'manifest.json'), JSON.stringify(manifest))
 }
@@ -24,7 +27,10 @@ function writeAtlasManifest(dir: string, manifest: object): void {
 function writeCatalogManifest(dir: string, manifest: object): void {
   const catDir = path.join(dir, 'catalog')
   fs.mkdirSync(catDir, { recursive: true })
-  fs.writeFileSync(path.join(catDir, 'index.html'), '<!doctype html>')
+  fs.writeFileSync(
+    path.join(catDir, 'index.html'),
+    '<!doctype html><div id="app"></div><script src="./app.js"></script>',
+  )
   fs.writeFileSync(path.join(catDir, 'app.js'), 'console.log("catalog")')
   fs.writeFileSync(path.join(catDir, 'manifest.json'), JSON.stringify(manifest))
 }

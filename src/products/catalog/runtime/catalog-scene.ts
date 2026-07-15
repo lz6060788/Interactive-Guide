@@ -56,6 +56,8 @@ export class CatalogScene {
   private focusAnimationFrame: number | null = null
   private displayedFocusRect: ProjectedFocusRect | null = null
   private displayedGeometry: SceneGeometry | null = null
+  private resizeObserver: ResizeObserver | null = null
+  private resizeFallbackWindow: Window | null = null
 
   constructor(options: CatalogSceneOptions) {
     this.root = options.root
@@ -109,9 +111,10 @@ export class CatalogScene {
       onLaunch: url => this.onAtlasLaunch?.(url),
     }))
     this.render()
+    this.observeRuntimeSize()
   }
 
-  destroy(): void { if (this.focusAnimationFrame !== null) cancelAnimationFrame(this.focusAnimationFrame); if (this.listCenterFrame !== null) cancelAnimationFrame(this.listCenterFrame); this.focusAnimationFrame = null; this.listCenterFrame = null; this.displayedFocusRect = null; this.displayedGeometry = null; this.listDragState = null; this.previewItemId = null; this.root.innerHTML = ''; this.detailById.clear(); this.detailTopSpacer = this.detailBottomSpacer = null; this.original = this.dimmed = this.shade = this.focusWindow = this.markerLayer = this.stageTabs = this.categoryTabs = this.detailList = this.connector = this.cameraCenter = null }
+  destroy(): void { this.stopObservingRuntimeSize(); if (this.focusAnimationFrame !== null) cancelAnimationFrame(this.focusAnimationFrame); if (this.listCenterFrame !== null) cancelAnimationFrame(this.listCenterFrame); this.focusAnimationFrame = null; this.listCenterFrame = null; this.displayedFocusRect = null; this.displayedGeometry = null; this.listDragState = null; this.previewItemId = null; this.root.innerHTML = ''; this.detailById.clear(); this.detailTopSpacer = this.detailBottomSpacer = null; this.original = this.dimmed = this.shade = this.focusWindow = this.markerLayer = this.stageTabs = this.categoryTabs = this.detailList = this.connector = this.cameraCenter = null }
   getSelection(): CatalogSceneSelection { return { ...this.selection } }
   selectStage(stageKey: CatalogStageEntry['key']): void { this.selection = resolveSelection(this.manifest, { stageKey }); this.render(); this.onSelectionChange?.(this.getSelection()) }
   selectCategory(categoryId: string): void { const stage = this.findStageByCategory(categoryId); if (!stage) return; this.selection = resolveSelection(this.manifest, { stageKey: stage.key, categoryId }); this.render(); this.onSelectionChange?.(this.getSelection()) }
@@ -127,9 +130,37 @@ export class CatalogScene {
 
   private geometry(viewport: Viewport): SceneGeometry {
     const bounds = this.root.getBoundingClientRect(); const canvasWidth = Number((this.root as HTMLElement).clientWidth) || bounds.width || 1; const canvasHeight = Number((this.root as HTMLElement).clientHeight) || bounds.height || 1
-    const size = Math.min(canvasWidth, canvasHeight); const baseWidth = size * this.imageAspect; const baseHeight = size; const minimumCoverZoom = Math.max(.01, Math.min(16, 1 / this.imageAspect)); const zoom = clamp(viewport.zoom, minimumCoverZoom, 16); const width = baseWidth * zoom; const height = baseHeight * zoom
-    const frameLeft = (canvasWidth - size) / 2; const frameTop = (canvasHeight - size) / 2
-    return { canvasWidth, canvasHeight, width, height, left: clamp(frameLeft + size / 2 - viewport.centerX * width, frameLeft + size - width, frameLeft), top: clamp(frameTop + size / 2 - viewport.centerY * height, frameTop + size - height, frameTop) }
+    let baseWidth = canvasWidth; let baseHeight = baseWidth / this.imageAspect
+    if (baseHeight < canvasHeight) { baseHeight = canvasHeight; baseWidth = baseHeight * this.imageAspect }
+    const zoom = clamp(viewport.zoom, 1, 16); const width = baseWidth * zoom; const height = baseHeight * zoom
+    return { canvasWidth, canvasHeight, width, height, left: clamp(canvasWidth / 2 - viewport.centerX * width, canvasWidth - width, 0), top: clamp(canvasHeight / 2 - viewport.centerY * height, canvasHeight - height, 0) }
+  }
+
+  private readonly handleRuntimeResize = (): void => {
+    this.render()
+  }
+
+  private observeRuntimeSize(): void {
+    this.stopObservingRuntimeSize()
+    if (typeof ResizeObserver === 'function') {
+      this.resizeObserver = new ResizeObserver(this.handleRuntimeResize)
+      this.resizeObserver.observe(this.root)
+      return
+    }
+    const runtimeWindow = this.root.ownerDocument?.defaultView
+    if (!runtimeWindow) return
+    runtimeWindow.addEventListener('resize', this.handleRuntimeResize)
+    runtimeWindow.addEventListener('orientationchange', this.handleRuntimeResize)
+    this.resizeFallbackWindow = runtimeWindow
+  }
+
+  private stopObservingRuntimeSize(): void {
+    this.resizeObserver?.disconnect()
+    this.resizeObserver = null
+    if (!this.resizeFallbackWindow) return
+    this.resizeFallbackWindow.removeEventListener('resize', this.handleRuntimeResize)
+    this.resizeFallbackWindow.removeEventListener('orientationchange', this.handleRuntimeResize)
+    this.resizeFallbackWindow = null
   }
 
   private renderBackdrop(g: SceneGeometry): void {

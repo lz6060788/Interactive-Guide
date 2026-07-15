@@ -12,7 +12,7 @@
  * Note: there's no separate "Pan" tool button — panning the canvas is
  * built into the Select tool (drag empty canvas area).
  */
-import { MousePointer2, MapPin, MessageSquare, Save, Eye, Rocket } from 'lucide-react'
+import { MousePointer2, MapPin, MessageSquare, Save, Eye, Rocket, Download } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Button, Flex, HStack, Text } from '@chakra-ui/react'
 
@@ -22,9 +22,11 @@ interface Props {
   tool: Tool
   onToolChange: (t: Tool) => void
   onSave: () => void
-  onPreview?: () => void
+  onPreview: () => void
+  onDownload: () => void
   onPublish?: () => void
   isSaving: boolean
+  exportOperation: 'preview' | 'download' | null
   isDirty: boolean
   hasUnsavedPanorama: boolean
   hasUnsavedConfig: boolean
@@ -51,8 +53,10 @@ export function AtlasToolbar({
   onToolChange,
   onSave,
   onPreview,
+  onDownload,
   onPublish,
   isSaving,
+  exportOperation,
   isDirty,
   hasUnsavedPanorama,
   hasUnsavedConfig,
@@ -111,18 +115,34 @@ export function AtlasToolbar({
           variant="secondary"
           size="sm"
           onClick={onPreview}
-          disabled={!onPreview}
+          loading={exportOperation === 'preview'}
+          disabled={exportOperation !== null && exportOperation !== 'preview'}
+          data-testid="btn-generate-preview"
         >
           <HStack gap="1.5">
             <Eye size={14} />
-            预览
+            生成预览
+          </HStack>
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onDownload}
+          loading={exportOperation === 'download'}
+          disabled={exportOperation !== null && exportOperation !== 'download'}
+          data-testid="btn-download-zip"
+        >
+          <HStack gap="1.5">
+            <Download size={14} />
+            下载 ZIP
           </HStack>
         </Button>
         <Button
           variant="brand"
           size="sm"
           onClick={onSave}
-          loading={isSaving}
+          loading={isSaving && exportOperation === null}
+          disabled={exportOperation !== null}
           data-testid="btn-save"
         >
           <HStack gap="1.5">

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import AdmZip from 'adm-zip'
+import { parse } from 'acorn'
 import express from 'express'
 import request from 'supertest'
 import { ProjectRepository } from '../../../src/server/storage/project-repository.js'
@@ -61,23 +63,41 @@ test('POST /projects/:id/previews/:product returns a static preview entry that c
   const { app, cleanup } = bootApp()
   await createMinimalProject(app)
   const preview = await request(app).post('/api/projects/p1/previews/atlas')
-  assert.equal(preview.status, 200)
+  assert.equal(preview.status, 200, JSON.stringify(preview.body))
+  assert.equal(preview.body.data.product, 'atlas')
+  assert.equal(typeof preview.body.data.sourceRevision, 'number')
   assert.match(preview.body.data.entryUrl, /\/api\/projects\/p1\/previews\/atlas\/builds\/.+\/index\.html$/)
+  assert.match(preview.body.data.downloadUrl, /\/download\.zip$/)
 
   const html = await request(app).get(preview.body.data.entryUrl)
   assert.equal(html.status, 200)
-  assert.match(String(html.text), /app\.js/)
+  assert.match(String(html.text), /<script src="\.\/app\.js"><\/script>/)
+  assert.doesNotMatch(String(html.text), /type="module"/)
 
   const appJsUrl = preview.body.data.entryUrl.replace(/index\.html$/, 'app.js')
   const appJs = await request(app).get(appJsUrl)
   assert.equal(appJs.status, 200)
   assert.match(String(appJs.text), /manifest\.json/)
-  const runtimeModuleMatch = String(appJs.text).match(/from '(.+atlas-entry\.js)'/)
-  assert.ok(runtimeModuleMatch?.[1], 'preview app.js should import atlas browser runtime entry')
-  const runtimeModuleUrl = new URL(runtimeModuleMatch[1], `http://local${appJsUrl}`).pathname
-  const runtimeModule = await request(app).get(runtimeModuleUrl)
-  assert.equal(runtimeModule.status, 200)
-  assert.match(String(runtimeModule.text), /bootstrapAtlasProduct/)
+  assert.doesNotThrow(() => parse(String(appJs.text), { ecmaVersion: 5, sourceType: 'script' }))
+  assert.doesNotMatch(String(appJs.text), /\b(?:import|export)\s/)
+
+  const runtimeModule = await request(app).get(
+    preview.body.data.entryUrl.replace(/index\.html$/, 'runtime/atlas-entry.js'),
+  )
+  assert.equal(runtimeModule.status, 404)
+
+  const download = await request(app)
+    .get(preview.body.data.downloadUrl)
+    .buffer(true)
+    .parse(bufferParser)
+  assert.equal(download.status, 200)
+  assert.match(String(download.headers['content-disposition']), /p1-atlas-0\.1\.0\.zip/)
+  const zip = new AdmZip(download.body as Buffer)
+  const entries = zip.getEntries().filter(entry => !entry.isDirectory).map(entry => entry.entryName)
+  assert.ok(entries.includes('index.html'))
+  assert.ok(entries.includes('app.js'))
+  assert.ok(entries.includes('manifest.json'))
+  assert.ok(entries.some(entry => entry.startsWith('assets/images/')))
   cleanup()
 })
 
@@ -87,24 +107,35 @@ test('POST /projects/:id/releases creates a release whose files can be fetched s
   const release = await request(app).post('/api/projects/p1/releases')
   assert.equal(release.status, 200)
 
-  const html = await request(app).get('/api/projects/p1/releases/0.1.0/files/atlas/index.html')
-  assert.equal(html.status, 200)
-  assert.match(String(html.text), /app\.js/)
+  for (const product of ['atlas', 'catalog'] as const) {
+    const html = await request(app).get(`/api/projects/p1/releases/0.1.0/files/${product}/index.html`)
+    assert.equal(html.status, 200)
+    assert.match(String(html.text), /<script src="\.\/app\.js"><\/script>/)
+    assert.doesNotMatch(String(html.text), /type="module"/)
 
-  const appJs = await request(app).get('/api/projects/p1/releases/0.1.0/files/atlas/app.js')
-  assert.equal(appJs.status, 200)
-  assert.match(String(appJs.text), /manifest\.json/)
-  const runtimeModuleMatch = String(appJs.text).match(/from '(.+atlas-entry\.js)'/)
-  assert.ok(runtimeModuleMatch?.[1], 'release app.js should import atlas browser runtime entry')
-  const runtimeModuleUrl = new URL(
-    runtimeModuleMatch[1],
-    'http://local/api/projects/p1/releases/0.1.0/files/atlas/app.js',
-  ).pathname
-  const runtimeModule = await request(app).get(runtimeModuleUrl)
-  assert.equal(runtimeModule.status, 200)
-  assert.match(String(runtimeModule.text), /bootstrapAtlasProduct/)
+    const appJs = await request(app).get(`/api/projects/p1/releases/0.1.0/files/${product}/app.js`)
+    assert.equal(appJs.status, 200)
+    assert.match(String(appJs.text), /manifest\.json/)
+    assert.doesNotThrow(() => parse(String(appJs.text), { ecmaVersion: 5, sourceType: 'script' }))
+    assert.doesNotMatch(String(appJs.text), /\b(?:import|export)\s/)
+
+    const runtimeModule = await request(app).get(
+      `/api/projects/p1/releases/0.1.0/files/${product}/runtime/${product}-entry.js`,
+    )
+    assert.equal(runtimeModule.status, 404)
+  }
   cleanup()
 })
+
+function bufferParser(
+  response: NodeJS.ReadableStream,
+  callback: (error: Error | null, body?: Buffer) => void,
+): void {
+  const chunks: Buffer[] = []
+  response.on('data', chunk => chunks.push(Buffer.from(chunk)))
+  response.on('end', () => callback(null, Buffer.concat(chunks)))
+  response.on('error', callback)
+}
 
 test('preview and release file routes reject path traversal', async () => {
   const { app, cleanup } = bootApp()

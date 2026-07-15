@@ -8,7 +8,6 @@ import { useEffect, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import {
   Alert,
-  Badge,
   Box,
   Button,
   Card,
@@ -283,48 +282,120 @@ function ProjectListTable({ rows }: { rows: ListEntry[] }): JSX.Element {
       overflow="hidden"
       p="0"
     >
-      <Table.Root variant="line" size="sm" interactive>
-        <Table.Header className="ui-chrome">
-          <Table.Row bg="bg.sunken">
-            <Table.ColumnHeader fontFamily="sans-serif" fontSize="11px" fontWeight="600" letterSpacing="0.08em" textTransform="uppercase" color="ink.muted" py="2.5">ID</Table.ColumnHeader>
-            <Table.ColumnHeader fontFamily="sans-serif" fontSize="11px" fontWeight="600" letterSpacing="0.08em" textTransform="uppercase" color="ink.muted" py="2.5">TITLE</Table.ColumnHeader>
-            <Table.ColumnHeader fontFamily="sans-serif" fontSize="11px" fontWeight="600" letterSpacing="0.08em" textTransform="uppercase" color="ink.muted" py="2.5">VERSION</Table.ColumnHeader>
-            <Table.ColumnHeader fontFamily="sans-serif" fontSize="11px" fontWeight="600" letterSpacing="0.08em" textTransform="uppercase" color="ink.muted" py="2.5">UPDATED</Table.ColumnHeader>
-            <Table.ColumnHeader fontFamily="sans-serif" fontSize="11px" fontWeight="600" letterSpacing="0.08em" textTransform="uppercase" color="ink.muted" py="2.5">REV</Table.ColumnHeader>
-            <Table.ColumnHeader fontFamily="sans-serif" fontSize="11px" fontWeight="600" letterSpacing="0.08em" textTransform="uppercase" color="ink.muted" py="2.5" textAlign="right">PRODUCTS</Table.ColumnHeader>
-          </Table.Row>
-        </Table.Header>
-        <Table.Body>
-          {rows.map((p) => (
-            <Table.Row
-              key={p.id}
-              asChild
-              cursor="pointer"
-            >
-              <RouterLink to={`/projects/${p.id}/atlas-editor`}>
-                <Table.Cell fontFamily="mono" fontSize="13px">{p.id}</Table.Cell>
-                <Table.Cell fontWeight="500">{p.title}</Table.Cell>
-                <Table.Cell fontFamily="mono" fontSize="13px" color="ink.muted">{p.version}</Table.Cell>
-                <Table.Cell fontFamily="mono" fontSize="12px" color="ink.muted">
-                  {p.updatedAt.slice(0, 19).replace('T', ' ')}
-                </Table.Cell>
-                <Table.Cell fontFamily="mono" fontSize="13px" color="ink.muted">{p.revision}</Table.Cell>
-                <Table.Cell>
-                  <HStack gap="1" justify="flex-end">
-                    <Badge variant="subtle" colorPalette="brand" size="sm">
-                      Atlas
-                    </Badge>
-                    <Badge variant="subtle" colorPalette="accent" size="sm">
-                      Catalog
-                    </Badge>
-                  </HStack>
-                </Table.Cell>
-              </RouterLink>
+      <Box overflowX="auto">
+        <Table.Root variant="line" size="sm" minW="860px" tableLayout="fixed">
+          <colgroup>
+            <col style={{ width: '16%' }} />
+            <col />
+            <col style={{ width: 96 }} />
+            <col style={{ width: 196 }} />
+            <col style={{ width: 72 }} />
+            <col style={{ width: 210 }} />
+          </colgroup>
+          <Table.Header className="ui-chrome">
+            <Table.Row bg="bg.sunken">
+              <ProjectColumnHeader>ID</ProjectColumnHeader>
+              <ProjectColumnHeader>TITLE</ProjectColumnHeader>
+              <ProjectColumnHeader>VERSION</ProjectColumnHeader>
+              <ProjectColumnHeader>UPDATED</ProjectColumnHeader>
+              <ProjectColumnHeader>REV</ProjectColumnHeader>
+              <ProjectColumnHeader textAlign="right">PRODUCTS</ProjectColumnHeader>
             </Table.Row>
-          ))}
-        </Table.Body>
-      </Table.Root>
+          </Table.Header>
+          <Table.Body>
+            {rows.map((project) => (
+              <Table.Row
+                key={project.id}
+                data-testid={`project-row-${project.id}`}
+                transition="background 140ms ease"
+                _hover={{ bg: 'bg.sunken' }}
+              >
+                <ProjectCell fontFamily="mono" fontSize="13px" fontWeight="600">
+                  {project.id}
+                </ProjectCell>
+                <ProjectCell fontWeight="500" overflow="hidden" textOverflow="ellipsis">
+                  {project.title}
+                </ProjectCell>
+                <ProjectCell fontFamily="mono" fontSize="13px" color="ink.muted">
+                  {project.version}
+                </ProjectCell>
+                <ProjectCell fontFamily="mono" fontSize="12px" color="ink.muted">
+                  <time dateTime={project.updatedAt}>
+                    {project.updatedAt.slice(0, 19).replace('T', ' ')}
+                  </time>
+                </ProjectCell>
+                <ProjectCell fontFamily="mono" fontSize="13px" color="ink.muted">
+                  {project.revision}
+                </ProjectCell>
+                <ProjectCell>
+                  <HStack gap="2" justify="flex-end">
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="secondary"
+                      colorPalette="brand"
+                      minW="76px"
+                    >
+                      <RouterLink
+                        to={`/projects/${project.id}/atlas-editor`}
+                        data-testid={`project-open-atlas-${project.id}`}
+                        aria-label={`打开 ${project.title} 的 Atlas 编辑器`}
+                      >
+                        Atlas
+                      </RouterLink>
+                    </Button>
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="secondary"
+                      colorPalette="accent"
+                      minW="82px"
+                    >
+                      <RouterLink
+                        to={`/projects/${project.id}/catalog-editor`}
+                        data-testid={`project-open-catalog-${project.id}`}
+                        aria-label={`打开 ${project.title} 的 Catalog 编辑器`}
+                      >
+                        Catalog
+                      </RouterLink>
+                    </Button>
+                  </HStack>
+                </ProjectCell>
+              </Table.Row>
+            ))}
+          </Table.Body>
+        </Table.Root>
+      </Box>
     </Card.Root>
+  )
+}
+
+function ProjectColumnHeader(props: React.ComponentProps<typeof Table.ColumnHeader>): JSX.Element {
+  return (
+    <Table.ColumnHeader
+      fontFamily="sans-serif"
+      fontSize="11px"
+      fontWeight="600"
+      letterSpacing="0.08em"
+      textTransform="uppercase"
+      color="ink.muted"
+      px="4"
+      py="3"
+      whiteSpace="nowrap"
+      {...props}
+    />
+  )
+}
+
+function ProjectCell(props: React.ComponentProps<typeof Table.Cell>): JSX.Element {
+  return (
+    <Table.Cell
+      px="4"
+      py="3.5"
+      verticalAlign="middle"
+      whiteSpace="nowrap"
+      {...props}
+    />
   )
 }
 

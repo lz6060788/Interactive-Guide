@@ -118,3 +118,33 @@ test('Camera drag pan uses logical viewport deltas when preview is CSS-scaled', 
   scaledCamera.destroy()
   fullCamera.destroy()
 })
+
+test('Camera refreshLayout re-clamps the current viewport to resized host bounds', () => {
+  const el = new FakeCameraElement({
+    clientWidth: 375,
+    clientHeight: 808,
+    rectWidth: 375,
+    rectHeight: 808,
+  })
+  const camera = new Camera(
+    el as unknown as HTMLElement,
+    { centerX: 0.12, centerY: 0.5, zoom: 1 },
+    { minZoom: 1, maxZoom: 4 },
+    { wheelZoom: true, dragPan: true, pinchZoom: true, resetCameraEnabled: true },
+    { width: 2000, height: 1000 },
+  )
+  let notifications = 0
+  camera.onChange(() => { notifications += 1 })
+
+  el.clientWidth = 1000
+  el.clientHeight = 500
+  el.offsetWidth = 1000
+  el.offsetHeight = 500
+  camera.refreshLayout()
+
+  assert.equal(camera.getViewport().centerX, 0.5)
+  assert.equal(camera.getProjection().viewportWidth, 1000)
+  assert.equal(camera.getProjection().viewportHeight, 500)
+  assert.equal(notifications, 1, 'layout refresh must re-project runtime overlays')
+  camera.destroy()
+})

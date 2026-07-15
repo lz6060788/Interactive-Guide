@@ -71,7 +71,27 @@ export function getAtlasMarkerSvg(active: boolean): string {
   return active ? ATLAS_MARKER_SELECTED_SVG : ATLAS_MARKER_CLASSIC_SVG
 }
 
-export function getAtlasChipStyle(active: boolean, minWidthPx: number, maxWidthPx?: number): Partial<CSSStyleDeclaration> {
+export interface AtlasChipStyle {
+  minWidth: string
+  maxWidth: string
+  height: string
+  padding: string
+  borderRadius: string
+  border: string
+  background: string
+  color: string
+  boxShadow: string
+  fontFamily: string
+  fontSize: string
+  lineHeight: string
+  fontWeight: string
+}
+
+export function getAtlasChipStyle(
+  active: boolean,
+  minWidthPx: number,
+  maxWidthPx?: number,
+): AtlasChipStyle {
   return {
     minWidth: `${minWidthPx}px`,
     maxWidth: maxWidthPx ? `${maxWidthPx}px` : '',
@@ -89,7 +109,17 @@ export function getAtlasChipStyle(active: boolean, minWidthPx: number, maxWidthP
   }
 }
 
-export function getAtlasDrawerCardStyle(active: boolean): Partial<CSSStyleDeclaration> {
+export interface AtlasDrawerCardStyle {
+  width: string
+  minHeight: string
+  padding: string
+  borderRadius: string
+  border: string
+  background: string
+  boxShadow: string
+}
+
+export function getAtlasDrawerCardStyle(active: boolean): AtlasDrawerCardStyle {
   return {
     width: `${ATLAS_DRAWER_CARD_WIDTH_PX}px`,
     minHeight: `${ATLAS_DRAWER_CARD_MIN_HEIGHT_PX}px`,

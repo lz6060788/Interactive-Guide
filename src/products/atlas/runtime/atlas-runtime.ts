@@ -108,6 +108,8 @@ export class AtlasRuntime {
   private floatingBackEl: HTMLButtonElement | null = null
   private transitionController: TransitionVideoController | null = null
   private transitionOverlayEl: HTMLElement | null = null
+  private resizeObserver: ResizeObserver | null = null
+  private resizeFallbackWindow: Window | null = null
 
   constructor(opts: AtlasRuntimeOptions) {
     this.listeners = opts.listeners ?? []
@@ -135,8 +137,8 @@ export class AtlasRuntime {
     this.mountedEl = container
     this.mountedEl.innerHTML = ''
     this.mountedEl.style.position = 'relative'
-    this.mountedEl.style.width = `${this.manifest.config.viewport.width}px`
-    this.mountedEl.style.height = `${this.manifest.config.viewport.height}px`
+    this.mountedEl.style.width = '100%'
+    this.mountedEl.style.height = '100%'
     this.mountedEl.style.overflow = 'hidden'
     ensureAtlasVisualStyles(this.mountedEl.ownerDocument)
 
@@ -230,11 +232,14 @@ export class AtlasRuntime {
       mountRoot: this.transitionOverlayEl ?? undefined,
     })
 
+    this.applyTransform()
+    this.observeRuntimeSize()
     this.mountedAt = this.now()
   }
 
   destroy(): void {
     this.destroyed = true
+    this.stopObservingRuntimeSize()
     if (this.mountedEl) {
       const stayDuration = this.mountedAt ? this.now() - this.mountedAt : 0
       if (this.mountedAt) this.emit({ type: 'analytics:stay', durationMs: stayDuration })
@@ -259,6 +264,34 @@ export class AtlasRuntime {
     this.hintEl = null
     this.floatingBackEl = null
     this.transitionOverlayEl = null
+  }
+
+  private readonly handleRuntimeResize = (): void => {
+    this.camera?.refreshLayout()
+  }
+
+  private observeRuntimeSize(): void {
+    if (!this.mountedEl) return
+    this.stopObservingRuntimeSize()
+    if (typeof ResizeObserver === 'function') {
+      this.resizeObserver = new ResizeObserver(this.handleRuntimeResize)
+      this.resizeObserver.observe(this.mountedEl)
+      return
+    }
+    const runtimeWindow = this.mountedEl.ownerDocument?.defaultView
+    if (!runtimeWindow) return
+    runtimeWindow.addEventListener('resize', this.handleRuntimeResize)
+    runtimeWindow.addEventListener('orientationchange', this.handleRuntimeResize)
+    this.resizeFallbackWindow = runtimeWindow
+  }
+
+  private stopObservingRuntimeSize(): void {
+    this.resizeObserver?.disconnect()
+    this.resizeObserver = null
+    if (!this.resizeFallbackWindow) return
+    this.resizeFallbackWindow.removeEventListener('resize', this.handleRuntimeResize)
+    this.resizeFallbackWindow.removeEventListener('orientationchange', this.handleRuntimeResize)
+    this.resizeFallbackWindow = null
   }
 
   /**

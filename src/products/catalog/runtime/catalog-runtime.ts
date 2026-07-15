@@ -79,8 +79,8 @@ export class CatalogRuntime {
     }
     this.mountedEl = container
     this.mountedEl.innerHTML = ''
-    this.mountedEl.style.width = `${this.manifest.config.viewport.width}px`
-    this.mountedEl.style.height = `${this.manifest.config.viewport.height}px`
+    this.mountedEl.style.width = '100%'
+    this.mountedEl.style.height = '100%'
     this.mountedEl.style.position = 'relative'
     this.mountedEl.style.overflow = 'hidden'
 

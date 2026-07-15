@@ -229,6 +229,27 @@ test('CatalogRuntime aligns the focus crop with the same panorama coordinates as
   rt.destroy()
 })
 
+test('CatalogRuntime uses the complete host rectangle instead of an inner square', async () => {
+  const rt = new CatalogRuntime({ assets: makeLoader() })
+  rt.loadManifest(minimalManifest())
+  const container = new FakeEl()
+  container.clientWidth = 1200
+  container.clientHeight = 600
+  await rt.mount(container as unknown as HTMLElement)
+
+  const focus = container.children.find(
+    child => child.dataset.testid === 'catalog-focus-window',
+  )
+  assert.equal(container.style.width, '100%')
+  assert.equal(container.style.height, '100%')
+  assert.equal(
+    focus?.style.backgroundPosition,
+    '-240px -180px',
+    'focus crop must share the cover geometry of the complete 1200x600 host',
+  )
+  rt.destroy()
+})
+
 test('CatalogRuntime centers the active detail and supports pointer-drag list scrolling', async () => {
   const manifest = minimalManifest()
   manifest.items.push({ id: 'item-2', categoryId: 'cat-1', title: 'Item 2', description: 'desc 2', order: 1, marker: { x: .7, y: .6 }, focusRect: { x: .6, y: .5, width: .1, height: .1 } })
