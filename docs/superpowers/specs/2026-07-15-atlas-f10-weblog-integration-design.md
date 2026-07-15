@@ -182,12 +182,12 @@ Atlas manifest 加载且 runtime 挂载成功后上报一次：
     pageType,
     name,
     source,
-    value: '5' // 后续依次为 '10'、'15'……
+    value: 1 // 后续依次为 2、3……
   }
 }
 ```
 
-页面隐藏时暂停，恢复可见后继续累计。停留 4 秒不报；8 秒只报 `5`；11 秒依次报 `5`、`10`。`visibilitychange` 和 `pagehide` 只负责结算已经跨过但尚未发送的完整节点，不补报尾数。
+`value` 是数字类型的完整 5 秒区间序号，即 `Math.floor(累计可见毫秒 / 5000)`。页面隐藏时暂停，恢复可见后继续累计。停留 4 秒不报；8 秒只报 `1`；11 秒依次报 `1`、`2`。`visibilitychange` 和 `pagehide` 只负责结算已经跨过但尚未发送的完整节点，不补报尾数。
 
 ### 5.5 source 解析
 
@@ -201,8 +201,8 @@ Atlas 全景图顶部分享与 HTML Scene 顶部分享统一调用产品 Shell �
 2. 生成带 `from=share` 的当前页 URL。
 3. 由 `integrations.share` 和项目标题生成分享 payload：`title`、`text`、`content`、`description`、`url`、`shareUrl`；配置图片时附带 F10 支持的图片字段。
 4. Falcon/F10 环境优先调用 `F10Utils.shareUrlCard(payload)`。
-5. F10 能力不可用或调用失败时调用 `navigator.share`。
-6. 浏览器仍不支持时复制分享 URL。
+5. F10 能力不可用或调用抛错时，由调用层 `catch` 调用 `navigator.share`。
+6. `navigator.share` 不支持或再次抛错时复制分享 URL。
 
 `share.enabled !== true` 时不执行分享动作；顶部分享按钮的显示状态与该配置保持一致。
 
@@ -222,7 +222,7 @@ Catalog 默认全景场景没有顶部分享工具栏。Catalog HTML Scene 若�
 }
 ```
 
-独立 Catalog 运行时点击右下按钮后，产品 Shell 调用共享 `F10HostAdapter.jumpTofullScreenPage(url)`。优先使用或按需加载 `F10Utils.jumpTofullScreenPage`；失败时使用 `window.top.open`，再降级为 `window.open`。编辑器内部预览继续使用新窗口，不模拟客户端宿主。
+独立 Catalog 运行时点击右下按钮后，产品 Shell 调用共享 `F10HostAdapter.jumpTofullScreenPage(url)`。优先使用或按需加载 `F10Utils.jumpTofullScreenPage`；能力不存在或调用抛错时，由调用层 `catch` 使用 `window.top.open`，再降级为 `window.open`。编辑器内部预览继续使用新窗口，不模拟客户端宿主。
 
 该 Atlas URL 只能保存在项目实例属性中，不能硬编码进 Catalog runtime、编辑器或 F10 适配器。
 
@@ -239,9 +239,9 @@ Catalog 默认全景场景没有顶部分享工具栏。Catalog HTML Scene 若�
 1. 开启 Atlas 埋点时调用一次 `weblog.setConfig({ appKey: 'ce19ea099b', debug: false })`；Catalog 从不调用。
 2. Atlas 的 WeBlog mock 只能收到本设计中的四种 ID/action 组合，不出现 category/item/route 等通用事件。
 3. 曝光只报一次；`from=share` 回流只报一次。
-4. 可见停留 4/8/11 秒分别收到 0、`5`、`5 + 10`；隐藏时间不计入。
+4. 可见停留 4/8/11 秒分别收到 0、数字 `1`、数字 `1 + 2`；隐藏时间不计入。
 5. Atlas 全景图与 HTML Scene 分享均先上报分享点击，再调用 `F10Utils.shareUrlCard`；分享 URL 包含 `from=share`。
-6. F10 不存在或抛错时，分享和 Catalog 跳转均执行浏览器降级，页面其他交互正常。
+6. F10 不存在或抛错时，分享和 Catalog 跳转均由调用层 `catch` 执行浏览器降级，页面其他交互正常。
 7. Catalog 右下按钮使用项目配置的完整 Atlas URL，并调用 `F10Utils.jumpTofullScreenPage`。
 8. 项目设置可保存、回读 appKey/pageType/name/defaultSource 以及分享配置。
 9. Atlas 与 Catalog 的独立产物继续通过 ES5 语法校验，并能在普通浏览器预览。
