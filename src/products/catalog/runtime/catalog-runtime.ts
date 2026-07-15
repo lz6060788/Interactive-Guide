@@ -14,9 +14,8 @@ import type {
   CatalogItemEntry,
   CatalogManifest,
 } from '../contract/catalog-manifest.js'
-import { List } from './list.js'
-import { FocusOverlay } from './focus-overlay.js'
 import { SceneLauncher } from './scene-launcher.js'
+import { CatalogScene, type CatalogSceneSelection } from './catalog-scene.js'
 
 export interface CatalogRuntimeAssetLoader {
   resolveUrl(url: string): string
@@ -29,6 +28,7 @@ export type CatalogEvent =
   | { type: 'categoryfocus'; categoryId: string; viewport: Viewport }
   | { type: 'sceneenter'; sceneId: string; viewId: string }
   | { type: 'routechange'; routeId: string }
+  | { type: 'atlaslaunch'; url: string }
   | { type: 'analytics:expose'; target: { kind: 'category' | 'item'; id: string } }
   | { type: 'analytics:click'; target: { kind: 'category' | 'item'; id: string } }
   | { type: 'analytics:stay'; durationMs: number }
@@ -47,8 +47,7 @@ export interface CatalogRuntimeOptions {
 export class CatalogRuntime {
   private manifest: CatalogManifest | null = null
   private mountedEl: HTMLElement | null = null
-  private list: List | null = null
-  private focus: FocusOverlay | null = null
+  private scene: CatalogScene | null = null
   private sceneLauncher: SceneLauncher | null = null
   private readonly listeners: CatalogListener[]
   private readonly now: () => number
@@ -80,45 +79,22 @@ export class CatalogRuntime {
     }
     this.mountedEl = container
     this.mountedEl.innerHTML = ''
-    this.mountedEl.style.display = 'grid'
-    this.mountedEl.style.gridTemplateColumns = '1fr 1fr'
     this.mountedEl.style.width = `${this.manifest.config.viewport.width}px`
     this.mountedEl.style.height = `${this.manifest.config.viewport.height}px`
+    this.mountedEl.style.position = 'relative'
+    this.mountedEl.style.overflow = 'hidden'
 
-    // Left: panorama + focus overlay
-    const left = document.createElement('div')
-    left.className = 'catalog-panorama'
-    left.dataset.testid = 'catalog-panorama'
-    left.style.position = 'relative'
-    left.style.overflow = 'hidden'
     const imgUrl = this.opts.assets.resolveUrl(this.manifest.panorama.url)
-    const img = await this.opts.assets.loadImage(imgUrl)
-    img.style.position = 'absolute'
-    img.style.inset = '0'
-    img.style.width = '100%'
-    img.style.height = '100%'
-    img.style.objectFit = 'cover'
-    left.appendChild(img)
-
-    this.focus = new FocusOverlay(left, this.manifest.config.theme.focusVariant)
-    for (const item of this.manifest.items) this.focus.addItem(item)
-
-    // Right: vertical list of stages / categories / items
-    const right = document.createElement('div')
-    right.className = 'catalog-list'
-    right.dataset.testid = 'catalog-list'
-    right.style.overflow = 'auto'
-    right.style.background = '#fff'
-
-    this.list = new List(right, this.manifest.config.theme.listDensity)
-    for (const item of this.manifest.items) this.list.registerItem(item)
-    for (const stage of this.manifest.stages) {
-      this.list.addStage(stage)
-    }
-    this.list.onItemClick((itemId) => this.selectItem(itemId))
-
-    this.mountedEl.appendChild(left)
-    this.mountedEl.appendChild(right)
+    const image = await this.opts.assets.loadImage(imgUrl)
+    this.scene = new CatalogScene({
+      root: this.mountedEl,
+      manifest: this.manifest,
+      panoramaUrl: imgUrl,
+      imageSize: { width: image.naturalWidth || this.manifest.config.viewport.width, height: image.naturalHeight || this.manifest.config.viewport.height },
+      onSelectionChange: selection => this.handleSceneSelection(selection),
+      onAtlasLaunch: url => this.emit({ type: 'atlaslaunch', url }),
+    })
+    this.scene.mount()
 
     this.sceneLauncher = new SceneLauncher(this.opts.assets.openScene, this.listeners)
 
@@ -132,35 +108,55 @@ export class CatalogRuntime {
       this.mountedEl.innerHTML = ''
       this.mountedEl = null
     }
-    this.list = null
-    this.focus = null
+    this.scene?.destroy()
+    this.scene = null
     this.sceneLauncher = null
     this.manifest = null
   }
 
   /** Programmatic API: select an item by id. */
   selectItem(itemId: string): void {
-    if (!this.manifest || !this.list || !this.focus) return
-    const item = this.manifest.items.find((i) => i.id === itemId)
+    if (!this.manifest || !this.scene) return
+    const item = this.manifest.items.find(i => i.id === itemId)
     if (!item) return
-    const cat = this.findCategoryByItemId(itemId)
-    if (!cat) return
-    this.list.activate(itemId)
-    this.focus.flash(itemId)
-    this.emit({ type: 'itemselect', itemId })
-    this.emit({ type: 'analytics:click', target: { kind: 'item', id: itemId } })
-    this.animateViewport(cat.viewport)
+    this.scene.selectItem(itemId)
+  }
+
+  selectCategory(categoryId: string): void {
+    if (!this.manifest || !this.scene) return
+    const category = this.findCategoryById(categoryId)
+    if (!category) return
+    this.scene.selectCategory(categoryId)
+  }
+
+  selectStage(stageKey: 'upstream' | 'midstream' | 'downstream'): void {
+    this.scene?.selectStage(stageKey)
+  }
+
+  private handleSceneSelection(selection: CatalogSceneSelection): void {
+    if (!this.manifest) return
+    const category = selection.categoryId ? this.findCategoryById(selection.categoryId) : null
+    if (category) {
+      this.emit({ type: 'categoryfocus', categoryId: category.id, viewport: category.viewport })
+      this.emit({ type: 'analytics:expose', target: { kind: 'category', id: category.id } })
+    }
+    if (!selection.itemId) return
+    const item = this.manifest.items.find(entry => entry.id === selection.itemId)
+    if (!item) return
+    this.emit({ type: 'itemselect', itemId: item.id })
+    this.emit({ type: 'analytics:click', target: { kind: 'item', id: item.id } })
+    if (category) this.animateViewport(category.viewport)
   }
 
   /** Programmatic API: open a route by id. */
   openRoute(routeId: string): void {
     if (!this.manifest || !this.sceneLauncher) return
-    const route = this.manifest.routes.find((r) => r.id === routeId)
+    const route = this.manifest.routes.find(r => r.id === routeId)
     if (!route) return
     this.emit({ type: 'routechange', routeId })
     const to = route.to
     if (to.kind === 'scene') {
-      const scene = this.manifest.scenes.find((s) => s.sceneId === to.sceneId)
+      const scene = this.manifest.scenes.find(s => s.sceneId === to.sceneId)
       if (scene) this.sceneLauncher.launch(scene, to.viewId)
       return
     }
@@ -172,9 +168,7 @@ export class CatalogRuntime {
       if (to.categoryId) {
         const category = this.findCategoryById(to.categoryId)
         if (!category) return
-        this.emit({ type: 'categoryfocus', categoryId: category.id, viewport: category.viewport })
-        this.emit({ type: 'analytics:expose', target: { kind: 'category', id: category.id } })
-        this.animateViewport(category.viewport)
+        this.selectCategory(category.id)
       }
     }
   }

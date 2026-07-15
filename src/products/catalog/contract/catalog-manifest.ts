@@ -2,11 +2,9 @@
  * CatalogManifest contract — the data shape consumed by CatalogRuntime.
  *
  * Catalog is the structured-knowledge product: three industry-chain
- * stages, each with categories, each with items. It does NOT show
- * hotspots or panorama imagery — that's Atlas. Catalog shows a
- * vertical list with focusRect overlays on the panorama when an item
- * is selected (the runtime fetches the panorama image separately for
- * the focus overlay).
+ * stages, each with categories, each with items. It presents the
+ * structured knowledge over the shared panorama scene: stage/category
+ * tabs, the selected category's item list, markers and focusRect.
  */
 import type {
   AssetDefinition,
@@ -45,9 +43,7 @@ export interface CatalogCategoryEntry {
   order: number
   description?: string
   itemIds: string[]
-  experience:
-    | { kind: 'panorama' }
-    | { kind: 'html-scene'; sceneId: string; viewId: string }
+  experience: { kind: 'panorama' } | { kind: 'html-scene'; sceneId: string; viewId: string }
   viewport: Viewport
 }
 
@@ -57,8 +53,9 @@ export interface CatalogItemEntry {
   title: string
   description: string
   order: number
-  tags?: string[]
   marker: { x: number; y: number }
+  /** Optional item-level camera; otherwise inherits category.viewport. */
+  viewportOverride?: Viewport
   focusRect: {
     x: number
     y: number
@@ -93,6 +90,8 @@ export interface CatalogManifest {
   config: {
     viewport: { width: number; height: number }
     hintText?: string
+    /** Complete URL of the separately released Atlas bundle. */
+    atlasLaunchUrl?: string
     interaction: {
       listActivation: 'center-nearest'
       markerActivation: boolean

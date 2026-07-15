@@ -121,7 +121,6 @@ export interface IndustryItem {
   title: string
   description: string
   order: number
-  tags?: string[]
 }
 
 export interface IndustryCategory {
@@ -178,7 +177,11 @@ export interface HtmlScenePackage {
 
 // ─── Experience Navigation ──────────────────────────────────
 
-export type { ExperienceLocation, ExperienceRoute, ExperienceNavigation } from './experience-navigation.js'
+export type {
+  ExperienceLocation,
+  ExperienceRoute,
+  ExperienceNavigation,
+} from './experience-navigation.js'
 
 // ─── Product Config ─────────────────────────────────────────
 
@@ -244,6 +247,8 @@ export interface CatalogProductConfig {
   }
   stageOrder: [IndustryStageKey, IndustryStageKey, IndustryStageKey]
   hintText?: string
+  /** Complete URL of the separately released Atlas bundle, opened from Catalog through F10. */
+  atlasLaunchUrl?: string
 }
 
 // ─── Integrations & Metadata ────────────────────────────────

@@ -129,3 +129,24 @@ CatalogScene
 - 暗色模糊遮罩、顶部 tabs、底部提示及 Atlas 入口存在且层级正确；
 - 无数据空态、HTML Scene 路由、Atlas F10 跳转和既有发布校验不回归；
 - Catalog 不新增任何转场视频逻辑或测试。
+
+## 实施记录
+
+### 阶段一：共享发布态场景（已完成）
+
+- 新增 `CatalogScene`，由 `CatalogRuntime` 挂载，替换原有两列全景/列表结构；
+- 已实现一级 tabs、当前一级二级 tabs、当前二级三级说明、marker、无边框清晰聚焦区及外部暗化模糊层；
+- 已保留底部提示和项目级 Atlas URL 对应的 `atlaslaunch` 入口；
+- Catalog runtime 单元测试通过。
+
+### 阶段二：编辑画布与空间数据保存（已完成）
+
+- 新增 `CatalogEditorCanvas`：在编辑器中以固定 1:1 逻辑画布挂载同一 `CatalogScene`，不再把旧的实时预览框作为主要编辑区。
+- 选中三级节点后可直接拖动 marker、移动聚焦框或拖动四角控制点缩放聚焦框；编辑控件只在 editor 模式显示，不会进入发布产物。
+- Inspector 增加 marker 与 `focusRect` 的精确坐标/尺寸输入，画布操作和数值编辑均写入 `panorama.items[itemId]` 的归一化坐标。
+- 新建三级节点会同时创建默认空间布局；删除三级节点或二级分类会同步清除无主空间数据，避免发布后出现残留 marker。
+- 切换一级或二级分类时，编辑器与运行时统一自动选择该分类的首个有效三级节点；工具栏已纳入 panorama 草稿的待保存状态。
+- 编译器按二级分类 `order` 输出，并保留每个分类的 `itemIds` 作者顺序；因此场景自动选中的“第一个三级节点”与编辑器中的排序一致。
+- 已移除旧的 `CatalogPreview`、`CatalogStageTabs`、双列 `List` 与 `FocusOverlay` 实现，避免编辑器、预览和发布产物回退到不同 DOM 结构；Catalog 默认不再叠加通用产品标题栏。
+- 已验证根目录 TypeScript 类型检查、ESLint（0 error，17 条既有 warning）、Catalog runtime 单测、全部 166 项根目录测试和 Admin Vite 生产构建。`build:server` 仍受既有 `tsconfig.server.json` 将 `rootDir` 限定在 `src/server` 的配置错误影响，和本阶段变更无关。
+- 自动化浏览器组件因本机初始化路径错误未能建立会话，尚未完成截图级人工视觉验收；下一阶段应在可用浏览器中以用户提供截图逐项校对比例、间距、字体和遮罩层级。

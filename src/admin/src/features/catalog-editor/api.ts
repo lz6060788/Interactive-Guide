@@ -7,6 +7,7 @@ import type {
   GuideProject,
   CatalogProductConfig,
   IndustryChain,
+  PanoramaModel,
 } from '@domain/project-types'
 
 export const catalogKeys = {
@@ -47,6 +48,21 @@ export function useUpdateKnowledge(projectId: string) {
         expectedRevision: input.expectedRevision,
       }),
     onSuccess: (project) => {
+      qc.setQueryData(catalogKeys.project(projectId), project)
+    },
+  })
+}
+
+export function useUpdatePanorama(projectId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { panorama: PanoramaModel; expectedRevision: number }) =>
+      apiFetch<GuideProject>(`/projects/${projectId}/panorama`, {
+        method: 'PUT',
+        body: input.panorama,
+        expectedRevision: input.expectedRevision,
+      }),
+    onSuccess: project => {
       qc.setQueryData(catalogKeys.project(projectId), project)
     },
   })

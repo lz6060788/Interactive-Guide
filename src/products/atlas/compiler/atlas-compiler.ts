@@ -55,15 +55,15 @@ export function compileAtlas(
   // Atlas only shows categories whose experience.kind is 'panorama' OR whose
   // scene is included in this release. We include all categories that have a
   // spatial layout, then filter items the same way.
-  const panoramaCategories = normalizedProject.knowledge.stages.flatMap((s) =>
-    s.categories.map((category) => ({ stageLabel: s.label, category })),
+  const panoramaCategories = normalizedProject.knowledge.stages.flatMap(s =>
+    s.categories.map(category => ({ stageLabel: s.label, category })),
   )
 
   // Resolve scene reachability: a route is reachable from Atlas if its `from`
   // is panorama or if its target scene is in the project.
-  const sceneIds = new Set(normalizedProject.scenes.map((s) => s.id))
+  const sceneIds = new Set(normalizedProject.scenes.map(s => s.id))
   const reachableRoutes = normalizedProject.navigation.routes.filter(
-    (r) => r.from.kind === 'panorama' || ('sceneId' in r.from && sceneIds.has(r.from.sceneId)),
+    r => r.from.kind === 'panorama' || ('sceneId' in r.from && sceneIds.has(r.from.sceneId)),
   )
 
   // Categories follow the authored stage/category order so the runtime,
@@ -88,7 +88,6 @@ export function compileAtlas(
         title: item.title,
         description: item.description ?? '',
         order: item.order ?? 0,
-        ...(item.tags ? { tags: item.tags } : {}),
         marker: { x: layout.marker.x, y: layout.marker.y },
         ...(layout.viewportOverride ? { viewportOverride: { ...layout.viewportOverride } } : {}),
         ...(layout.callout
@@ -108,8 +107,8 @@ export function compileAtlas(
 
   // Categories
   const categories: AtlasManifest['categories'] = sortedCategories
-    .filter((c) => normalizedProject.panorama.categories[c.category.id]?.viewport !== undefined)
-    .map((c) => {
+    .filter(c => normalizedProject.panorama.categories[c.category.id]?.viewport !== undefined)
+    .map(c => {
       const layout = normalizedProject.panorama.categories[c.category.id]
       return {
         id: c.category.id,
@@ -120,13 +119,9 @@ export function compileAtlas(
         itemIds: [...c.category.itemIds],
         experience: c.category.experience,
         viewport: layout.viewport!,
-        ...(layout.activationZoom !== undefined
-          ? { activationZoom: layout.activationZoom }
-          : {}),
+        ...(layout.activationZoom !== undefined ? { activationZoom: layout.activationZoom } : {}),
         ...(layout.hotspot ? { hotspot: { ...layout.hotspot } } : {}),
-        ...(layout.hotspotMinZoom !== undefined
-          ? { hotspotMinZoom: layout.hotspotMinZoom }
-          : {}),
+        ...(layout.hotspotMinZoom !== undefined ? { hotspotMinZoom: layout.hotspotMinZoom } : {}),
       }
     })
 
@@ -137,9 +132,9 @@ export function compileAtlas(
     if (r.from.kind === 'scene') reachableSceneIds.add(r.from.sceneId)
   }
   const scenes = normalizedProject.scenes
-    .filter((s) => reachableSceneIds.size === 0 || reachableSceneIds.has(s.id))
+    .filter(s => reachableSceneIds.size === 0 || reachableSceneIds.has(s.id))
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((s) => {
+    .map(s => {
       const sceneAsset = normalizedProject.assets.byId[s.assetId]
       return {
         sceneId: s.id,
@@ -149,7 +144,7 @@ export function compileAtlas(
           : assetClosure(normalizedProject.id, `scenes/${s.id}/index.html`),
         views: [...s.views]
           .sort((a, b) => a.id.localeCompare(b.id))
-          .map((view) => ({
+          .map(view => ({
             id: view.id,
             title: view.title,
             activationMessage: view.activationMessage,
@@ -166,13 +161,13 @@ export function compileAtlas(
     if (r.transition?.assetId) referencedAssets.add(r.transition.assetId)
   }
   const assets = Object.values(normalizedProject.assets.byId)
-    .filter((a) => referencedAssets.has(a.id))
+    .filter(a => referencedAssets.has(a.id))
     .sort((a, b) => a.id.localeCompare(b.id))
 
   const routeTransitions = Object.fromEntries(
     reachableRoutes
-      .filter((route) => route.transition?.assetId)
-      .map((route) => {
+      .filter(route => route.transition?.assetId)
+      .map(route => {
         const transition = route.transition!
         const asset = normalizedProject.assets.byId[transition.assetId]
         if (!asset) return null
@@ -248,7 +243,8 @@ export function compileAtlas(
 }
 
 function resolveSceneEntrySourcePath(asset: AssetDefinition): string {
-  const base = asset.kind === 'html-bundle' ? stripLegacyAssetsPrefix(asset.sourcePath) : asset.sourcePath
+  const base =
+    asset.kind === 'html-bundle' ? stripLegacyAssetsPrefix(asset.sourcePath) : asset.sourcePath
   const entryPath = asset.entryPath?.trim() || 'index.html'
   return `${base.replace(/\/+$/, '')}/${entryPath.replace(/^\/+/, '')}`
 }

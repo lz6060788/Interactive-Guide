@@ -12,6 +12,7 @@ import type {
   GuideProject,
   HtmlScenePackage,
   ExperienceNavigation,
+  ProjectIntegrations,
 } from '@domain/project-types'
 
 export interface ListEntry {
@@ -79,7 +80,7 @@ export function useUpdateProjectMetadata(id: string) {
         body: input,
         expectedRevision: input.expectedRevision,
       }),
-    onSuccess: (next) => {
+    onSuccess: next => {
       qc.setQueryData(projectsKeys.detail(id), next)
       void qc.invalidateQueries({ queryKey: projectsKeys.list() })
     },
@@ -125,9 +126,10 @@ export function useUploadAsset(id: string) {
         body: buf,
       })
       if (!res.ok) {
-        const body = await res.json().catch(() => null) as
-          | { error?: string; code?: string }
-          | null
+        const body = (await res.json().catch(() => null)) as {
+          error?: string
+          code?: string
+        } | null
         throw new Error(body?.error ?? body?.code ?? `HTTP_${res.status}`)
       }
       const json = (await res.json()) as { data: AssetDefinition }
@@ -191,7 +193,7 @@ export function useUpdateProjectScenes(id: string) {
         body: input.scenes,
         expectedRevision: input.expectedRevision,
       }),
-    onSuccess: (next) => {
+    onSuccess: next => {
       qc.setQueryData(projectsKeys.detail(id), next)
     },
   })
@@ -211,7 +213,27 @@ export function useUpdateProjectNavigation(id: string) {
         body: input.navigation,
         expectedRevision: input.expectedRevision,
       }),
-    onSuccess: (next) => {
+    onSuccess: next => {
+      qc.setQueryData(projectsKeys.detail(id), next)
+    },
+  })
+}
+
+export interface UpdateIntegrationsInput {
+  integrations: ProjectIntegrations
+  expectedRevision: number
+}
+
+export function useUpdateProjectIntegrations(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: UpdateIntegrationsInput) =>
+      apiFetch<GuideProject>(`/projects/${id}/integrations`, {
+        method: 'PUT',
+        body: input.integrations,
+        expectedRevision: input.expectedRevision,
+      }),
+    onSuccess: next => {
       qc.setQueryData(projectsKeys.detail(id), next)
     },
   })

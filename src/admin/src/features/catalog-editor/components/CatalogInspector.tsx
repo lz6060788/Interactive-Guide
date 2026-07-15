@@ -18,6 +18,8 @@ import type {
   IndustryStage,
   CatalogProductConfig,
   IndustryItem,
+  PanoramaModel,
+  Viewport,
 } from '@domain/project-types'
 import {
   Box,
@@ -38,6 +40,7 @@ interface Props {
   activeStage: IndustryStage
   onPatchCatalogConfig: (mutator: (cfg: CatalogProductConfig) => CatalogProductConfig) => void
   onPatchKnowledge: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
+  onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void
   onSaveRequested: () => void
   hasUnsavedConfig: boolean
   isSaving: boolean
@@ -49,6 +52,7 @@ export function CatalogInspector({
   activeStage,
   onPatchCatalogConfig,
   onPatchKnowledge,
+  onPatchPanorama,
   onSaveRequested,
   hasUnsavedConfig,
   isSaving,
@@ -87,6 +91,7 @@ export function CatalogInspector({
           categoryId={selection.id}
           activeStage={activeStage}
           onPatchKnowledge={onPatchKnowledge}
+          onPatchPanorama={onPatchPanorama}
         />
       )}
       {mode === 'item' && selection?.kind === 'item' && (
@@ -95,6 +100,7 @@ export function CatalogInspector({
           itemId={selection.id}
           activeStage={activeStage}
           onPatchKnowledge={onPatchKnowledge}
+          onPatchPanorama={onPatchPanorama}
         />
       )}
     </Box>
@@ -148,10 +154,19 @@ function ConfigInspector({
             label="顶部提示语"
             value={cfg.hintText ?? ''}
             placeholder="例如：滑动浏览，点选进入"
-            onChange={(v) => subscribe((c) => ({ ...c, hintText: v }))}
+            onChange={v => subscribe(c => ({ ...c, hintText: v }))}
           />
           <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
             出现在列表上方的提示文本
+          </Text>
+          <TextFieldPlain
+            label="Atlas 完整地址"
+            value={cfg.atlasLaunchUrl ?? ''}
+            placeholder="https://example.com/atlas/index.html"
+            onChange={v => subscribe(c => ({ ...c, atlasLaunchUrl: v.trim() || undefined }))}
+          />
+          <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
+            配置后，Catalog 右下角显示“打开全景图”，F10 环境会调用全屏跳转。
           </Text>
         </FieldGroup>
 
@@ -163,8 +178,8 @@ function ConfigInspector({
               { value: 'comfortable', label: '舒适' },
               { value: 'compact', label: '紧凑' },
             ]}
-            onChange={(v) =>
-              subscribe((c) => ({
+            onChange={v =>
+              subscribe(c => ({
                 ...c,
                 theme: { ...c.theme, listDensity: v as typeof c.theme.listDensity },
               }))
@@ -177,8 +192,8 @@ function ConfigInspector({
               { value: 'rect', label: '矩形' },
               { value: 'pill', label: '胶囊' },
             ]}
-            onChange={(v) =>
-              subscribe((c) => ({
+            onChange={v =>
+              subscribe(c => ({
                 ...c,
                 theme: { ...c.theme, focusVariant: v as typeof c.theme.focusVariant },
               }))
@@ -190,8 +205,8 @@ function ConfigInspector({
             min={0}
             max={1}
             step={0.05}
-            onChange={(v) =>
-              subscribe((c) => ({
+            onChange={v =>
+              subscribe(c => ({
                 ...c,
                 theme: { ...c.theme, maskOpacity: v },
               }))
@@ -207,9 +222,7 @@ function ConfigInspector({
                 value={cfg.viewport.width}
                 min={240}
                 max={2400}
-                onChange={(v) =>
-                  subscribe((c) => ({ ...c, viewport: { ...c.viewport, width: v } }))
-                }
+                onChange={v => subscribe(c => ({ ...c, viewport: { ...c.viewport, width: v } }))}
               />
             </Box>
             <Box flex="1">
@@ -218,9 +231,7 @@ function ConfigInspector({
                 value={cfg.viewport.height}
                 min={320}
                 max={4000}
-                onChange={(v) =>
-                  subscribe((c) => ({ ...c, viewport: { ...c.viewport, height: v } }))
-                }
+                onChange={v => subscribe(c => ({ ...c, viewport: { ...c.viewport, height: v } }))}
               />
             </Box>
           </HStack>
@@ -230,8 +241,8 @@ function ConfigInspector({
             min={0}
             max={2000}
             step={20}
-            onChange={(v) =>
-              subscribe((c) => ({
+            onChange={v =>
+              subscribe(c => ({
                 ...c,
                 interaction: { ...c.interaction, viewportAnimationMs: v },
               }))
@@ -241,7 +252,7 @@ function ConfigInspector({
             label="点选 marker 激活"
             checked={cfg.interaction.markerActivation}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 interaction: {
                   ...c.interaction,
@@ -257,7 +268,7 @@ function ConfigInspector({
             label="工具栏"
             checked={cfg.chrome.showToolbar ?? false}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 chrome: { ...c.chrome, showToolbar: !(c.chrome.showToolbar ?? false) },
               }))
@@ -267,7 +278,7 @@ function ConfigInspector({
             label="缩放指示"
             checked={cfg.chrome.showZoomIndicator ?? false}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 chrome: {
                   ...c.chrome,
@@ -280,7 +291,7 @@ function ConfigInspector({
             label="提示语"
             checked={cfg.chrome.showHints ?? false}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 chrome: { ...c.chrome, showHints: !(c.chrome.showHints ?? false) },
               }))
@@ -299,6 +310,7 @@ interface CategoryInspectorProps {
   categoryId: string
   activeStage: IndustryStage
   onPatchKnowledge: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
+  onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void
 }
 
 function CategoryInspector({
@@ -306,8 +318,9 @@ function CategoryInspector({
   categoryId,
   activeStage,
   onPatchKnowledge,
+  onPatchPanorama,
 }: CategoryInspectorProps): JSX.Element {
-  const cat = activeStage.categories.find((c) => c.id === categoryId)
+  const cat = activeStage.categories.find(c => c.id === categoryId)
   if (!cat) {
     return (
       <EmptyState.Root>
@@ -333,16 +346,14 @@ function CategoryInspector({
           <TextFieldPlain
             label="标题"
             value={cat.title}
-            onChange={(t) => {
-              onPatchKnowledge((k) => {
+            onChange={t => {
+              onPatchKnowledge(k => {
                 const stages = k.stages as unknown as IndustryStage[]
                 return {
                   ...k,
-                  stages: stages.map((s) => ({
+                  stages: stages.map(s => ({
                     ...s,
-                    categories: s.categories.map((c) =>
-                      c.id === cat.id ? { ...c, title: t } : c,
-                    ),
+                    categories: s.categories.map(c => (c.id === cat.id ? { ...c, title: t } : c)),
                   })),
                 } as GuideProject['knowledge']
               })
@@ -353,16 +364,14 @@ function CategoryInspector({
             value={cat.order}
             min={0}
             max={999}
-            onChange={(v) => {
-              onPatchKnowledge((k) => {
+            onChange={v => {
+              onPatchKnowledge(k => {
                 const stages = k.stages as unknown as IndustryStage[]
                 return {
                   ...k,
-                  stages: stages.map((s) => ({
+                  stages: stages.map(s => ({
                     ...s,
-                    categories: s.categories.map((c) =>
-                      c.id === cat.id ? { ...c, order: v } : c,
-                    ),
+                    categories: s.categories.map(c => (c.id === cat.id ? { ...c, order: v } : c)),
                   })),
                 } as GuideProject['knowledge']
               })
@@ -375,56 +384,61 @@ function CategoryInspector({
               { value: 'panorama', label: 'Panorama 全景' },
               { value: 'html-scene', label: 'HTML Scene' },
             ]}
-            onChange={(v) => {
-              onPatchKnowledge((k) =>
-                patchExperience(k, cat.id, v as 'panorama' | 'html-scene'),
-              )
+            onChange={v => {
+              onPatchKnowledge(k => patchExperience(k, cat.id, v as 'panorama' | 'html-scene'))
             }}
           />
-          {cat.experience.kind === 'html-scene' && (() => {
-            const exp = cat.experience
-            return (
-              <>
-                <LabeledSelect
-                  label="场景"
-                  value={exp.sceneId}
-                  options={
-                    project.scenes.length === 0
-                      ? [{ value: '', label: '（暂无场景，先去 Settings 创建）' }]
-                      : [
-                          { value: '', label: '请选择…' },
-                          ...project.scenes.map((s) => ({ value: s.id, label: s.title || s.id })),
-                        ]
-                  }
-                  onChange={(v) =>
-                    onPatchKnowledge((k) => patchExperience(k, cat.id, 'html-scene', v))
-                  }
-                />
-                <LabeledSelect
-                  label="视图"
-                  value={exp.viewId}
-                  options={(() => {
-                    const scene = project.scenes.find((s) => s.id === exp.sceneId)
-                    if (!scene) return [{ value: '', label: '（请先选场景）' }]
-                    if (scene.views.length === 0)
-                      return [{ value: '', label: '（场景无视图）' }]
-                    return [
-                      { value: '', label: '请选择…' },
-                      ...scene.views.map((v) => ({ value: v.id, label: v.title || v.id })),
-                    ]
-                  })()}
-                  onChange={(v) =>
-                    onPatchKnowledge((k) =>
-                      patchExperience(k, cat.id, 'html-scene', undefined, v),
-                    )
-                  }
-                />
-                <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
-                  HTML 场景需先在 Settings → HTML 场景 上传 zip 包并创建视图，再回到这里绑定。
-                </Text>
-              </>
-            )
-          })()}
+          {cat.experience.kind === 'html-scene' &&
+            (() => {
+              const exp = cat.experience
+              return (
+                <>
+                  <LabeledSelect
+                    label="场景"
+                    value={exp.sceneId}
+                    options={
+                      project.scenes.length === 0
+                        ? [{ value: '', label: '（暂无场景，先去 Settings 创建）' }]
+                        : [
+                            { value: '', label: '请选择…' },
+                            ...project.scenes.map(s => ({ value: s.id, label: s.title || s.id })),
+                          ]
+                    }
+                    onChange={v =>
+                      onPatchKnowledge(k => patchExperience(k, cat.id, 'html-scene', v))
+                    }
+                  />
+                  <LabeledSelect
+                    label="视图"
+                    value={exp.viewId}
+                    options={(() => {
+                      const scene = project.scenes.find(s => s.id === exp.sceneId)
+                      if (!scene) return [{ value: '', label: '（请先选场景）' }]
+                      if (scene.views.length === 0) return [{ value: '', label: '（场景无视图）' }]
+                      return [
+                        { value: '', label: '请选择…' },
+                        ...scene.views.map(v => ({ value: v.id, label: v.title || v.id })),
+                      ]
+                    })()}
+                    onChange={v =>
+                      onPatchKnowledge(k => patchExperience(k, cat.id, 'html-scene', undefined, v))
+                    }
+                  />
+                  <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
+                    HTML 场景需先在 Settings → HTML 场景 上传 zip 包并创建视图，再回到这里绑定。
+                  </Text>
+                </>
+              )
+            })()}
+        </FieldGroup>
+
+        <FieldGroup icon={Sliders} title="共享背景镜头">
+          <Text fontSize="11px" color="ink.faint">当前二级分类下的三级节点默认共用此背景画面。</Text>
+          <HStack gap="2">
+            <Box flex="1"><NumberFieldPlain label="中心 x" value={project.panorama.categories[cat.id]?.viewport.centerX ?? 0.5} min={0} max={1} step={0.01} onChange={v => patchCategoryViewport(onPatchPanorama, cat.id, current => ({ ...current, centerX: v }))} /></Box>
+            <Box flex="1"><NumberFieldPlain label="中心 y" value={project.panorama.categories[cat.id]?.viewport.centerY ?? 0.5} min={0} max={1} step={0.01} onChange={v => patchCategoryViewport(onPatchPanorama, cat.id, current => ({ ...current, centerY: v }))} /></Box>
+          </HStack>
+          <NumberFieldPlain label="放大倍数" value={project.panorama.categories[cat.id]?.viewport.zoom ?? 1} min={project.panorama.cameraBounds.minZoom} max={project.panorama.cameraBounds.maxZoom} step={0.1} onChange={v => patchCategoryViewport(onPatchPanorama, cat.id, current => ({ ...current, zoom: v }))} />
         </FieldGroup>
 
         <FieldGroup icon={Tag} title="项目数">
@@ -444,11 +458,19 @@ interface ItemInspectorProps {
   itemId: string
   activeStage: IndustryStage
   onPatchKnowledge: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
+  onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void
 }
 
-function ItemInspector({ project, itemId, activeStage, onPatchKnowledge }: ItemInspectorProps): JSX.Element {
+function ItemInspector({
+  project,
+  itemId,
+  activeStage,
+  onPatchKnowledge,
+  onPatchPanorama,
+}: ItemInspectorProps): JSX.Element {
   const item: IndustryItem | undefined = project.knowledge.items[itemId]
-  const cat = activeStage.categories.find((c) => c.id === item?.categoryId)
+  const cat = activeStage.categories.find(c => c.id === item?.categoryId)
+  const layout = project.panorama.items[itemId]
 
   if (!item) {
     return (
@@ -475,8 +497,8 @@ function ItemInspector({ project, itemId, activeStage, onPatchKnowledge }: ItemI
           <TextFieldPlain
             label="标题"
             value={item.title}
-            onChange={(t) => {
-              onPatchKnowledge((k) => ({
+            onChange={t => {
+              onPatchKnowledge(k => ({
                 ...k,
                 items: { ...k.items, [itemId]: { ...item, title: t } },
               }))
@@ -488,8 +510,8 @@ function ItemInspector({ project, itemId, activeStage, onPatchKnowledge }: ItemI
           <TextFieldPlain
             label="描述"
             value={item.description}
-            onChange={(d) => {
-              onPatchKnowledge((k) => ({
+            onChange={d => {
+              onPatchKnowledge(k => ({
                 ...k,
                 items: { ...k.items, [itemId]: { ...item, description: d } },
               }))
@@ -503,17 +525,114 @@ function ItemInspector({ project, itemId, activeStage, onPatchKnowledge }: ItemI
             value={item.order}
             min={0}
             max={999}
-            onChange={(v) => {
-              onPatchKnowledge((k) => ({
+            onChange={v => {
+              onPatchKnowledge(k => ({
                 ...k,
                 items: { ...k.items, [itemId]: { ...item, order: v } },
               }))
             }}
           />
         </FieldGroup>
+
+        <FieldGroup icon={Sliders} title="场景定位">
+          <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
+            可直接在中间画布拖拽 marker 和聚焦区域；此处用于精确校准。
+          </Text>
+          <HStack gap="2">
+            <Box flex="1">
+              <NumberFieldPlain
+                label="marker x"
+                value={layout?.marker.x ?? 0.5}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, marker: { x: v, y: current.marker.y } }))}
+              />
+            </Box>
+            <Box flex="1">
+              <NumberFieldPlain
+                label="marker y"
+                value={layout?.marker.y ?? 0.5}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, marker: { x: current.marker.x, y: v } }))}
+              />
+            </Box>
+          </HStack>
+          <HStack gap="2">
+            <Box flex="1"><NumberFieldPlain label="聚焦 x" value={layout?.focusRect?.x ?? 0.35} min={0} max={1} step={0.01} onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, focusRect: { ...(current.focusRect ?? defaultFocusRect()), x: v } }))} /></Box>
+            <Box flex="1"><NumberFieldPlain label="聚焦 y" value={layout?.focusRect?.y ?? 0.35} min={0} max={1} step={0.01} onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, focusRect: { ...(current.focusRect ?? defaultFocusRect()), y: v } }))} /></Box>
+          </HStack>
+          <HStack gap="2">
+            <Box flex="1"><NumberFieldPlain label="宽度" value={layout?.focusRect?.width ?? 0.2} min={0.03} max={1} step={0.01} onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, focusRect: { ...(current.focusRect ?? defaultFocusRect()), width: v } }))} /></Box>
+            <Box flex="1"><NumberFieldPlain label="高度" value={layout?.focusRect?.height ?? 0.2} min={0.03} max={1} step={0.01} onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, focusRect: { ...(current.focusRect ?? defaultFocusRect()), height: v } }))} /></Box>
+          </HStack>
+          <ChakraToggleRow label="使用独立背景镜头" checked={Boolean(layout?.viewportOverride)} onToggle={() => {
+            onPatchPanorama(panorama => {
+              const current = panorama.items[itemId] ?? { marker: { x: 0.5, y: 0.5 }, focusRect: defaultFocusRect() }
+              if (current.viewportOverride) {
+                const { viewportOverride: _override, ...withoutOverride } = current
+                return { ...panorama, items: { ...panorama.items, [itemId]: withoutOverride } }
+              }
+              const categoryViewport = panorama.categories[item.categoryId]?.viewport ?? { centerX: 0.5, centerY: 0.5, zoom: 1 }
+              return { ...panorama, items: { ...panorama.items, [itemId]: { ...current, viewportOverride: categoryViewport } } }
+            })
+          }} />
+          {layout?.viewportOverride && <>
+            <HStack gap="2">
+              <Box flex="1"><NumberFieldPlain label="背景中心 x" value={layout.viewportOverride.centerX} min={0} max={1} step={0.01} onChange={v => patchItemViewport(onPatchPanorama, itemId, current => ({ ...current, centerX: v }))} /></Box>
+              <Box flex="1"><NumberFieldPlain label="背景中心 y" value={layout.viewportOverride.centerY} min={0} max={1} step={0.01} onChange={v => patchItemViewport(onPatchPanorama, itemId, current => ({ ...current, centerY: v }))} /></Box>
+            </HStack>
+            <NumberFieldPlain label="背景放大倍数" value={layout.viewportOverride.zoom} min={project.panorama.cameraBounds.minZoom} max={project.panorama.cameraBounds.maxZoom} step={0.1} onChange={v => patchItemViewport(onPatchPanorama, itemId, current => ({ ...current, zoom: v }))} />
+            <Button size="sm" variant="secondary" onClick={() => onPatchPanorama(panorama => ({ ...panorama, items: { ...panorama.items, [itemId]: { ...panorama.items[itemId], viewportOverride: undefined } } }))}>使用分类共享背景</Button>
+            <Button size="sm" variant="secondary" onClick={() => onPatchPanorama(panorama => ({ ...panorama, categories: { ...panorama.categories, [item.categoryId]: { ...panorama.categories[item.categoryId], viewport: layout.viewportOverride! } } }))}>设为分类共享背景</Button>
+          </>}
+        </FieldGroup>
       </Stack>
     </>
   )
+}
+
+function patchItemLayout(
+  onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void,
+  itemId: string,
+  mutator: (layout: NonNullable<PanoramaModel['items'][string]>) => NonNullable<PanoramaModel['items'][string]>,
+): void {
+  onPatchPanorama(panorama => ({
+    ...panorama,
+    items: {
+      ...panorama.items,
+      [itemId]: mutator(panorama.items[itemId] ?? { marker: { x: 0.5, y: 0.5 }, focusRect: defaultFocusRect() }),
+    },
+  }))
+}
+
+function defaultFocusRect(): { x: number; y: number; width: number; height: number } {
+  return { x: 0.35, y: 0.35, width: 0.2, height: 0.2 }
+}
+
+function patchCategoryViewport(
+  onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void,
+  categoryId: string,
+  mutator: (viewport: Viewport) => Viewport,
+): void {
+  onPatchPanorama(panorama => {
+    const current = panorama.categories[categoryId] ?? { viewport: { centerX: 0.5, centerY: 0.5, zoom: 1 } }
+    return { ...panorama, categories: { ...panorama.categories, [categoryId]: { ...current, viewport: mutator(current.viewport) } } }
+  })
+}
+
+function patchItemViewport(
+  onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void,
+  itemId: string,
+  mutator: (viewport: Viewport) => Viewport,
+): void {
+  onPatchPanorama(panorama => {
+    const current = panorama.items[itemId] ?? { marker: { x: 0.5, y: 0.5 }, focusRect: defaultFocusRect() }
+    const viewport = current.viewportOverride ?? { centerX: 0.5, centerY: 0.5, zoom: 1 }
+    return { ...panorama, items: { ...panorama.items, [itemId]: { ...current, viewportOverride: mutator(viewport) } } }
+  })
 }
 
 // ─── shared bits ────────────────────────────────────────
@@ -538,7 +657,7 @@ function TextFieldPlain({
       </Text>
       <Input
         value={local}
-        onChange={(e) => {
+        onChange={e => {
           setLocal(e.target.value)
           onChange(e.target.value)
         }}
@@ -579,7 +698,7 @@ function NumberFieldPlain({
           min={min}
           max={max}
           step={step}
-          onChange={(e) => {
+          onChange={e => {
             const n = e.target.value === '' ? 0 : Number(e.target.value)
             if (!Number.isNaN(n)) {
               setLocal(n)
@@ -624,13 +743,13 @@ function LabeledSelect({
       <NativeSelect.Root size="sm">
         <NativeSelect.Field
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={e => onChange(e.target.value)}
           bg="bg.raised"
           borderColor="border"
           fontSize="13px"
           color="ink"
         >
-          {options.map((o) => (
+          {options.map(o => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
@@ -736,9 +855,9 @@ function patchExperience(
   const stages = knowledge.stages as unknown as IndustryStage[]
   return {
     ...knowledge,
-    stages: stages.map((s) => ({
+    stages: stages.map(s => ({
       ...s,
-      categories: s.categories.map((c) => {
+      categories: s.categories.map(c => {
         if (c.id !== categoryId) return c
         if (kind === 'panorama') {
           return { ...c, experience: { kind: 'panorama' } }
@@ -746,8 +865,7 @@ function patchExperience(
         const current = c.experience
         const nextSceneId =
           sceneIdOverride ?? (current.kind === 'html-scene' ? current.sceneId : '')
-        const nextViewId =
-          viewIdOverride ?? (current.kind === 'html-scene' ? current.viewId : '')
+        const nextViewId = viewIdOverride ?? (current.kind === 'html-scene' ? current.viewId : '')
         return {
           ...c,
           experience: { kind: 'html-scene', sceneId: nextSceneId, viewId: nextViewId },

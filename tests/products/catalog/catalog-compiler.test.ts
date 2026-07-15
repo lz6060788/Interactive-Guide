@@ -5,7 +5,10 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { compileCatalog, CatalogCompileError } from '../../../src/products/catalog/compiler/catalog-compiler.js'
+import {
+  compileCatalog,
+  CatalogCompileError,
+} from '../../../src/products/catalog/compiler/catalog-compiler.js'
 import { createDraftProject } from '../../../src/domain/project-normalizer.js'
 import type { GuideProject } from '../../../src/domain/project-types.js'
 
@@ -70,6 +73,21 @@ test('compileCatalog projects stages and items with focusRect into the manifest'
   assert.equal(manifest.items[0].focusRect.maskOpacity, 0.45)
 })
 
+test('compileCatalog projects an item background viewport override independently of focusRect', () => {
+  const p = sample()
+  p.panorama.items['item-1'].viewportOverride = { centerX: 0.25, centerY: 0.75, zoom: 3 }
+  const { manifest } = compileCatalog(p, closure)
+  assert.deepEqual(manifest.items[0].viewportOverride, { centerX: 0.25, centerY: 0.75, zoom: 3 })
+  assert.equal(manifest.items[0].focusRect.width, 0.22)
+})
+
+test('compileCatalog projects the configured Atlas launch URL only into Catalog', () => {
+  const p = sample()
+  p.products.catalog.atlasLaunchUrl = 'https://example.com/releases/atlas/index.html'
+  const { manifest } = compileCatalog(p, closure)
+  assert.equal(manifest.config.atlasLaunchUrl, p.products.catalog.atlasLaunchUrl)
+})
+
 test('compileCatalog throws when panorama.assetId is missing', () => {
   const p = sample()
   p.panorama.assetId = ''
@@ -115,6 +133,35 @@ test('compileCatalog includes only items with focusRect', () => {
   assert.equal(manifest.items[0].id, 'item-1')
 })
 
+test('compileCatalog preserves authored category and item order for default selection', () => {
+  const p = sample()
+  p.knowledge.stages[0].categories.unshift({
+    id: 'cat-first',
+    title: 'First category',
+    order: -1,
+    itemIds: ['item-2', 'item-3'],
+    experience: { kind: 'panorama' },
+  })
+  p.knowledge.items['item-2'] = {
+    id: 'item-2', categoryId: 'cat-first', title: 'First item', description: '', order: 0,
+  }
+  p.panorama.items['item-2'] = {
+    marker: { x: 0.2, y: 0.2 },
+    focusRect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+  }
+  p.knowledge.items['item-3'] = {
+    id: 'item-3', categoryId: 'cat-first', title: 'Second item', description: '', order: 1,
+  }
+  p.panorama.items['item-3'] = {
+    marker: { x: 0.3, y: 0.3 },
+    focusRect: { x: 0.2, y: 0.2, width: 0.2, height: 0.2 },
+  }
+  const { manifest } = compileCatalog(p, closure)
+  assert.equal(manifest.stages[0].categories[0].id, 'cat-first')
+  assert.deepEqual(manifest.stages[0].categories[0].itemIds, ['item-2', 'item-3'])
+  assert.deepEqual(manifest.items.filter(item => item.categoryId === 'cat-first').map(item => item.id), ['item-2', 'item-3'])
+})
+
 test('compileCatalog includes only scenes reachable via navigation', () => {
   const p = sample()
   p.scenes.push({
@@ -150,7 +197,7 @@ test('compileCatalog includes only scenes reachable via navigation', () => {
     },
   ]
   const { manifest } = compileCatalog(p, closure)
-  const ids = manifest.scenes.map((s) => s.sceneId).sort()
+  const ids = manifest.scenes.map(s => s.sceneId).sort()
   assert.deepEqual(ids, ['s-reachable'])
 })
 

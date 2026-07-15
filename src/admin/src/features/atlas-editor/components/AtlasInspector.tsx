@@ -134,7 +134,8 @@ export function AtlasInspector({
           project={project}
           itemId={selection.id}
           onPatchPanorama={onPatchPanorama}
-          hasUnsaved={hasUnsavedPanorama}
+          onPatchKnowledge={onPatchKnowledge}
+          hasUnsaved={hasUnsavedPanorama || hasUnsavedKnowledge}
           onSaveRequested={onSaveRequested}
           isSaving={isSaving}
         />
@@ -192,9 +193,7 @@ function AtlasConfigInspector({
             </Field.Label>
             <Input
               value={cfg.hintText ?? ''}
-              onChange={(e) =>
-                subscribe((c) => ({ ...c, hintText: e.target.value }))
-              }
+              onChange={e => subscribe(c => ({ ...c, hintText: e.target.value }))}
               placeholder="例如：拖动平移，滚轮缩放"
               size="sm"
               bg="bg.raised"
@@ -214,8 +213,8 @@ function AtlasConfigInspector({
               { value: 'highlight', label: '高亮（描边圆）' },
               { value: 'minimal', label: '极简（小圆点）' },
             ]}
-            onChange={(v) =>
-              subscribe((c) => ({
+            onChange={v =>
+              subscribe(c => ({
                 ...c,
                 theme: { ...c.theme, hotspotVariant: v as typeof c.theme.hotspotVariant },
               }))
@@ -229,8 +228,8 @@ function AtlasConfigInspector({
               { value: 'connector', label: '连接式（预留）' },
               { value: 'none', label: '无' },
             ]}
-            onChange={(v) =>
-              subscribe((c) => ({
+            onChange={v =>
+              subscribe(c => ({
                 ...c,
                 theme: { ...c.theme, calloutVariant: v as typeof c.theme.calloutVariant },
               }))
@@ -244,8 +243,8 @@ function AtlasConfigInspector({
                 min={1}
                 max={4}
                 step={0.1}
-                onChange={(v) =>
-                  subscribe((c) => ({
+                onChange={v =>
+                  subscribe(c => ({
                     ...c,
                     theme: { ...c.theme, hotspotMinZoom: v },
                   }))
@@ -259,8 +258,8 @@ function AtlasConfigInspector({
                 min={1}
                 max={4}
                 step={0.1}
-                onChange={(v) =>
-                  subscribe((c) => ({
+                onChange={v =>
+                  subscribe(c => ({
                     ...c,
                     theme: { ...c.theme, calloutMinZoom: v },
                   }))
@@ -278,8 +277,8 @@ function AtlasConfigInspector({
                 value={cfg.viewport.width}
                 min={240}
                 max={2400}
-                onChange={(v) =>
-                  subscribe((c) => ({
+                onChange={v =>
+                  subscribe(c => ({
                     ...c,
                     viewport: { ...c.viewport, width: v },
                   }))
@@ -292,8 +291,8 @@ function AtlasConfigInspector({
                 value={cfg.viewport.height}
                 min={320}
                 max={4000}
-                onChange={(v) =>
-                  subscribe((c) => ({
+                onChange={v =>
+                  subscribe(c => ({
                     ...c,
                     viewport: { ...c.viewport, height: v },
                   }))
@@ -305,7 +304,7 @@ function AtlasConfigInspector({
             label="滚轮缩放"
             checked={cfg.interaction.wheelZoom}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 interaction: { ...c.interaction, wheelZoom: !c.interaction.wheelZoom },
               }))
@@ -315,7 +314,7 @@ function AtlasConfigInspector({
             label="拖拽平移"
             checked={cfg.interaction.dragPan}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 interaction: { ...c.interaction, dragPan: !c.interaction.dragPan },
               }))
@@ -325,7 +324,7 @@ function AtlasConfigInspector({
             label="双指缩放"
             checked={cfg.interaction.pinchZoom}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 interaction: { ...c.interaction, pinchZoom: !c.interaction.pinchZoom },
               }))
@@ -335,7 +334,7 @@ function AtlasConfigInspector({
             label="重置视角按钮"
             checked={cfg.interaction.resetCameraEnabled}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 interaction: {
                   ...c.interaction,
@@ -351,7 +350,7 @@ function AtlasConfigInspector({
             label="工具栏"
             checked={cfg.chrome.showToolbar ?? false}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 chrome: { ...c.chrome, showToolbar: !(c.chrome.showToolbar ?? false) },
               }))
@@ -361,7 +360,7 @@ function AtlasConfigInspector({
             label="缩放指示"
             checked={cfg.chrome.showZoomIndicator ?? false}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 chrome: {
                   ...c.chrome,
@@ -374,7 +373,7 @@ function AtlasConfigInspector({
             label="提示语"
             checked={cfg.chrome.showHints ?? false}
             onToggle={() =>
-              subscribe((c) => ({
+              subscribe(c => ({
                 ...c,
                 chrome: { ...c.chrome, showHints: !(c.chrome.showHints ?? false) },
               }))
@@ -391,12 +390,8 @@ function AtlasConfigInspector({
 interface CategoryInspectorProps {
   project: GuideProject
   categoryId: string
-  onPatchPanorama: (
-    mutator: (p: GuideProject['panorama']) => GuideProject['panorama'],
-  ) => void
-  onPatchKnowledge: (
-    mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge'],
-  ) => void
+  onPatchPanorama: (mutator: (p: GuideProject['panorama']) => GuideProject['panorama']) => void
+  onPatchKnowledge: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
   onPatchNavigation: (
     mutator: (n: GuideProject['navigation']) => GuideProject['navigation'],
   ) => void
@@ -416,8 +411,8 @@ function CategoryInspector({
   isSaving,
 }: CategoryInspectorProps): JSX.Element {
   const category = project.knowledge.stages
-    .flatMap((s) => s.categories)
-    .find((c) => c.id === categoryId)
+    .flatMap(s => s.categories)
+    .find(c => c.id === categoryId)
   const layout: CategorySpatialLayout | undefined = project.panorama.categories[categoryId]
 
   if (!category) {
@@ -464,7 +459,7 @@ function CategoryInspector({
   }, [categoryId, project.metadata.revision])
 
   const patchLayout = (mutator: (l: CategorySpatialLayout) => CategorySpatialLayout) => {
-    onPatchPanorama((p) => ({
+    onPatchPanorama(p => ({
       ...p,
       categories: {
         ...p.categories,
@@ -515,9 +510,9 @@ function CategoryInspector({
               const enabled = !Boolean(layout?.hotspot)
               hotspotForm.setValue('enabled', enabled)
               if (!enabled) {
-                patchLayout((l) => ({ ...l, hotspot: undefined }))
+                patchLayout(l => ({ ...l, hotspot: undefined }))
               } else {
-                patchLayout((l) => ({
+                patchLayout(l => ({
                   ...l,
                   hotspot: l.hotspot ?? { x: 0.5, y: 0.5 },
                 }))
@@ -532,9 +527,9 @@ function CategoryInspector({
                 min={0}
                 max={1}
                 step={0.01}
-                onChange={(v) => {
+                onChange={v => {
                   hotspotForm.setValue('x', v)
-                  patchLayout((l) => ({ ...l, hotspot: { x: v, y: l.hotspot?.y ?? 0.5 } }))
+                  patchLayout(l => ({ ...l, hotspot: { x: v, y: l.hotspot?.y ?? 0.5 } }))
                 }}
               />
             </Box>
@@ -545,9 +540,9 @@ function CategoryInspector({
                 min={0}
                 max={1}
                 step={0.01}
-                onChange={(v) => {
+                onChange={v => {
                   hotspotForm.setValue('y', v)
-                  patchLayout((l) => ({ ...l, hotspot: { x: l.hotspot?.x ?? 0.5, y: v } }))
+                  patchLayout(l => ({ ...l, hotspot: { x: l.hotspot?.x ?? 0.5, y: v } }))
                 }}
               />
             </Box>
@@ -563,9 +558,9 @@ function CategoryInspector({
                 min={0}
                 max={1}
                 step={0.01}
-                onChange={(v) => {
+                onChange={v => {
                   viewportForm.setValue('centerX', v)
-                  patchLayout((l) => ({
+                  patchLayout(l => ({
                     ...l,
                     viewport: { ...l.viewport, centerX: v },
                   }))
@@ -579,9 +574,9 @@ function CategoryInspector({
                 min={0}
                 max={1}
                 step={0.01}
-                onChange={(v) => {
+                onChange={v => {
                   viewportForm.setValue('centerY', v)
-                  patchLayout((l) => ({
+                  patchLayout(l => ({
                     ...l,
                     viewport: { ...l.viewport, centerY: v },
                   }))
@@ -595,9 +590,9 @@ function CategoryInspector({
                 min={1}
                 max={4}
                 step={0.1}
-                onChange={(v) => {
+                onChange={v => {
                   viewportForm.setValue('zoom', v)
-                  patchLayout((l) => ({
+                  patchLayout(l => ({
                     ...l,
                     viewport: { ...l.viewport, zoom: v },
                   }))
@@ -611,8 +606,8 @@ function CategoryInspector({
                 min={1}
                 max={4}
                 step={0.1}
-                onChange={(v) => {
-                  patchLayout((l) => ({
+                onChange={v => {
+                  patchLayout(l => ({
                     ...l,
                     activationZoom: v,
                   }))
@@ -621,7 +616,8 @@ function CategoryInspector({
             </Box>
           </HStack>
           <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
-            zoom 是分类默认视口；callout zoom 是点击 hotspot 后聚焦首个 callout / item 时使用的放大倍数。
+            zoom 是分类默认视口；callout zoom 是点击 hotspot 后聚焦首个 callout / item
+            时使用的放大倍数。
           </Text>
         </FieldGroup>
       </Stack>
@@ -674,12 +670,12 @@ function ExperienceForm({
           { value: 'panorama', label: 'Panorama 全景（默认）' },
           { value: 'html-scene', label: 'HTML Scene' },
         ]}
-        onChange={(v) => {
+        onChange={v => {
           const nextKind = v as 'panorama' | 'html-scene'
           setKind(nextKind)
-          onPatch((k) => patchCategoryExperience(k, category.id, nextKind))
+          onPatch(k => patchCategoryExperience(k, category.id, nextKind))
           if (nextKind === 'panorama') {
-            onPatchNavigation((navigation) => removeCategorySceneRoute(navigation, category.id))
+            onPatchNavigation(navigation => removeCategorySceneRoute(navigation, category.id))
           }
         }}
       />
@@ -693,15 +689,13 @@ function ExperienceForm({
                 ? [{ value: '', label: '（暂无场景，先去 Settings 创建）' }]
                 : [
                     { value: '', label: '请选择…' },
-                    ...project.scenes.map((s) => ({ value: s.id, label: s.title || s.id })),
+                    ...project.scenes.map(s => ({ value: s.id, label: s.title || s.id })),
                   ]
             }
-            onChange={(v) => {
+            onChange={v => {
               setSceneId(v)
-              onPatch((k) =>
-                patchCategoryExperience(k, category.id, 'html-scene', v, undefined),
-              )
-              onPatchNavigation((navigation) =>
+              onPatch(k => patchCategoryExperience(k, category.id, 'html-scene', v, undefined))
+              onPatchNavigation(navigation =>
                 syncCategorySceneRoute(navigation, category.id, v, viewId),
               )
             }}
@@ -710,21 +704,18 @@ function ExperienceForm({
             label="视图"
             value={viewId}
             options={(() => {
-              const scene = project.scenes.find((s) => s.id === sceneId)
+              const scene = project.scenes.find(s => s.id === sceneId)
               if (!scene) return [{ value: '', label: '（请先选场景）' }]
-              if (scene.views.length === 0)
-                return [{ value: '', label: '（场景无视图）' }]
+              if (scene.views.length === 0) return [{ value: '', label: '（场景无视图）' }]
               return [
                 { value: '', label: '请选择…' },
-                ...scene.views.map((v) => ({ value: v.id, label: v.title || v.id })),
+                ...scene.views.map(v => ({ value: v.id, label: v.title || v.id })),
               ]
             })()}
-            onChange={(v) => {
+            onChange={v => {
               setViewId(v)
-              onPatch((k) =>
-                patchCategoryExperience(k, category.id, 'html-scene', undefined, v),
-              )
-              onPatchNavigation((navigation) =>
+              onPatch(k => patchCategoryExperience(k, category.id, 'html-scene', undefined, v))
+              onPatchNavigation(navigation =>
                 syncCategorySceneRoute(navigation, category.id, sceneId, v),
               )
             }}
@@ -735,7 +726,7 @@ function ExperienceForm({
                 label="启用过渡视频"
                 checked={Boolean(transition)}
                 onToggle={() => {
-                  onPatchNavigation((navigation) =>
+                  onPatchNavigation(navigation =>
                     patchCategorySceneRouteTransition(
                       navigation,
                       category.id,
@@ -761,14 +752,20 @@ function ExperienceForm({
                     options={
                       videoAssets.length === 0
                         ? [{ value: '', label: '（暂无视频资源，先去 Settings 上传）' }]
-                        : videoAssets.map((asset) => ({ value: asset.id, label: asset.id }))
+                        : videoAssets.map(asset => ({ value: asset.id, label: asset.id }))
                     }
-                    onChange={(assetId) => {
-                      onPatchNavigation((navigation) =>
-                        patchCategorySceneRouteTransition(navigation, category.id, sceneId, viewId, {
-                          ...transition,
-                          assetId,
-                        }),
+                    onChange={assetId => {
+                      onPatchNavigation(navigation =>
+                        patchCategorySceneRouteTransition(
+                          navigation,
+                          category.id,
+                          sceneId,
+                          viewId,
+                          {
+                            ...transition,
+                            assetId,
+                          },
+                        ),
                       )
                     }}
                   />
@@ -778,12 +775,18 @@ function ExperienceForm({
                     min={500}
                     max={30000}
                     step={100}
-                    onChange={(value) => {
-                      onPatchNavigation((navigation) =>
-                        patchCategorySceneRouteTransition(navigation, category.id, sceneId, viewId, {
-                          ...transition,
-                          timeoutMs: Math.max(500, Math.round(value)),
-                        }),
+                    onChange={value => {
+                      onPatchNavigation(navigation =>
+                        patchCategorySceneRouteTransition(
+                          navigation,
+                          category.id,
+                          sceneId,
+                          viewId,
+                          {
+                            ...transition,
+                            timeoutMs: Math.max(500, Math.round(value)),
+                          },
+                        ),
                       )
                     }}
                   />
@@ -794,12 +797,18 @@ function ExperienceForm({
                       { value: 'cut', label: 'cut：视频失败则中止进入' },
                       { value: 'abort-navigation', label: 'abort-navigation：失败则直接进入' },
                     ]}
-                    onChange={(value) => {
-                      onPatchNavigation((navigation) =>
-                        patchCategorySceneRouteTransition(navigation, category.id, sceneId, viewId, {
-                          ...transition,
-                          onFailure: value as 'cut' | 'abort-navigation',
-                        }),
+                    onChange={value => {
+                      onPatchNavigation(navigation =>
+                        patchCategorySceneRouteTransition(
+                          navigation,
+                          category.id,
+                          sceneId,
+                          viewId,
+                          {
+                            ...transition,
+                            onFailure: value as 'cut' | 'abort-navigation',
+                          },
+                        ),
                       )
                     }}
                   />
@@ -808,7 +817,9 @@ function ExperienceForm({
             </>
           )}
           <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
-            HTML 场景需先在 Settings → HTML 场景 上传 zip 包并创建视图。绑定 scene/view 后，Atlas 会为该分类生成一条 panorama → scene 的 route；若启用过渡视频，则点击 hotspot 会先播视频再进入 scene。
+            HTML 场景需先在 Settings → HTML 场景 上传 zip 包并创建视图。绑定 scene/view 后，Atlas
+            会为该分类生成一条 panorama → scene 的 route；若启用过渡视频，则点击 hotspot
+            会先播视频再进入 scene。
           </Text>
         </>
       )}
@@ -835,13 +846,13 @@ function LabeledSelect({
       <NativeSelect.Root size="sm">
         <NativeSelect.Field
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={e => onChange(e.target.value)}
           bg="bg.raised"
           borderColor="border"
           fontSize="13px"
           color="ink"
         >
-          {options.map((o) => (
+          {options.map(o => (
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
@@ -858,9 +869,8 @@ function LabeledSelect({
 interface ItemInspectorProps {
   project: GuideProject
   itemId: string
-  onPatchPanorama: (
-    mutator: (p: GuideProject['panorama']) => GuideProject['panorama'],
-  ) => void
+  onPatchPanorama: (mutator: (p: GuideProject['panorama']) => GuideProject['panorama']) => void
+  onPatchKnowledge: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
   hasUnsaved: boolean
   onSaveRequested: () => void
   isSaving: boolean
@@ -870,6 +880,7 @@ function ItemInspector({
   project,
   itemId,
   onPatchPanorama,
+  onPatchKnowledge,
   hasUnsaved,
   onSaveRequested,
   isSaving,
@@ -907,13 +918,21 @@ function ItemInspector({
   }, [itemId, project.metadata.revision])
 
   const patchLayout = (mutator: (l: ItemSpatialLayout) => ItemSpatialLayout) => {
-    onPatchPanorama((p) => ({
+    onPatchPanorama(p => ({
       ...p,
       items: {
         ...p.items,
-        [itemId]: mutator(
-          p.items[itemId] ?? makeDefaultItemLayout(),
-        ),
+        [itemId]: mutator(p.items[itemId] ?? makeDefaultItemLayout()),
+      },
+    }))
+  }
+
+  const patchItem = (mutator: (current: typeof item) => typeof item) => {
+    onPatchKnowledge(knowledge => ({
+      ...knowledge,
+      items: {
+        ...knowledge.items,
+        [itemId]: mutator(knowledge.items[itemId] ?? item),
       },
     }))
   }
@@ -943,6 +962,54 @@ function ItemInspector({
         </Text>
       </Box>
       <Stack flex="1" overflow="auto" gap="0">
+        <FieldGroup icon={FileText} title="内容">
+          <Field.Root>
+            <Field.Label fontSize="12px" color="ink.muted">
+              标题
+            </Field.Label>
+            <Input
+              value={item.title}
+              size="sm"
+              bg="bg.raised"
+              onChange={event => patchItem(current => ({ ...current, title: event.target.value }))}
+              data-testid="atlas-item-title"
+            />
+          </Field.Root>
+          <Field.Root>
+            <Field.Label fontSize="12px" color="ink.muted">
+              内容说明
+            </Field.Label>
+            <textarea
+              value={item.description}
+              rows={4}
+              onChange={event =>
+                patchItem(current => ({ ...current, description: event.target.value }))
+              }
+              data-testid="atlas-item-description"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                resize: 'vertical',
+                border: '1px solid var(--chakra-colors-border)',
+                borderRadius: '6px',
+                background: 'var(--chakra-colors-bg-raised)',
+                color: 'var(--chakra-colors-ink)',
+                fontSize: '13px',
+                lineHeight: '1.5',
+                padding: '8px',
+              }}
+            />
+          </Field.Root>
+          <NumberFieldPlain
+            label="排序"
+            value={item.order}
+            min={0}
+            max={9999}
+            step={1}
+            onChange={value => patchItem(current => ({ ...current, order: Math.round(value) }))}
+          />
+        </FieldGroup>
+
         <FieldGroup icon={MapPin} title="Marker">
           <HStack gap="2" align="flex-start">
             <Box flex="1">
@@ -952,9 +1019,7 @@ function ItemInspector({
                 min={0}
                 max={1}
                 step={0.01}
-                onChange={(v) =>
-                  patchLayout((l) => ({ ...l, marker: { x: v, y: l.marker.y } }))
-                }
+                onChange={v => patchLayout(l => ({ ...l, marker: { x: v, y: l.marker.y } }))}
               />
             </Box>
             <Box flex="1">
@@ -964,9 +1029,7 @@ function ItemInspector({
                 min={0}
                 max={1}
                 step={0.01}
-                onChange={(v) =>
-                  patchLayout((l) => ({ ...l, marker: { x: l.marker.x, y: v } }))
-                }
+                onChange={v => patchLayout(l => ({ ...l, marker: { x: l.marker.x, y: v } }))}
               />
             </Box>
           </HStack>
@@ -980,13 +1043,13 @@ function ItemInspector({
               const enabled = !Boolean(layout?.callout)
               calloutForm.setValue('enabled', enabled)
               if (!enabled) {
-                patchLayout((l) => ({ ...l, callout: undefined }))
+                patchLayout(l => ({ ...l, callout: undefined }))
               } else {
                 const callout: ItemCallout = {
                   markerPosition: layout?.callout?.markerPosition ?? 'top',
                   markerGapPx: layout?.callout?.markerGapPx ?? 6,
                 }
-                patchLayout((l) => ({ ...l, callout }))
+                patchLayout(l => ({ ...l, callout }))
               }
             }}
           />
@@ -997,9 +1060,9 @@ function ItemInspector({
               { value: 'top', label: '在上方' },
               { value: 'bottom', label: '在下方' },
             ]}
-            onChange={(v) => {
+            onChange={v => {
               calloutForm.setValue('markerPosition', v as ItemCallout['markerPosition'])
-              patchLayout((l) => ({
+              patchLayout(l => ({
                 ...l,
                 callout: {
                   markerPosition: v as ItemCallout['markerPosition'],
@@ -1014,10 +1077,10 @@ function ItemInspector({
             min={0}
             max={64}
             step={1}
-            onChange={(v) => {
+            onChange={v => {
               const next = Math.round(v)
               calloutForm.setValue('markerGapPx', next)
-              patchLayout((l) => ({
+              patchLayout(l => ({
                 ...l,
                 callout: {
                   markerPosition: l.callout?.markerPosition ?? 'top',
@@ -1032,8 +1095,8 @@ function ItemInspector({
             min={1}
             max={4}
             step={0.1}
-            onChange={(v) => {
-              patchLayout((l) => ({
+            onChange={v => {
+              patchLayout(l => ({
                 ...l,
                 callout: l.callout
                   ? {
@@ -1050,7 +1113,6 @@ function ItemInspector({
             }}
           />
         </FieldGroup>
-
       </Stack>
     </>
   )
@@ -1171,7 +1233,7 @@ function NumberFieldPlain({
           min={min}
           max={max}
           step={step}
-          onChange={(e) => {
+          onChange={e => {
             const n = e.target.value === '' ? 0 : Number(e.target.value)
             if (!Number.isNaN(n)) {
               setLocal(n)
@@ -1224,9 +1286,9 @@ function patchCategoryExperience(
   }>
   return {
     ...knowledge,
-    stages: stages.map((s) => ({
+    stages: stages.map(s => ({
       ...s,
-      categories: s.categories.map((c) => {
+      categories: s.categories.map(c => {
         if (c.id !== categoryId) return c
         if (kind === 'panorama') {
           return { ...c, experience: { kind: 'panorama' } }
@@ -1234,8 +1296,7 @@ function patchCategoryExperience(
         const current = c.experience
         const nextSceneId =
           sceneIdOverride ?? (current.kind === 'html-scene' ? current.sceneId : '')
-        const nextViewId =
-          viewIdOverride ?? (current.kind === 'html-scene' ? current.viewId : '')
+        const nextViewId = viewIdOverride ?? (current.kind === 'html-scene' ? current.viewId : '')
         return {
           ...c,
           experience: { kind: 'html-scene', sceneId: nextSceneId, viewId: nextViewId },
@@ -1253,7 +1314,7 @@ function findCategorySceneRoute(
   navigation: ExperienceNavigation,
   categoryId: string,
 ): ExperienceNavigation['routes'][number] | undefined {
-  return navigation.routes.find((route) => route.id === categorySceneRouteId(categoryId))
+  return navigation.routes.find(route => route.id === categorySceneRouteId(categoryId))
 }
 
 function syncCategorySceneRoute(
@@ -1274,10 +1335,7 @@ function syncCategorySceneRoute(
     ...(existing?.transition ? { transition: existing.transition } : {}),
   }
   return {
-    routes: [
-      ...navigation.routes.filter((route) => route.id !== routeId),
-      nextRoute,
-    ],
+    routes: [...navigation.routes.filter(route => route.id !== routeId), nextRoute],
   }
 }
 
@@ -1287,7 +1345,7 @@ function removeCategorySceneRoute(
 ): ExperienceNavigation {
   const routeId = categorySceneRouteId(categoryId)
   return {
-    routes: navigation.routes.filter((route) => route.id !== routeId),
+    routes: navigation.routes.filter(route => route.id !== routeId),
   }
 }
 
@@ -1309,7 +1367,7 @@ function patchCategorySceneRouteTransition(
   const routeId = categorySceneRouteId(categoryId)
   const base = syncCategorySceneRoute(navigation, categoryId, sceneId, viewId)
   return {
-    routes: base.routes.map((route) =>
+    routes: base.routes.map(route =>
       route.id === routeId
         ? {
             ...route,

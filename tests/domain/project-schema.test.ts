@@ -4,8 +4,7 @@ import { z } from 'zod'
 import { GuideProjectSchema, SchemaVersionSchema } from '../../src/domain/project-schema.js'
 import { createDraftProject } from '../../src/domain/project-normalizer.js'
 
-const base = () =>
-  createDraftProject({ id: 'p1', title: 'Test', locale: 'zh-CN' })
+const base = () => createDraftProject({ id: 'p1', title: 'Test', locale: 'zh-CN' })
 
 test('SchemaVersionSchema accepts only "2.0.0"', () => {
   assert.equal(SchemaVersionSchema.safeParse('2.0.0').success, true)
@@ -21,6 +20,14 @@ test('GuideProjectSchema accepts a fresh draft project with assetId filled in', 
   assert.equal(r.success, true, JSON.stringify(r.error?.issues ?? []))
 })
 
+test('GuideProjectSchema accepts only a complete optional Catalog Atlas URL', () => {
+  const draft = base()
+  draft.products.catalog.atlasLaunchUrl = 'https://example.com/atlas/index.html'
+  assert.equal(GuideProjectSchema.safeParse(draft).success, true)
+  draft.products.catalog.atlasLaunchUrl = 'not-a-url'
+  assert.equal(GuideProjectSchema.safeParse(draft).success, false)
+})
+
 test('GuideProjectSchema rejects projects with wrong stage key order', () => {
   const draft = base()
   // @ts-expect-error mutate stages
@@ -31,9 +38,9 @@ test('GuideProjectSchema rejects projects with wrong stage key order', () => {
   ]
   const r = GuideProjectSchema.safeParse(draft)
   assert.equal(r.success, false)
-  const messages = r.error!.issues.map((i) => i.message)
-  assert.ok(messages.some((m) => m.includes('stage[0].key')))
-  assert.ok(messages.some((m) => m.includes('stage[1].key')))
+  const messages = r.error!.issues.map(i => i.message)
+  assert.ok(messages.some(m => m.includes('stage[0].key')))
+  assert.ok(messages.some(m => m.includes('stage[1].key')))
 })
 
 test('GuideProjectSchema rejects projects with non-3 stages', () => {
@@ -50,7 +57,7 @@ test('GuideProjectSchema rejects projects whose order does not match index', () 
   draft.knowledge.stages[1].order = 3
   const r = GuideProjectSchema.safeParse(draft)
   assert.equal(r.success, false)
-  assert.ok(r.error!.issues.some((i) => i.path.includes('order')))
+  assert.ok(r.error!.issues.some(i => i.path.includes('order')))
 })
 
 test('GuideProjectSchema rejects coordinates outside [0,1]', () => {

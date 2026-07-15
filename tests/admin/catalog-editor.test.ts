@@ -12,8 +12,8 @@ import path from 'node:path'
 import { createDraftProject } from '../../src/domain/project-normalizer'
 import { compileCatalog } from '../../src/products/catalog/compiler/catalog-compiler'
 
-test('Catalog editor feature surface exists at the current module paths', () => {
-  for (const file of ['CatalogEditor', 'CatalogCanvas', 'CatalogInspector', 'CatalogPreview', 'CatalogToolbar']) {
+test('Catalog editor feature surface includes separate authoring and runtime-preview canvases', () => {
+  for (const file of ['CatalogEditor', 'CatalogCanvas', 'CatalogAuthoringCanvas', 'CatalogEditorCanvas', 'CatalogInspector', 'CatalogToolbar']) {
     assert.equal(
       fs.existsSync(path.resolve(`src/admin/src/features/catalog-editor/components/${file}.tsx`)),
       true,

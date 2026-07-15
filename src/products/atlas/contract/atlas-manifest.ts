@@ -53,9 +53,7 @@ export interface AtlasCategoryEntry {
   order: number
   description?: string
   itemIds: string[]
-  experience:
-    | { kind: 'panorama' }
-    | { kind: 'html-scene'; sceneId: string; viewId: string }
+  experience: { kind: 'panorama' } | { kind: 'html-scene'; sceneId: string; viewId: string }
   viewport: Viewport
   /** Zoom used when hotspot click should focus the category's default callout/item. */
   activationZoom?: number
@@ -71,7 +69,6 @@ export interface AtlasItemEntry {
   title: string
   description: string
   order: number
-  tags?: string[]
   marker: { x: number; y: number }
   viewportOverride?: Viewport
   /** Hide this item marker when camera zoom falls below this value. */

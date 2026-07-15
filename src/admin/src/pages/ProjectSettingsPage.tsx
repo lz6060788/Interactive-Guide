@@ -26,6 +26,7 @@ import { MetadataForm } from '../features/projects/settings/MetadataForm'
 import { AssetsPanel } from '../features/projects/settings/AssetsPanel'
 import { HtmlScenePanel } from '../features/projects/settings/HtmlScenePanel'
 import { DangerZone } from '../features/projects/settings/DangerZone'
+import { AnalyticsPanel } from '../features/projects/settings/AnalyticsPanel'
 import { PageHeader, StatusFooter, TableSkeleton } from '../components/PageHeader'
 
 export function ProjectSettingsPage(): JSX.Element {
@@ -46,11 +47,7 @@ export function ProjectSettingsPage(): JSX.Element {
     return (
       <Flex direction="column" h="100vh">
         <PageHeader
-          crumbs={[
-            { label: 'Projects', to: '/' },
-            { label: '加载中…' },
-            { label: 'Settings' },
-          ]}
+          crumbs={[{ label: 'Projects', to: '/' }, { label: '加载中…' }, { label: 'Settings' }]}
         />
         <Box flex="1" p="6">
           <TableSkeleton rows={6} />
@@ -103,23 +100,11 @@ export function ProjectSettingsPage(): JSX.Element {
         ]}
         actions={
           <HStack gap="2">
-            <Button
-              variant="secondary"
-              size="sm"
-              asChild
-            >
-              <RouterLink to={`/projects/${project.id}/atlas-editor`}>
-                Atlas Editor
-              </RouterLink>
+            <Button variant="secondary" size="sm" asChild>
+              <RouterLink to={`/projects/${project.id}/atlas-editor`}>Atlas Editor</RouterLink>
             </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              asChild
-            >
-              <RouterLink to={`/projects/${project.id}/catalog-editor`}>
-                Catalog Editor
-              </RouterLink>
+            <Button variant="secondary" size="sm" asChild>
+              <RouterLink to={`/projects/${project.id}/catalog-editor`}>Catalog Editor</RouterLink>
             </Button>
           </HStack>
         }
@@ -130,13 +115,7 @@ export function ProjectSettingsPage(): JSX.Element {
             <Flex align="baseline" justify="space-between" gap="3" mb="1">
               <Box>
                 <Text className="eyebrow">Project · {project.id}</Text>
-                <Heading
-                  as="h1"
-                  size="lg"
-                  fontWeight="600"
-                  color="ink"
-                  mt="1"
-                >
+                <Heading as="h1" size="lg" fontWeight="600" color="ink" mt="1">
                   {project.title}
                 </Heading>
               </Box>
@@ -176,33 +155,37 @@ export function ProjectSettingsPage(): JSX.Element {
             </SettingsCard>
 
             <SettingsCard eyebrow="03" title="HTML 场景">
-              <HtmlScenePanel
+              <HtmlScenePanel projectId={project.id} revision={m.revision} project={project} />
+            </SettingsCard>
+
+            <SettingsCard eyebrow="04" title="埋点">
+              <AnalyticsPanel
                 projectId={project.id}
                 revision={m.revision}
-                project={project}
+                initial={project.integrations}
               />
             </SettingsCard>
 
-            <SettingsCard eyebrow="04" title="生命周期">
-              <DangerZone
-                projectId={project.id}
-                projectTitle={project.title}
-              />
+            <SettingsCard eyebrow="05" title="生命周期">
+              <DangerZone projectId={project.id} projectTitle={project.title} />
             </SettingsCard>
           </Stack>
         </Container>
       </Box>
-      <StatusFooter
-        revision={m.revision}
-        isDirty={false}
-        lastSavedAt={m.updatedAt}
-        backendOk
-      />
+      <StatusFooter revision={m.revision} isDirty={false} lastSavedAt={m.updatedAt} backendOk />
     </Flex>
   )
 }
 
-function SettingsCard({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }): JSX.Element {
+function SettingsCard({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string
+  title: string
+  children: React.ReactNode
+}): JSX.Element {
   return (
     <Card.Root bg="bg.raised" borderColor="border" shadow="xs" p="0">
       <Card.Header borderBottomWidth="1px" borderColor="border" py="3" px="4">

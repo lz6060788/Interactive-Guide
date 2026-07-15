@@ -12,6 +12,7 @@ export interface SceneOverlayHostOptions {
   projectTitle: string
   sessionId: string
   onRouteRequest: (routeId: string) => void
+  onShare?: () => void
 }
 
 export class SceneOverlayHost {
@@ -53,7 +54,7 @@ export class SceneOverlayHost {
       baseHref: window.location.href,
       getIframeWindow: () => this.iframeEl.contentWindow,
       onRequestBack: () => this.closeScene(),
-      onRequestRoute: (routeId) => {
+      onRequestRoute: routeId => {
         this.closeScene({ preserveSrc: true })
         this.options.onRouteRequest(routeId)
       },
@@ -80,6 +81,7 @@ export class SceneOverlayHost {
       textColor: active.chromeTextColor,
       onBack: () => this.closeScene(),
       onShare: () => {
+        this.options.onShare?.()
         void shareCurrentPage(this.options.projectTitle)
       },
     })

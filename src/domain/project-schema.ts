@@ -6,9 +6,7 @@
  * reuse these schemas and add business rules on top.
  */
 import { z } from 'zod'
-import {
-  ExperienceNavigationSchema,
-} from './experience-navigation.js'
+import { ExperienceNavigationSchema } from './experience-navigation.js'
 import { SceneProtocolSchema } from './scene-protocol.js'
 
 export const SchemaVersionSchema = z.literal('2.0.0')
@@ -35,7 +33,10 @@ export const AssetDefinitionSchema = z.object({
   mimeType: z.string().min(1).optional(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  sha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
   size: z.number().int().nonnegative().optional(),
 })
 
@@ -49,12 +50,14 @@ export const ViewportSchema = z.object({
   zoom: z.number().positive(),
 })
 
-export const CameraBoundsSchema = z.object({
-  minZoom: z.number().positive(),
-  maxZoom: z.number().positive(),
-}).refine((b) => b.maxZoom > b.minZoom, {
-  message: 'maxZoom must be greater than minZoom',
-})
+export const CameraBoundsSchema = z
+  .object({
+    minZoom: z.number().positive(),
+    maxZoom: z.number().positive(),
+  })
+  .refine(b => b.maxZoom > b.minZoom, {
+    message: 'maxZoom must be greater than minZoom',
+  })
 
 export const ItemCalloutSchema = z.object({
   markerPosition: z.enum(['top', 'bottom']),
@@ -108,7 +111,6 @@ export const IndustryItemSchema = z.object({
   title: z.string().min(1),
   description: z.string().default(''),
   order: z.number().int().nonnegative(),
-  tags: z.array(z.string()).optional(),
 })
 
 export const IndustryCategorySchema = z.object({
@@ -226,12 +228,9 @@ export const CatalogProductConfigSchema = z.object({
     markerActivation: z.boolean(),
     viewportAnimationMs: z.number().int().nonnegative(),
   }),
-  stageOrder: z.tuple([
-    IndustryStageKeySchema,
-    IndustryStageKeySchema,
-    IndustryStageKeySchema,
-  ]),
+  stageOrder: z.tuple([IndustryStageKeySchema, IndustryStageKeySchema, IndustryStageKeySchema]),
   hintText: z.string().optional(),
+  atlasLaunchUrl: z.string().url().optional(),
 })
 
 export const AnalyticsConfigSchema = z.object({
@@ -263,24 +262,25 @@ export const ProjectMetadataSchema = z.object({
   schemaVersion: SchemaVersionSchema,
 })
 
-export const GuideProjectSchema = z.object({
-  schemaVersion: SchemaVersionSchema,
-  id: z.string().min(1),
-  title: z.string().min(1),
-  version: z.string().min(1),
-  locale: z.string().min(1),
-  knowledge: IndustryChainSchema,
-  assets: AssetRegistrySchema,
-  panorama: PanoramaModelSchema,
-  scenes: z.array(HtmlScenePackageSchema),
-  navigation: ExperienceNavigationSchema,
-  products: z.object({
-    atlas: AtlasProductConfigSchema,
-    catalog: CatalogProductConfigSchema,
-  }),
-  integrations: ProjectIntegrationsSchema,
-  metadata: ProjectMetadataSchema,
-})
+export const GuideProjectSchema = z
+  .object({
+    schemaVersion: SchemaVersionSchema,
+    id: z.string().min(1),
+    title: z.string().min(1),
+    version: z.string().min(1),
+    locale: z.string().min(1),
+    knowledge: IndustryChainSchema,
+    assets: AssetRegistrySchema,
+    panorama: PanoramaModelSchema,
+    scenes: z.array(HtmlScenePackageSchema),
+    navigation: ExperienceNavigationSchema,
+    products: z.object({
+      atlas: AtlasProductConfigSchema,
+      catalog: CatalogProductConfigSchema,
+    }),
+    integrations: ProjectIntegrationsSchema,
+    metadata: ProjectMetadataSchema,
+  })
   .strict()
   .superRefine((project, ctx) => {
     // Hard structural invariants that Zod's declarative shape cannot express.

@@ -7,8 +7,8 @@ import type { AnalyticsEvent, AnalyticsProvider } from './analytics-adapter.js'
 
 export interface WeBlogConfig {
   profileId: string
-  /** Absolute URL to the tracker script. Injected by deployment. */
-  scriptUrl: string
+  /** Optional deployment-injected tracker script. F10 hosts may preload it. */
+  scriptUrl?: string
 }
 
 declare global {
@@ -38,7 +38,7 @@ export class WeBlogAnalyticsProvider implements AnalyticsProvider {
   }
 
   private ensureLoaded(): void {
-    if (typeof document === 'undefined') return
+    if (typeof document === 'undefined' || !this.config.scriptUrl) return
     const existing = document.querySelector(
       `script[data-weblog-profile="${this.config.profileId}"]`,
     )

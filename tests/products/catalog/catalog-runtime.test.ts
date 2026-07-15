@@ -25,7 +25,9 @@ function fakeImage(): HTMLImageElement {
   } as unknown as HTMLImageElement
 }
 
-function makeLoader(opened: { sceneId?: string; viewId?: string } = {}): CatalogRuntimeAssetLoader & {
+function makeLoader(
+  opened: { sceneId?: string; viewId?: string } = {},
+): CatalogRuntimeAssetLoader & {
   events: string[]
 } {
   const events: string[] = []
@@ -96,10 +98,16 @@ class FakeEl {
   children: FakeEl[] = []
   dataset: Record<string, string | undefined> = {}
   style: Record<string, string | undefined> = {}
+  listeners = new Map<string, Array<(event: unknown) => void>>()
   className = ''
   textContent = ''
   innerHTML = ''
   tagName = 'div'
+  clientWidth = 1024
+  clientHeight = 768
+  scrollHeight = 1600
+  scrollTop = 0
+  lastScrollBehavior: ScrollBehavior | undefined
   appendChild<T>(child: T): T {
     this.children.push(child as unknown as FakeEl)
     return child
@@ -108,8 +116,17 @@ class FakeEl {
   getBoundingClientRect(): { left: number; top: number; width: number; height: number } {
     return { left: 0, top: 0, width: 1024, height: 768 }
   }
-  addEventListener(): void {}
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+    const callback = typeof listener === 'function' ? listener : event => listener.handleEvent(event as Event)
+    const current = this.listeners.get(type) ?? []
+    current.push(callback as (event: unknown) => void)
+    this.listeners.set(type, current)
+  }
   removeEventListener(): void {}
+  emit(type: string, event: unknown): void { for (const listener of this.listeners.get(type) ?? []) listener(event) }
+  scrollTo(options: ScrollToOptions): void { this.scrollTop = Number(options.top) || 0; this.lastScrollBehavior = options.behavior }
+  setPointerCapture(): void {}
+  releasePointerCapture(): void {}
 }
 
 const fakeDocument: Pick<Document, 'createElement'> = {
@@ -126,16 +143,132 @@ const fakeDocument: Pick<Document, 'createElement'> = {
   setTimeout(() => cb(Date.now()), 0)
   return 0
 }
+;(globalThis as { cancelAnimationFrame?: unknown }).cancelAnimationFrame = () => {}
 ;(globalThis as { HTMLImageElement?: unknown }).HTMLImageElement = class {}
 
-test('CatalogRuntime.loadManifest + mount creates the two-column layout', async () => {
+test('CatalogRuntime.loadManifest + mount creates the complete catalog scene', async () => {
   const loader = makeLoader()
   const rt = new CatalogRuntime({ assets: loader })
   rt.loadManifest(minimalManifest())
   const container = new FakeEl() as unknown as HTMLElement
   await rt.mount(container)
-  // grid container + panorama + list children (panorama itself contains img + focus + items)
-  assert.ok((container as unknown as FakeEl).children.length >= 2)
+  const sceneChildren = (container as unknown as FakeEl).children
+  assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-scene-original'))
+  assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-scene-stage-tabs'))
+  assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-scene-detail-list'))
+  assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-atlas-launch'), 'legacy-compatible Atlas entry remains visible before a URL is configured')
+  rt.destroy()
+})
+
+test('CatalogRuntime uses the legacy 520ms focus and camera easing contract', async () => {
+  const originalRaf = globalThis.requestAnimationFrame
+  const originalCancelRaf = globalThis.cancelAnimationFrame
+  const originalPerformance = globalThis.performance
+  const frames = new Map<number, FrameRequestCallback>()
+  let nextFrameId = 1
+  let now = 1000
+  ;(globalThis as { performance: { now: () => number } }).performance = { now: () => now }
+  globalThis.requestAnimationFrame = callback => { const id = nextFrameId++; frames.set(id, callback); return id }
+  globalThis.cancelAnimationFrame = id => { frames.delete(id) }
+  const runFrames = (timestamp: number) => {
+    const pending = [...frames.values()]
+    frames.clear()
+    pending.forEach(callback => callback(timestamp))
+  }
+  const loader = makeLoader()
+  const rt = new CatalogRuntime({ assets: loader })
+  try {
+    const manifest = minimalManifest()
+    manifest.items.push({ id: 'item-2', categoryId: 'cat-1', title: 'Item 2', description: 'desc 2', order: 1, marker: { x: .7, y: .6 }, focusRect: { x: .6, y: .5, width: .1, height: .1 } })
+    manifest.stages[0].categories[0].itemIds.push('item-2')
+    rt.loadManifest(manifest)
+    const container = new FakeEl() as unknown as HTMLElement
+    await rt.mount(container)
+    const children = (container as unknown as FakeEl).children
+    const backdrop = children.find(child => child.dataset.testid === 'catalog-scene-original')
+    const focus = children.find(child => child.dataset.testid === 'catalog-focus-window')
+    assert.match(backdrop?.style.transition ?? '', /520ms cubic-bezier\(\.22,1,\.36,1\)/)
+    const initialLeft = Number.parseFloat(focus?.style.left ?? '')
+
+    rt.selectItem('item-2')
+    assert.ok(frames.size >= 2, 'selection must schedule focus interpolation and list centering frames')
+    assert.equal(Number.parseFloat(focus?.style.left ?? ''), initialLeft, 'focus must not jump before the first animation frame')
+
+    now = 1260
+    runFrames(now)
+    const middleLeft = Number.parseFloat(focus?.style.left ?? '')
+    assert.ok(middleLeft > initialLeft && middleLeft < 716.8, 'half-time frame must be between the old and target positions')
+
+    now = 1520
+    runFrames(now)
+    assert.ok(Math.abs(Number.parseFloat(focus?.style.left ?? '') - 716.8) < .001, '520ms frame must land on the target position')
+    rt.destroy()
+  } finally {
+    globalThis.requestAnimationFrame = originalRaf
+    globalThis.cancelAnimationFrame = originalCancelRaf
+    ;(globalThis as { performance: Performance }).performance = originalPerformance
+  }
+})
+
+test('CatalogRuntime aligns the focus crop with the same panorama coordinates as its backdrop', async () => {
+  const loader = makeLoader()
+  const rt = new CatalogRuntime({ assets: loader })
+  rt.loadManifest(minimalManifest())
+  const container = new FakeEl() as unknown as HTMLElement
+  await rt.mount(container)
+
+  const focus = (container as unknown as FakeEl).children.find(
+    child => child.dataset.testid === 'catalog-focus-window',
+  )
+  assert.ok(focus, 'the selected item must render a focus crop')
+  // The source image is 4:3 in this fixture. At zoom 2 the image begins at
+  // (-512px, -384px) and the crop begins at (-307.2px, -230.4px). CSS
+  // backgrounds are local to the crop, so they shift by the difference, not
+  // by the backdrop origin itself.
+  assert.equal(focus.style.backgroundPosition, '-204.8px -153.60000000000002px')
+  rt.destroy()
+})
+
+test('CatalogRuntime centers the active detail and supports pointer-drag list scrolling', async () => {
+  const manifest = minimalManifest()
+  manifest.items.push({ id: 'item-2', categoryId: 'cat-1', title: 'Item 2', description: 'desc 2', order: 1, marker: { x: .7, y: .6 }, focusRect: { x: .6, y: .5, width: .1, height: .1 } })
+  manifest.stages[0].categories[0].itemIds.push('item-2')
+  const rt = new CatalogRuntime({ assets: makeLoader() })
+  rt.loadManifest(manifest)
+  const container = new FakeEl() as unknown as HTMLElement
+  await rt.mount(container)
+  const list = (container as unknown as FakeEl).children.find(child => child.dataset.testid === 'catalog-scene-detail-list')
+  assert.ok(list)
+  await new Promise(resolve => setTimeout(resolve, 0))
+  assert.equal(list.lastScrollBehavior, 'smooth')
+
+  list.emit('pointerdown', { pointerType: 'mouse', button: 0, pointerId: 7, clientY: 300 })
+  list.emit('pointermove', { pointerId: 7, clientY: 200, cancelable: true, preventDefault() {} })
+  assert.equal(list.scrollTop, 100)
+  list.emit('pointerup', { pointerId: 7 })
+  assert.equal(list.style.cursor, 'grab')
+  rt.destroy()
+})
+
+test('CatalogRuntime renders and emits the optional Atlas launch entry', async () => {
+  const loader = makeLoader()
+  const events: CatalogEvent[] = []
+  const manifest = minimalManifest()
+  manifest.config.atlasLaunchUrl = 'https://example.com/atlas/index.html'
+  const rt = new CatalogRuntime({ assets: loader, listeners: [event => events.push(event)] })
+  rt.loadManifest(manifest)
+  const container = new FakeEl() as unknown as HTMLElement
+  await rt.mount(container)
+  const launch = (container as unknown as FakeEl).children.find(
+    child => child.dataset.testid === 'catalog-atlas-launch',
+  )
+  assert.ok(launch, 'configured URL must render an isolated launch entry')
+  rt.emitEvent({ type: 'atlaslaunch', url: manifest.config.atlasLaunchUrl })
+  assert.ok(
+    events.some(
+      event => event.type === 'atlaslaunch' && event.url === manifest.config.atlasLaunchUrl,
+    ),
+  )
   rt.destroy()
 })
 
@@ -144,11 +277,11 @@ test('CatalogRuntime.selectItem emits itemselect, analytics:click, and viewport 
   const events: CatalogEvent[] = []
   const rt = new CatalogRuntime({ assets: loader })
   rt.loadManifest(minimalManifest())
-  rt.on((e) => events.push(e))
+  rt.on(e => events.push(e))
   const container = new FakeEl() as unknown as HTMLElement
   await rt.mount(container)
   rt.selectItem('item-1')
-  const types = events.map((e) => e.type)
+  const types = events.map(e => e.type)
   assert.ok(types.includes('itemselect'))
   assert.ok(types.includes('analytics:click'))
   assert.ok(types.includes('viewportanimationstart'))
@@ -199,11 +332,11 @@ test('CatalogRuntime.openRoute handles panorama targets by selecting an item', a
   ]
   const rt = new CatalogRuntime({ assets: loader })
   rt.loadManifest(m)
-  rt.on((event) => events.push(event))
+  rt.on(event => events.push(event))
   const container = new FakeEl() as unknown as HTMLElement
   await rt.mount(container)
   rt.openRoute('r-panorama')
-  assert.ok(events.some((event) => event.type === 'itemselect' && event.itemId === 'item-1'))
+  assert.ok(events.some(event => event.type === 'itemselect' && event.itemId === 'item-1'))
   rt.destroy()
 })
 
@@ -213,12 +346,12 @@ test('CatalogRuntime.destroy emits analytics:stay with non-zero duration', async
   const events: CatalogEvent[] = []
   const rt = new CatalogRuntime({ assets: loader, now: () => now })
   rt.loadManifest(minimalManifest())
-  rt.on((e) => events.push(e))
+  rt.on(e => events.push(e))
   const container = new FakeEl() as unknown as HTMLElement
   await rt.mount(container)
   now = 1500
   rt.destroy()
-  const stay = events.find((e) => e.type === 'analytics:stay')
+  const stay = events.find(e => e.type === 'analytics:stay')
   assert.ok(stay && stay.type === 'analytics:stay' && stay.durationMs === 500)
 })
 

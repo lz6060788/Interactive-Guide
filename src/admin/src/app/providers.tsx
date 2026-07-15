@@ -20,12 +20,12 @@ export function AppProviders({ children }: Props): JSX.Element {
   const [queryClient] = useState(() => createQueryClient())
 
   return (
-    <ErrorBoundary>
-      <ChakraProvider value={system}>
-        <QueryClientProvider client={queryClient}>
-          <BrowserRouter>{children}</BrowserRouter>
-        </QueryClientProvider>
-      </ChakraProvider>
-    </ErrorBoundary>
+    <ChakraProvider value={system}>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <ErrorBoundary>{children}</ErrorBoundary>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ChakraProvider>
   )
 }

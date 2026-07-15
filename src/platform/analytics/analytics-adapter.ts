@@ -6,15 +6,10 @@
  */
 export type AnalyticsProduct = 'atlas' | 'catalog'
 
-export type AnalyticsEventType =
-  | 'expose'
-  | 'click'
-  | 'stay'
-  | 'share'
-  | 'return'
+export type AnalyticsEventType = 'expose' | 'click' | 'stay' | 'share' | 'return'
 
 export interface AnalyticsExposePayload {
-  target: { kind: 'category' | 'item'; id: string }
+  target: { kind: 'category' | 'item' | 'route'; id: string }
 }
 
 export interface AnalyticsClickPayload {
@@ -39,13 +34,26 @@ export interface AnalyticsEvent {
   projectId: string
   timestamp: string
   contentName?: string
-  payload: AnalyticsExposePayload | AnalyticsClickPayload | AnalyticsStayPayload | AnalyticsSharePayload | AnalyticsReturnPayload
+  profileId?: string
+  pageType?: string
+  defaultSource?: string
+  dimensions?: Record<string, string>
+  payload:
+    | AnalyticsExposePayload
+    | AnalyticsClickPayload
+    | AnalyticsStayPayload
+    | AnalyticsSharePayload
+    | AnalyticsReturnPayload
 }
 
 export interface AnalyticsAdapterOptions {
   product: AnalyticsProduct
   projectId: string
   contentName?: string
+  profileId?: string
+  pageType?: string
+  defaultSource?: string
+  dimensions?: Record<string, string>
   /** Provider implementation. Defaults to `ConsoleProvider` in browser. */
   provider?: AnalyticsProvider
   now?: () => Date
@@ -68,8 +76,17 @@ export class ConsoleAnalyticsProvider implements AnalyticsProvider {
  * dimension — runtime code never decides contentName itself.
  */
 export class AnalyticsAdapter {
-  private readonly opts: Required<Omit<AnalyticsAdapterOptions, 'contentName' | 'now'>> &
-    Pick<AnalyticsAdapterOptions, 'contentName'> & { now: () => Date }
+  private readonly opts: {
+    product: AnalyticsProduct
+    projectId: string
+    contentName?: string
+    profileId?: string
+    pageType?: string
+    defaultSource?: string
+    dimensions?: Record<string, string>
+    provider: AnalyticsProvider
+    now: () => Date
+  }
   private lastByType = new Map<AnalyticsEventType, number>()
 
   constructor(opts: AnalyticsAdapterOptions) {
@@ -77,6 +94,10 @@ export class AnalyticsAdapter {
       product: opts.product,
       projectId: opts.projectId,
       contentName: opts.contentName,
+      profileId: opts.profileId,
+      pageType: opts.pageType,
+      defaultSource: opts.defaultSource,
+      dimensions: opts.dimensions,
       provider: opts.provider ?? new ConsoleAnalyticsProvider(),
       now: opts.now ?? (() => new Date()),
     }
@@ -91,10 +112,7 @@ export class AnalyticsAdapter {
     return true
   }
 
-  track(
-    type: AnalyticsEventType,
-    payload: AnalyticsEvent['payload'],
-  ): void {
+  track(type: AnalyticsEventType, payload: AnalyticsEvent['payload']): void {
     if (!this.shouldEmit(type)) return
     const event: AnalyticsEvent = {
       type,
@@ -102,6 +120,10 @@ export class AnalyticsAdapter {
       projectId: this.opts.projectId,
       timestamp: this.opts.now().toISOString(),
       ...(this.opts.contentName ? { contentName: this.opts.contentName } : {}),
+      ...(this.opts.profileId ? { profileId: this.opts.profileId } : {}),
+      ...(this.opts.pageType ? { pageType: this.opts.pageType } : {}),
+      ...(this.opts.defaultSource ? { defaultSource: this.opts.defaultSource } : {}),
+      ...(this.opts.dimensions ? { dimensions: this.opts.dimensions } : {}),
       payload,
     }
     this.opts.provider.track(event)

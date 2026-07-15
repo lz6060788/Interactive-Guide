@@ -109,7 +109,7 @@ export class CardDrawerController {
     closeButton.style.lineHeight = '1'
     closeButton.style.cursor = 'pointer'
     closeButton.style.fontFamily = ATLAS_CHIP_FONT_FAMILY
-    closeButton.addEventListener('click', (event) => {
+    closeButton.addEventListener('click', event => {
       event.preventDefault()
       event.stopPropagation()
       this.close()
@@ -246,27 +246,11 @@ export class CardDrawerController {
       desc.style.fontSize = '14px'
       desc.style.lineHeight = '22px'
       desc.style.color = 'rgba(15, 23, 42, 0.7)'
-      desc.textContent = item.description || '暂无说明'
-
-      const tags = document.createElement('div')
-      tags.style.display = item.tags?.length ? 'flex' : 'none'
-      tags.style.flexWrap = 'wrap'
-      tags.style.gap = '6px'
-      for (const tagValue of item.tags ?? []) {
-        const chip = document.createElement('span')
-        chip.textContent = tagValue
-        chip.style.padding = '2px 8px'
-        chip.style.borderRadius = '999px'
-        chip.style.background = 'rgba(15, 23, 42, 0.06)'
-        chip.style.fontSize = '11px'
-        chip.style.lineHeight = '18px'
-        tags.appendChild(chip)
-      }
+      desc.textContent = item.description
 
       card.appendChild(title)
       card.appendChild(desc)
-      card.appendChild(tags)
-      card.addEventListener('click', (event) => {
+      card.addEventListener('click', event => {
         event.preventDefault()
         event.stopPropagation()
         this.activateItem(item.id)
@@ -280,7 +264,10 @@ export class CardDrawerController {
 
   private renderBreadcrumb(category: AtlasCategoryEntry): void {
     if (!this.breadcrumbEl) return
-    if (typeof (this.breadcrumbEl as HTMLElement & { replaceChildren?: unknown }).replaceChildren === 'function') {
+    if (
+      typeof (this.breadcrumbEl as HTMLElement & { replaceChildren?: unknown }).replaceChildren ===
+      'function'
+    ) {
       this.breadcrumbEl.replaceChildren()
     } else {
       this.breadcrumbEl.innerHTML = ''

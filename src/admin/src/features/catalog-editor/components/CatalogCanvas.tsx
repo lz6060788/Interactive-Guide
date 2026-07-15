@@ -6,7 +6,7 @@
  * It's structured data, not a spatial canvas, so it renders as a
  * collapsible list with the categories and their items nested.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -29,6 +29,7 @@ interface Props {
   project: GuideProject
   activeStage: IndustryStage
   selection: CatalogSelection
+  onSelectStage: (stageKey: IndustryStage['key']) => void
   onSelect: (s: CatalogSelection) => void
   onAddCategory: () => void
   onRenameCategory: (categoryId: string, title: string) => void
@@ -41,6 +42,7 @@ export function CatalogCanvas({
   project,
   activeStage,
   selection,
+  onSelectStage,
   onSelect,
   onAddCategory,
   onRenameCategory,
@@ -50,6 +52,14 @@ export function CatalogCanvas({
 }: Props): JSX.Element {
   const items = project.knowledge.items
   const [expanded, setExpanded] = useState<Set<string>>(new Set(activeStage.categories.map((c) => c.id)))
+
+  useEffect(() => {
+    setExpanded(current => {
+      const next = new Set(current)
+      for (const category of activeStage.categories) next.add(category.id)
+      return next
+    })
+  }, [activeStage])
 
   const toggle = (id: string) =>
     setExpanded((s) => {
@@ -78,6 +88,37 @@ export function CatalogCanvas({
           flexShrink: 0,
         }}
       >
+        <nav
+          aria-label="产业链阶段"
+          data-testid="catalog-editor-stage-tabs"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+            gap: 4,
+            marginBottom: 12,
+            padding: 3,
+            borderRadius: 5,
+            background: 'var(--ig-colors-paper-sunken)',
+            border: '1px solid var(--ig-colors-rule)',
+          }}
+        >
+          {project.knowledge.stages.map(stage => {
+            const active = stage.key === activeStage.key
+            return (
+              <button
+                key={stage.key}
+                type="button"
+                data-testid={`catalog-editor-stage-${stage.key}`}
+                data-active={active ? 'true' : 'false'}
+                aria-pressed={active}
+                onClick={() => onSelectStage(stage.key)}
+                style={stageButtonStyle(active)}
+              >
+                {stage.label}
+              </button>
+            )
+          })}
+        </nav>
         <div className="eyebrow">Stage</div>
         <div
           style={{
@@ -401,5 +442,21 @@ function iconButtonStyle(): React.CSSProperties {
     padding: 0,
     borderRadius: 3,
     color: 'var(--ig-colors-ink-muted)',
+  }
+}
+
+function stageButtonStyle(active: boolean): React.CSSProperties {
+  return {
+    minWidth: 0,
+    padding: '6px 4px',
+    border: 'none',
+    borderRadius: 3,
+    background: active ? 'var(--ig-colors-paper-raised)' : 'transparent',
+    boxShadow: active ? '0 1px 3px rgba(15, 23, 42, .12)' : 'none',
+    color: active ? 'var(--ig-colors-ink)' : 'var(--ig-colors-ink-muted)',
+    fontSize: 12,
+    fontWeight: active ? 600 : 500,
+    cursor: 'pointer',
+    transition: 'background 150ms ease, color 150ms ease, box-shadow 150ms ease',
   }
 }

@@ -16,6 +16,7 @@ import type {
   IndustryCategory,
   IndustryItem,
   CatalogProductConfig,
+  PanoramaModel,
 } from '@domain/project-types'
 import {
   Alert,
@@ -28,12 +29,13 @@ import {
   useProject,
   useUpdateCatalogConfig,
   useUpdateKnowledge,
+  useUpdatePanorama,
 } from '../api'
 import { useCatalogEditorStore } from '../store'
-import { CatalogStageTabs } from './CatalogStageTabs'
 import { CatalogCanvas } from './CatalogCanvas'
 import { CatalogInspector } from './CatalogInspector'
-import { CatalogPreview } from './CatalogPreview'
+import { CatalogAuthoringCanvas } from './CatalogAuthoringCanvas'
+import { CatalogEditorCanvas } from './CatalogEditorCanvas'
 import { CatalogToolbar } from './CatalogToolbar'
 import { ApiError } from '../../../lib/api-client'
 import { useGlobalShortcuts } from '../../../hooks/useGlobalShortcuts'
@@ -52,10 +54,13 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
   const projectQuery = useProject(projectId)
   const updateKnowledge = useUpdateKnowledge(projectId)
   const updateCatalogConfig = useUpdateCatalogConfig(projectId)
+  const updatePanorama = useUpdatePanorama(projectId)
 
   const [draft, setDraft] = useState<GuideProject | null>(null)
   const [pendingConfig, setPendingConfig] = useState<boolean>(false)
   const [pendingKnowledge, setPendingKnowledge] = useState<boolean>(false)
+  const [pendingPanorama, setPendingPanorama] = useState<boolean>(false)
+  const [canvasMode, setCanvasMode] = useState<'editor' | 'preview'>('editor')
   const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -63,6 +68,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
       setDraft(projectQuery.data)
       setPendingConfig(false)
       setPendingKnowledge(false)
+      setPendingPanorama(false)
     }
   }, [projectQuery.data])
 
@@ -99,26 +105,43 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
     [setDirty],
   )
 
+  const handlePatchPanorama = useCallback(
+    (mutator: (panorama: PanoramaModel) => PanoramaModel) => {
+      setDraft(prev => (prev ? { ...prev, panorama: mutator(prev.panorama) } : prev))
+      setPendingPanorama(true)
+      setDirty(true)
+    },
+    [setDirty],
+  )
+
   const handleSave = async () => {
     if (!draft) return
     setSaveError(null)
-    const rev = draft.metadata.revision
     try {
+      let current = draft
       if (pendingKnowledge) {
-        await updateKnowledge.mutateAsync({
-          knowledge: draft.knowledge,
-          expectedRevision: rev,
+        current = await updateKnowledge.mutateAsync({
+          knowledge: current.knowledge,
+          expectedRevision: current.metadata.revision,
         })
         setPendingKnowledge(false)
       }
+      if (pendingPanorama) {
+        current = await updatePanorama.mutateAsync({
+          panorama: current.panorama,
+          expectedRevision: current.metadata.revision,
+        })
+        setPendingPanorama(false)
+      }
       if (pendingConfig) {
-        await updateCatalogConfig.mutateAsync({
-          catalog: draft.products.catalog,
-          expectedRevision: rev,
+        current = await updateCatalogConfig.mutateAsync({
+          catalog: current.products.catalog,
+          expectedRevision: current.metadata.revision,
         })
         setPendingConfig(false)
       }
-      if (pendingKnowledge || pendingConfig) {
+      setDraft(current)
+      if (pendingKnowledge || pendingPanorama || pendingConfig) {
         setDirty(false)
       }
     } catch (e) {
@@ -162,25 +185,30 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
 
   const stagesArr = draft.knowledge.stages as unknown as IndustryStage[]
   const activeStage = stagesArr.find((s) => s.key === selectedStage) ?? stagesArr[0]
-  const isSaving = updateCatalogConfig.isPending || updateKnowledge.isPending
+  const isSaving = updateCatalogConfig.isPending || updateKnowledge.isPending || updatePanorama.isPending
+
+  /** Keep the authoring selection aligned with the runtime: a stage or category
+   * always opens on its first available tertiary item. */
+  const selectCategory = (categoryId: string) => {
+    const category = stagesArr.flatMap(stage => stage.categories).find(c => c.id === categoryId)
+    const firstItemId = category?.itemIds.find(id => Boolean(draft.knowledge.items[id]))
+    setSelection(firstItemId ? { kind: 'item', id: firstItemId } : { kind: 'category', id: categoryId })
+  }
+  const selectStage = (stageKey: IndustryStage['key']) => {
+    setSelectedStage(stageKey)
+    const category = stagesArr.find(stage => stage.key === stageKey)?.categories[0]
+    if (category) selectCategory(category.id)
+    else setSelection(null)
+  }
 
   return (
     <Flex direction="column" h="100%" bg="bg">
-      <CatalogStageTabs
-        stages={stagesArr}
-        activeStageKey={selectedStage}
-        onChange={setSelectedStage}
-        stats={stagesArr.map((s) => ({
-          key: s.key,
-          count: s.categories.length,
-        }))}
-      />
-
       <CatalogToolbar
         onSave={() => void handleSave()}
         isSaving={isSaving}
-        isDirty={pendingKnowledge || pendingConfig}
+        isDirty={pendingKnowledge || pendingPanorama || pendingConfig}
         hasUnsavedKnowledge={pendingKnowledge}
+        hasUnsavedPanorama={pendingPanorama}
         hasUnsavedConfig={pendingConfig}
       />
 
@@ -205,7 +233,11 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
           project={draft}
           activeStage={activeStage}
           selection={selection}
-          onSelect={setSelection}
+          onSelectStage={selectStage}
+          onSelect={(next) => {
+            if (next?.kind === 'category') selectCategory(next.id)
+            else setSelection(next)
+          }}
           onAddCategory={() => {
             handlePatchKnowledge((k) => {
               const id = nextId('cat')
@@ -238,6 +270,9 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
             }) as GuideProject['knowledge'])
           }}
           onDeleteCategory={(categoryId) => {
+            const itemIds = stagesArr
+              .flatMap(stage => stage.categories)
+              .find(category => category.id === categoryId)?.itemIds ?? []
             handlePatchKnowledge((k) => ({
               ...k,
               stages: stagesArr.map((s) => ({
@@ -250,6 +285,13 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
                 ),
               ),
             }) as GuideProject['knowledge'])
+            handlePatchPanorama(panorama => {
+              const { [categoryId]: _category, ...categories } = panorama.categories
+              const items = Object.fromEntries(
+                Object.entries(panorama.items).filter(([itemId]) => !itemIds.includes(itemId)),
+              )
+              return { ...panorama, categories, items }
+            })
             if (selection?.kind === 'category' && selection.id === categoryId) {
               setSelection(null)
             }
@@ -276,6 +318,16 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
                 })),
               } as GuideProject['knowledge']
             })
+            handlePatchPanorama(panorama => ({
+              ...panorama,
+              items: {
+                ...panorama.items,
+                [id]: {
+                  marker: { x: 0.5, y: 0.5 },
+                  focusRect: { x: 0.35, y: 0.35, width: 0.2, height: 0.2 },
+                },
+              },
+            }))
             setSelection({ kind: 'item', id })
           }}
           onDeleteItem={(itemId) => {
@@ -296,14 +348,40 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
                 })),
               } as GuideProject['knowledge']
             })
+            handlePatchPanorama(panorama => {
+              const { [itemId]: _item, ...items } = panorama.items
+              return { ...panorama, items }
+            })
             if (selection?.kind === 'item' && selection.id === itemId) {
               setSelection(null)
             }
           }}
         />
 
-        <Box bg="bg.sunken" overflow="hidden" minW="0">
-          <CatalogPreview project={draft} />
+        <Box bg="bg.sunken" overflow="hidden" minW="0" position="relative">
+          <Box position="absolute" top="3" right="3" zIndex="3" display="flex" gap="1" bg="rgba(15,23,42,.84)" p="1" borderRadius="md">
+            <button type="button" onClick={() => setCanvasMode('editor')} data-testid="catalog-canvas-mode-editor" style={canvasModeButtonStyle(canvasMode === 'editor')}>编辑</button>
+            <button type="button" onClick={() => setCanvasMode('preview')} data-testid="catalog-canvas-mode-preview" style={canvasModeButtonStyle(canvasMode === 'preview')}>运行时预览</button>
+          </Box>
+          {canvasMode === 'editor' ? (
+            <CatalogAuthoringCanvas
+              project={draft}
+              selectedStage={selectedStage}
+              selection={selection}
+              onSelect={setSelection}
+              onPatchPanorama={handlePatchPanorama}
+            />
+          ) : (
+            <CatalogEditorCanvas
+              project={draft}
+              selectedStage={selectedStage}
+              selection={selection}
+              onSelectStage={selectStage}
+              onSelect={setSelection}
+              onPatchPanorama={handlePatchPanorama}
+              mode="preview"
+            />
+          )}
         </Box>
 
         <CatalogInspector
@@ -312,6 +390,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
           activeStage={activeStage}
           onPatchCatalogConfig={handlePatchCatalogConfig}
           onPatchKnowledge={handlePatchKnowledge}
+          onPatchPanorama={handlePatchPanorama}
           onSaveRequested={() => void handleSave()}
           hasUnsavedConfig={pendingConfig}
           isSaving={isSaving}
@@ -319,4 +398,8 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
       </Grid>
     </Flex>
   )
+}
+
+function canvasModeButtonStyle(active: boolean): React.CSSProperties {
+  return { border: '0', borderRadius: 4, padding: '5px 8px', fontSize: 12, cursor: 'pointer', color: active ? '#0f172a' : '#cbd5e1', background: active ? '#f8fafc' : 'transparent' }
 }

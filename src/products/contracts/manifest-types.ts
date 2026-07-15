@@ -63,7 +63,6 @@ export interface ItemManifestEntry {
   title: string
   description: string
   order: number
-  tags?: string[]
 }
 
 export interface ProductManifestBase {
@@ -74,7 +73,10 @@ export interface ProductManifestBase {
   projectVersion: string
   locale: string
   generatedAt: string
-  panorama: AssetRef & { initialViewport: Viewport; cameraBounds: { minZoom: number; maxZoom: number } }
+  panorama: AssetRef & {
+    initialViewport: Viewport
+    cameraBounds: { minZoom: number; maxZoom: number }
+  }
   /** Only the routes that originate at a location reachable from this product. */
   routes: ExperienceRoute[]
   scenes: HtmlSceneManifest[]
@@ -84,26 +86,61 @@ export interface ProductManifestBase {
 export interface AtlasManifest extends ProductManifestBase {
   product: 'atlas'
   /** Categories shown as hotspots in the Atlas UI. */
-  categories: Array<CategoryManifestEntry & { viewport: Viewport; hotspot?: { x: number; y: number } }>
-  items: Array<ItemManifestEntry & { marker: { x: number; y: number }; viewportOverride?: Viewport; callout?: { markerPosition: 'top' | 'bottom'; markerGapPx: number; minZoom?: number } }>
+  categories: Array<
+    CategoryManifestEntry & { viewport: Viewport; hotspot?: { x: number; y: number } }
+  >
+  items: Array<
+    ItemManifestEntry & {
+      marker: { x: number; y: number }
+      viewportOverride?: Viewport
+      callout?: { markerPosition: 'top' | 'bottom'; markerGapPx: number; minZoom?: number }
+    }
+  >
   /** Product-level configuration. */
   config: {
     viewport: { width: number; height: number }
     hintText?: string
-    interaction: { wheelZoom: boolean; dragPan: boolean; pinchZoom: boolean; resetCameraEnabled: boolean }
+    interaction: {
+      wheelZoom: boolean
+      dragPan: boolean
+      pinchZoom: boolean
+      resetCameraEnabled: boolean
+    }
     chrome: Record<string, unknown>
-    theme: { hotspotVariant: 'default' | 'highlight' | 'minimal'; calloutVariant: 'classic' | 'connector' | 'none' }
+    theme: {
+      hotspotVariant: 'default' | 'highlight' | 'minimal'
+      calloutVariant: 'classic' | 'connector' | 'none'
+    }
   }
 }
 
 export interface CatalogManifest extends ProductManifestBase {
   product: 'catalog'
-  stages: Array<IndustryStage & { categories: Array<CategoryManifestEntry & { viewport: Viewport }> }>
-  items: Array<ItemManifestEntry & { marker: { x: number; y: number }; focusRect: { x: number; y: number; width: number; height: number; radius?: number; maskOpacity?: number } }>
+  stages: Array<
+    IndustryStage & { categories: Array<CategoryManifestEntry & { viewport: Viewport }> }
+  >
+  items: Array<
+    ItemManifestEntry & {
+      marker: { x: number; y: number }
+      focusRect: {
+        x: number
+        y: number
+        width: number
+        height: number
+        radius?: number
+        maskOpacity?: number
+      }
+    }
+  >
   config: {
     viewport: { width: number; height: number }
     hintText?: string
-    interaction: { listActivation: 'center-nearest'; markerActivation: boolean; viewportAnimationMs: number }
+    atlasLaunchUrl?: string
+    interaction: {
+      listActivation: 'center-nearest'
+      markerActivation: boolean
+      viewportAnimationMs: number
+    }
     chrome: Record<string, unknown>
     theme: { listDensity: 'compact' | 'comfortable'; focusVariant: 'rect' | 'pill' }
   }

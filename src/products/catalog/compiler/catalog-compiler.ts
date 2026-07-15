@@ -44,12 +44,12 @@ export function compileCatalog(
   // Build stages with their categories. Each category includes viewport
   // (the operator-set view of the panorama that the focus overlay will
   // animate to when an item is selected).
-  const stages: CatalogStageEntry[] = normalizedProject.knowledge.stages.map((stage) => ({
+  const stages: CatalogStageEntry[] = normalizedProject.knowledge.stages.map(stage => ({
     key: stage.key,
     label: stage.label,
     order: stage.order,
     categories: [...stage.categories]
-      .sort((a, b) => a.id.localeCompare(b.id))
+      .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
       .map((c): CatalogCategoryEntry => {
         const layout = normalizedProject.panorama.categories[c.id]
         return {
@@ -57,7 +57,8 @@ export function compileCatalog(
           title: c.title,
           order: c.order,
           ...(c.description ? { description: c.description } : {}),
-          itemIds: [...c.itemIds].sort(),
+          // The first id is the authored default selection when a category is opened.
+          itemIds: [...c.itemIds],
           experience: c.experience,
           viewport: layout?.viewport ?? { centerX: 0.5, centerY: 0.5, zoom: 2 },
         }
@@ -68,7 +69,7 @@ export function compileCatalog(
   const allItems: CatalogItemEntry[] = []
   for (const stage of normalizedProject.knowledge.stages) {
     for (const cat of stage.categories) {
-      for (const itemId of [...cat.itemIds].sort()) {
+      for (const itemId of cat.itemIds) {
         const item = normalizedProject.knowledge.items[itemId]
         const layout = normalizedProject.panorama.items[itemId]
         if (!item || !layout?.marker || !layout?.focusRect) continue
@@ -78,8 +79,8 @@ export function compileCatalog(
           title: item.title,
           description: item.description ?? '',
           order: item.order ?? 0,
-          ...(item.tags ? { tags: item.tags } : {}),
           marker: { x: layout.marker.x, y: layout.marker.y },
+          ...(layout.viewportOverride ? { viewportOverride: { ...layout.viewportOverride } } : {}),
           focusRect: {
             x: layout.focusRect.x,
             y: layout.focusRect.y,
@@ -96,9 +97,9 @@ export function compileCatalog(
   }
 
   // Scenes + routes
-  const sceneIds = new Set(normalizedProject.scenes.map((s) => s.id))
+  const sceneIds = new Set(normalizedProject.scenes.map(s => s.id))
   const reachableRoutes = normalizedProject.navigation.routes.filter(
-    (r) => r.from.kind === 'panorama' || ('sceneId' in r.from && sceneIds.has(r.from.sceneId)),
+    r => r.from.kind === 'panorama' || ('sceneId' in r.from && sceneIds.has(r.from.sceneId)),
   )
   const reachableSceneIds = new Set<string>()
   for (const r of reachableRoutes) {
@@ -106,9 +107,9 @@ export function compileCatalog(
     if (r.from.kind === 'scene') reachableSceneIds.add(r.from.sceneId)
   }
   const scenes = normalizedProject.scenes
-    .filter((s) => reachableSceneIds.size === 0 || reachableSceneIds.has(s.id))
+    .filter(s => reachableSceneIds.size === 0 || reachableSceneIds.has(s.id))
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((s) => ({
+    .map(s => ({
       sceneId: s.id,
       title: s.title,
       entryUrl: assetClosure(
@@ -124,7 +125,7 @@ export function compileCatalog(
       ),
       views: [...s.views]
         .sort((a, b) => a.id.localeCompare(b.id))
-        .map((view) => ({
+        .map(view => ({
           id: view.id,
           title: view.title,
           activationMessage: view.activationMessage,
@@ -140,7 +141,7 @@ export function compileCatalog(
     if (r.transition?.assetId) referencedAssets.add(r.transition.assetId)
   }
   const assets = Object.values(normalizedProject.assets.byId)
-    .filter((a) => referencedAssets.has(a.id))
+    .filter(a => referencedAssets.has(a.id))
     .sort((a, b) => a.id.localeCompare(b.id))
 
   const manifest: CatalogManifest = {
@@ -167,6 +168,9 @@ export function compileCatalog(
       ...(normalizedProject.products.catalog.hintText
         ? { hintText: normalizedProject.products.catalog.hintText }
         : {}),
+      ...(normalizedProject.products.catalog.atlasLaunchUrl
+        ? { atlasLaunchUrl: normalizedProject.products.catalog.atlasLaunchUrl }
+        : {}),
       interaction: normalizedProject.products.catalog.interaction,
       chrome: normalizedProject.products.catalog.chrome ?? {},
       theme: normalizedProject.products.catalog.theme,
@@ -178,7 +182,8 @@ export function compileCatalog(
 }
 
 function resolveSceneEntrySourcePath(asset: AssetDefinition): string {
-  const base = asset.kind === 'html-bundle' ? stripLegacyAssetsPrefix(asset.sourcePath) : asset.sourcePath
+  const base =
+    asset.kind === 'html-bundle' ? stripLegacyAssetsPrefix(asset.sourcePath) : asset.sourcePath
   const entryPath = asset.entryPath?.trim() || 'index.html'
   return `${base.replace(/\/+$/, '')}/${entryPath.replace(/^\/+/, '')}`
 }

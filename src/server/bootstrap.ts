@@ -37,15 +37,32 @@ export interface BootstrapInput {
       categories: Array<{
         id?: string
         title: string
-        items: Array<{ id?: string; title: string; description?: string; tags?: string[] }>
+        items: Array<{ id?: string; title: string; description?: string }>
         /** Which HTML scene view to bind this category to, if any. */
         htmlScene?: { sceneId: string; viewId: string }
       }>
     }>
   }
   panoramaImagePath?: string
-  htmlSceneBundles?: Array<{ id: string; title: string; path: string; entryPath?: string; views: Array<{ id: string; title: string; activationMessageType: string; categoryBindings: string[] }> }>
-  transitionVideos?: Array<{ from: ExperienceLocation; to: ExperienceLocation; path: string; timeoutMs?: number; onFailure?: 'abort-navigation' | 'cut' }>
+  htmlSceneBundles?: Array<{
+    id: string
+    title: string
+    path: string
+    entryPath?: string
+    views: Array<{
+      id: string
+      title: string
+      activationMessageType: string
+      categoryBindings: string[]
+    }>
+  }>
+  transitionVideos?: Array<{
+    from: ExperienceLocation
+    to: ExperienceLocation
+    path: string
+    timeoutMs?: number
+    onFailure?: 'abort-navigation' | 'cut'
+  }>
   integrations?: {
     analytics?: { enabled: boolean; profileId: string; pageType: string; contentName?: string }
     share?: { enabled: boolean; title?: string; description?: string }
@@ -80,7 +97,7 @@ function slugify(s: string): string {
     .replace(/[^a-zA-Z0-9一-龥]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase()
-    .replace(/[一-龥]+/g, (m) => 'zh-' + Buffer.from(m, 'utf-8').toString('hex').slice(0, 8))
+    .replace(/[一-龥]+/g, m => 'zh-' + Buffer.from(m, 'utf-8').toString('hex').slice(0, 8))
 }
 
 const SPATIAL_DEFAULT_CENTER: NormalizedPoint = { x: 0.5, y: 0.5 }
@@ -107,7 +124,10 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     const stageIndex = { upstream: 0, midstream: 1, downstream: 2 }[stageInput.key]
     const stage = stages[stageIndex]
     if (!stage) {
-      unmappedKnowledge.push({ path: `knowledge.stages.${stageInput.key}`, reason: 'unknown stage key' })
+      unmappedKnowledge.push({
+        path: `knowledge.stages.${stageInput.key}`,
+        reason: 'unknown stage key',
+      })
       continue
     }
     stage.categories = stageInput.categories.map((catInput, catIndex) => {
@@ -118,10 +138,15 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
         usedIds.add(id)
       }
       const experience = catInput.htmlScene
-        ? ({ kind: 'html-scene', sceneId: catInput.htmlScene.sceneId, viewId: catInput.htmlScene.viewId } as const)
+        ? ({
+            kind: 'html-scene',
+            sceneId: catInput.htmlScene.sceneId,
+            viewId: catInput.htmlScene.viewId,
+          } as const)
         : ({ kind: 'panorama' } as const)
       const items: IndustryItem[] = catInput.items.map((itemInput, itemIndex) => {
-        const itemId = itemInput.id ?? `${stageInput.key}-${slugify(catInput.title)}-${slugify(itemInput.title)}`
+        const itemId =
+          itemInput.id ?? `${stageInput.key}-${slugify(catInput.title)}-${slugify(itemInput.title)}`
         usedIds.add(itemId)
         return {
           id: itemId,
@@ -129,7 +154,6 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
           title: itemInput.title,
           description: itemInput.description ?? '',
           order: itemIndex,
-          tags: itemInput.tags,
         }
       })
       totalItems += items.length
@@ -137,7 +161,7 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
         id,
         title: catInput.title,
         order: catIndex,
-        itemIds: items.map((i) => i.id),
+        itemIds: items.map(i => i.id),
         experience,
       }
       // attach items to project.knowledge.items
@@ -161,7 +185,7 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
       title: bundle.title,
       assetId: `asset-${bundle.id}`,
       protocol: { channel: SCENE_PROTOCOL_CHANNEL, version: SCENE_PROTOCOL_VERSION },
-      views: bundle.views.map((v) => ({
+      views: bundle.views.map(v => ({
         id: v.id,
         title: v.title,
         activationMessage: { type: v.activationMessageType },
@@ -248,7 +272,11 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     for (const category of stage.categories) {
       if (!project.panorama.categories[category.id]) {
         project.panorama.categories[category.id] = {
-          viewport: { centerX: SPATIAL_DEFAULT_CENTER.x, centerY: SPATIAL_DEFAULT_CENTER.y, zoom: 3.6 },
+          viewport: {
+            centerX: SPATIAL_DEFAULT_CENTER.x,
+            centerY: SPATIAL_DEFAULT_CENTER.y,
+            zoom: 3.6,
+          },
         }
       }
     }
@@ -305,7 +333,11 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     issues: [
       ...draftCheck.issues,
       ...releaseCheck.issues,
-      ...unmappedKnowledge.map((u) => ({ code: 'UNMAPPED_KNOWLEDGE', path: u.path, message: u.reason })),
+      ...unmappedKnowledge.map(u => ({
+        code: 'UNMAPPED_KNOWLEDGE',
+        path: u.path,
+        message: u.reason,
+      })),
     ],
   }
 

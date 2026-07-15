@@ -22,6 +22,10 @@ test('AnalyticsAdapter tracks events with product + contentName dimensions', () 
     product: 'atlas',
     projectId: 'p1',
     contentName: 'rocket-guide',
+    profileId: 'profile-1',
+    pageType: 'interactive-guide',
+    defaultSource: 'f10',
+    dimensions: { campaign: 'summer' },
     provider: cap,
     now: () => new Date('2026-06-30T00:00:00.000Z'),
   })
@@ -30,6 +34,10 @@ test('AnalyticsAdapter tracks events with product + contentName dimensions', () 
   assert.equal(cap.events[0].product, 'atlas')
   assert.equal(cap.events[0].projectId, 'p1')
   assert.equal(cap.events[0].contentName, 'rocket-guide')
+  assert.equal(cap.events[0].profileId, 'profile-1')
+  assert.equal(cap.events[0].pageType, 'interactive-guide')
+  assert.equal(cap.events[0].defaultSource, 'f10')
+  assert.deepEqual(cap.events[0].dimensions, { campaign: 'summer' })
   assert.equal(cap.events[0].timestamp, '2026-06-30T00:00:00.000Z')
 })
 

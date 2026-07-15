@@ -9,6 +9,7 @@ interface Props {
   isSaving: boolean
   isDirty: boolean
   hasUnsavedKnowledge?: boolean
+  hasUnsavedPanorama?: boolean
   hasUnsavedConfig?: boolean
 }
 
@@ -17,10 +18,12 @@ export function CatalogToolbar({
   isSaving,
   isDirty,
   hasUnsavedKnowledge = false,
+  hasUnsavedPanorama = false,
   hasUnsavedConfig = false,
 }: Props): JSX.Element {
   const segments = [
     hasUnsavedKnowledge && 'knowledge',
+    hasUnsavedPanorama && 'panorama',
     hasUnsavedConfig && 'config',
   ].filter(Boolean)
   return (
