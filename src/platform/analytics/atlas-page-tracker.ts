@@ -5,7 +5,7 @@ export const WEBLOG_SCRIPT_URL = 'https://s.thsi.cn/cd/weblog/0.0.8/weblog.js'
 export interface WeBlogPayload {
   id: string
   action: 'show' | 'click'
-  logmap: Record<string, string>
+  logmap: Record<string, string | number>
 }
 
 export interface WeBlogClient {
@@ -162,7 +162,7 @@ export class AtlasPageTracker {
           pageType: this.config.pageType,
           name: this.config.name,
           source: this.resolveSource(),
-          value: String(this.lastReportedStaySeconds),
+          value: this.lastReportedStaySeconds / 5,
         },
       })
     }

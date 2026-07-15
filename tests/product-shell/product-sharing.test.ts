@@ -1,6 +1,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { F10HostAdapter, type F10SharePayload } from '../../src/platform/f10/f10-host-adapter.js'
+import {
+  F10HostAdapter,
+  shareWithBestAvailableHost,
+  type F10SharePayload,
+} from '../../src/platform/f10/f10-host-adapter.js'
 import { ProductShareController } from '../../src/product-shell/browser/shared/product-sharing.js'
 
 test('ProductShareController reports the click and shares a marked URL through F10', async () => {
@@ -59,4 +63,36 @@ test('ProductShareController does nothing when project sharing is disabled', asy
   await controller.share()
   assert.equal(controller.enabled, false)
   assert.equal(calls, 0)
+})
+
+test('shareWithBestAvailableHost catches F10 errors and falls back to navigator.share', async () => {
+  const browserPayloads: ShareData[] = []
+  const payload: F10SharePayload = {
+    title: '产业链',
+    text: '产业链',
+    content: '分享描述',
+    description: '分享描述',
+    url: 'https://example.com/atlas?from=share',
+    shareUrl: 'https://example.com/atlas?from=share',
+  }
+  const throwingF10 = {
+    shareUrlCard: async () => {
+      throw new Error('native share failed')
+    },
+  } as F10HostAdapter
+
+  await shareWithBestAvailableHost(throwingF10, payload, {
+    share: async browserPayload => {
+      browserPayloads.push(browserPayload)
+    },
+    clipboard: {} as Clipboard,
+  })
+
+  assert.deepEqual(browserPayloads, [
+    {
+      title: '产业链',
+      text: '分享描述',
+      url: 'https://example.com/atlas?from=share',
+    },
+  ])
 })

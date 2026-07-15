@@ -222,7 +222,7 @@ Catalog 默认全景场景没有顶部分享工具栏。Catalog HTML Scene 若�
 }
 ```
 
-独立 Catalog 运行时点击右下按钮后，产品 Shell 调用共享 `F10HostAdapter.jumpTofullScreenPage(url)`。优先使用或按需加载 `F10Utils.jumpTofullScreenPage`；能力不存在或调用抛错时，由调用层 `catch` 使用 `window.top.open`，再降级为 `window.open`。编辑器内部预览继续使用新窗口，不模拟客户端宿主。
+独立 Catalog 运行时点击右下按钮后，产品 Shell 调用共享 `F10HostAdapter.jumpTofullScreenPage(url)`。优先使用或按需加载 `F10Utils.jumpTofullScreenPage`；能力不存在或调用抛错时，由调用层 `catch` 使用 `window.open`。编辑器内部预览继续使用新窗口，不模拟客户端宿主。
 
 该 Atlas URL 只能保存在项目实例属性中，不能硬编码进 Catalog runtime、编辑器或 F10 适配器。
 
@@ -254,11 +254,12 @@ Catalog 默认全景场景没有顶部分享工具栏。Catalog HTML Scene 若�
 - Atlas 使用专用 `AtlasPageTracker`，运行时代码中只有本设计约定的四个事件 ID；Catalog manifest 与 `app.js` 均不包含 analytics/WeBlog 代码。
 - Atlas 全景图与 HTML Scene 共用 `ProductShareController` 和 `F10HostAdapter`；Catalog 右下入口也复用同一适配器调用 `jumpTofullScreenPage`。
 - `@king-fisher/bridge` 0.6.0 与 `@king-fisher/falcon` 0.5.26-zcp-692-snapshot 以隔离 UMD vendor 形式进入两份独立产物，F10Utils 1.6.3 和 WeBlog 0.0.8 按需加载。
-- 静态构建继续执行 ES5 语法解析校验。完整测试结果为 178/178 通过，TypeScript 类型检查和 ESLint 均无错误。
+- 停留事件按完整 5 秒区间发送数字序号 `1、2、3……`；F10 分享和 Catalog 跳转的调用层均以显式 `try/catch` 分别进入 `navigator.share` 和 `window.open`。
+- 静态构建继续执行 ES5 语法解析校验。完整测试结果为 181/181 通过，TypeScript 类型检查和 ESLint 均无错误。
 
-存储芯片项目 revision 13 的验收预览：
+存储芯片项目 revision 14 的验收预览：
 
-- Atlas：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784114357897-13/index.html`
-- Catalog：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784114328229-13/index.html`
+- Atlas：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784116217783-14/index.html`
+- Catalog：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784116219490-14/index.html`
 
 产物核对结果：Atlas 使用 `appKey: ce19ea099b`、`pageType: visindustry`、`name: 存储芯片产业链`、`defaultSource: industry`；Catalog 使用项目配置的完整 Atlas 线上地址，且两份预览入口均返回 HTTP 200。

@@ -20,20 +20,32 @@ test('openAtlasWithF10 prefers the host fullscreen helper', async () => {
   assert.deepEqual(calls, [targetUrl])
 })
 
-test('openAtlasWithF10 falls back to the best available browser window', async () => {
+test('openAtlasWithF10 falls back to window.open when F10 is unavailable', async () => {
   const calls: string[] = []
-  const fakeWindow = {
+  ;(globalThis as unknown as { window: unknown }).window = {
     open: (url: string) => {
       calls.push(url)
       return {}
     },
   }
+  await openAtlasWithF10(targetUrl)
+  assert.deepEqual(calls, [targetUrl])
+})
+
+test('openAtlasWithF10 catches F10 errors and opens a browser window', async () => {
+  const calls: string[] = []
   ;(globalThis as unknown as { window: unknown }).window = {
-    top: fakeWindow,
-    open: () => {
-      throw new Error('top window should be preferred')
+    open: (url: string) => {
+      calls.push(url)
+      return {}
     },
   }
-  await openAtlasWithF10(targetUrl)
+  const throwingF10 = {
+    jumpTofullScreenPage: async () => {
+      throw new Error('native jump failed')
+    },
+  }
+
+  await openAtlasWithF10(targetUrl, throwingF10 as never)
   assert.deepEqual(calls, [targetUrl])
 })

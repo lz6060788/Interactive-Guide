@@ -133,7 +133,7 @@ test('AtlasPageTracker reports share click with the fixed payload', async () => 
   tracker.destroy()
 })
 
-test('AtlasPageTracker reports 5-second visible stay milestones with elapsed values', async () => {
+test('AtlasPageTracker reports numeric 5-second interval ordinals', async () => {
   const environment = new FakeEnvironment()
   const payloads: WeBlogPayload[] = []
   const tracker = new AtlasPageTracker({
@@ -156,7 +156,7 @@ test('AtlasPageTracker reports 5-second visible stay milestones with elapsed val
 
   assert.deepEqual(
     payloads.map(payload => payload.logmap.value),
-    ['5', '10'],
+    [1, 2],
   )
   assert.ok(
     payloads.every(
@@ -164,6 +164,37 @@ test('AtlasPageTracker reports 5-second visible stay milestones with elapsed val
     ),
   )
   tracker.destroy()
+})
+
+test('AtlasPageTracker reports 4/8/11-second exits as none, 1, and 1+2', async () => {
+  const cases = [
+    { durationMs: 4000, expected: [] },
+    { durationMs: 8000, expected: [1] },
+    { durationMs: 11000, expected: [1, 2] },
+  ]
+
+  for (const testCase of cases) {
+    const environment = new FakeEnvironment()
+    const payloads: WeBlogPayload[] = []
+    const tracker = new AtlasPageTracker({
+      config,
+      environment,
+      loadWeblog: async () => ({ report: payload => payloads.push(payload) }),
+    })
+    tracker.start()
+    await tracker.whenIdle()
+    payloads.length = 0
+
+    environment.currentTime = testCase.durationMs
+    tracker.destroy()
+    await tracker.whenIdle()
+
+    assert.deepEqual(
+      payloads.map(payload => payload.logmap.value),
+      testCase.expected,
+      `${testCase.durationMs}ms visible stay`,
+    )
+  }
 })
 
 test('AtlasPageTracker excludes hidden time from stay milestones', async () => {
@@ -187,7 +218,7 @@ test('AtlasPageTracker excludes hidden time from stay milestones', async () => {
 
   assert.deepEqual(
     payloads.map(payload => payload.logmap.value),
-    ['5'],
+    [1],
   )
   tracker.destroy()
 })

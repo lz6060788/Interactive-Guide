@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: Atlas F10 分享 / WeBlog 四事件 / 存储芯片 revision 13 预览验收 (2026-07-15)
+Last sync: Atlas 停留序号 / F10 异常兜底 / 存储芯片 revision 14 预览验收 (2026-07-15)
 
 ### Modules
 
@@ -17,7 +17,7 @@ Last sync: Atlas F10 分享 / WeBlog 四事件 / 存储芯片 revision 13 预览
 
 | Doc | Description |
 |-----|-------------|
-| [Atlas F10 分享与 WeBlog 四事件设计](superpowers/specs/2026-07-15-atlas-f10-weblog-integration-design.md) | Atlas-only 四事件、F10 分享/跳转、项目配置契约与 revision 13 产物验收 (2026-07-15) |
+| [Atlas F10 分享与 WeBlog 四事件设计](superpowers/specs/2026-07-15-atlas-f10-weblog-integration-design.md) | Atlas-only 四事件、F10 分享/跳转、项目配置契约与 revision 14 产物验收 (2026-07-15) |
 | [存储芯片产业链项目引导报告](development/memory-chip-project-bootstrap-report.md) | 3/9/27 知识映射、9/27 空间坐标、双产品编译验证与人工校准清单 (2026-07-15) |
 | [Phase 18 ES5 独立产物导出](development/phase18-es5-standalone-export-2026-07-15.md) | Atlas/Catalog 共用 ES5 IIFE 构建、静态预览、ZIP 下载和编辑器自动保存导出 (2026-07-15) |
 | [Phase 17 修复](development/phase17-atlas-html-scene-route-transition-2026-07-06.md) | Atlas HTML Scene category route / transition video / preview scene iframe / navigation save + demo scene 迁移到 SceneBridge v1.0.0 + scene 复用宿主 chrome + Atlas/Catalog 共用 scene host + 平台层 SceneHostController 抽离 + draft/release 宿主页骨架落盘 + preview/release 静态文件路由闭环 + 真实 runtime 宿主接入产物链 + legacy 资产路径发布修复 (2026-07-06 / 2026-07-07) |

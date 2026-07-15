@@ -39,25 +39,17 @@ export class F10HostAdapter {
   ) {}
 
   async shareUrlCard(payload: F10SharePayload): Promise<boolean> {
-    try {
-      const utils = await this.ensureLoaded()
-      if (typeof utils?.shareUrlCard !== 'function') return false
-      await utils.shareUrlCard(payload)
-      return true
-    } catch {
-      return false
-    }
+    const utils = await this.ensureLoaded()
+    if (typeof utils?.shareUrlCard !== 'function') return false
+    await utils.shareUrlCard(payload)
+    return true
   }
 
   async jumpTofullScreenPage(url: string): Promise<boolean> {
-    try {
-      const utils = await this.ensureLoaded()
-      if (typeof utils?.jumpTofullScreenPage !== 'function') return false
-      await utils.jumpTofullScreenPage(url)
-      return true
-    } catch {
-      return false
-    }
+    const utils = await this.ensureLoaded()
+    if (typeof utils?.jumpTofullScreenPage !== 'function') return false
+    await utils.jumpTofullScreenPage(url)
+    return true
   }
 
   async ensureLoaded(): Promise<F10UtilsApi | null> {
@@ -110,20 +102,27 @@ export function createShareUrl(href: string): string {
 export async function shareWithBestAvailableHost(
   adapter: F10HostAdapter,
   payload: F10SharePayload,
+  browserNavigator: Pick<Navigator, 'share' | 'clipboard'> = globalThis.navigator,
 ): Promise<void> {
-  if (await adapter.shareUrlCard(payload)) return
-  const browserNavigator = globalThis.navigator
-  if (typeof browserNavigator?.share === 'function') {
-    try {
-      await browserNavigator.share({
-        title: payload.title,
-        text: payload.description,
-        url: payload.url,
-      })
-      return
-    } catch {
-      // User cancellation and unsupported payloads fall through to copy.
+  try {
+    if (await adapter.shareUrlCard(payload)) return
+    throw new Error('F10Utils.shareUrlCard is unavailable')
+  } catch {
+    // F10 is optional outside the client host; fall through to Web Share.
+  }
+
+  try {
+    if (typeof browserNavigator?.share !== 'function') {
+      throw new Error('navigator.share is unavailable')
     }
+    await browserNavigator.share({
+      title: payload.title,
+      text: payload.description,
+      url: payload.url,
+    })
+    return
+  } catch {
+    // User cancellation and unsupported payloads fall through to copy.
   }
   if (browserNavigator?.clipboard?.writeText) {
     await browserNavigator.clipboard.writeText(payload.url).catch(() => undefined)
