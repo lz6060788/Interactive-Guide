@@ -1,99 +1,99 @@
-# 存储芯片产业链项目引导报告
+# 存储芯片产业链项目引导与空间校准报告
 
-## 创建结果
+## 当前项目
 
 - 项目 ID：`memory-chip-industry-chain`
 - 项目标题：存储芯片产业链
-- 创建日期：2026-07-15
-- 数据目录：`data/projects/memory-chip-industry-chain`
-- 项目 revision：3
+- 当前 revision：4
 - 知识结构：3 个一级阶段、9 个二级分类、27 个三级节点
 - 场景与转场：0 个 HTML Scene、0 条转场路由
 - 运行时资产：1 张全景底图
 - 公司标的：未导入
 
-源资料：
+当前空间基准：
 
-- `C:\Users\91252\Downloads\asset\data.xlsx`
 - `C:\Users\91252\Downloads\asset\image_root.jpg`（8192×4096）
-- `C:\Users\91252\Downloads\asset\image_second.png`（4113×2058）
-- `C:\Users\91252\Downloads\asset\iamge_third.png`（5319×2661）
+- `C:\Users\91252\Downloads\asset\image_second.png`（1823×912）
+- `C:\Users\91252\Downloads\asset\image_third.png`（3069×1535）
 
-表格的 `分类路径` 用于还原合并单元格造成的一级/二级空值。`公司标的`、`是否属于场景图` 和 `是否属于核心产品` 未进入项目数据。
+底图源文件与项目运行时图片 SHA-256 一致。两张标注图只用于坐标校准，不进入运行时资产。
 
 ## 二级分类坐标
 
-| 阶段 | 二级分类 | ID | hotspot.x | hotspot.y | 来源 |
-| --- | --- | --- | ---: | ---: | --- |
-| upstream | 晶圆制造材料 | `category-upstream-wafer-materials` | 0.195478 | 0.301749 | 标注图 |
-| upstream | 前道制造设备 | `category-upstream-front-end-equipment` | 0.196207 | 0.498056 | 标注图 |
-| upstream | 封测设备与材料 | `category-upstream-packaging-test` | 0.196207 | 0.836735 | 标注图 |
-| midstream | 晶圆制造 | `category-midstream-wafer-manufacturing` | 0.519815 | 0.349368 | 标注图 |
-| midstream | 存储芯片产品 | `category-midstream-memory-products` | 0.519815 | 0.498056 | 标注图 |
-| midstream | 先进封装 | `category-midstream-advanced-packaging` | 0.519086 | 0.663265 | 标注图 |
-| midstream | 模组与存储产品 | `category-midstream-memory-modules` | 0.518600 | 0.835763 | 标注图 |
-| downstream | 算力与服务器 | `category-downstream-compute-servers` | 0.836372 | 0.348882 | 标注图 |
-| downstream | 终端电子 | `category-downstream-terminal-electronics` | 0.836372 | 0.649660 | 标注图 |
+二级 hotspot 与分类 viewport 使用同一个中心；原有 zoom、activationZoom 和阈值保持不变。
 
-## 三级节点坐标与临时聚焦框
+| 阶段 | 二级分类 | ID | hotspot.x | hotspot.y | zoom |
+| --- | --- | --- | ---: | ---: | ---: |
+| upstream | 晶圆制造材料 | `category-upstream-wafer-materials` | 0.080088 | 0.570175 | 3.6 |
+| upstream | 前道制造设备 | `category-upstream-front-end-equipment` | 0.214482 | 0.346491 | 3.6 |
+| upstream | 封测设备与材料 | `category-upstream-packaging-test` | 0.223807 | 0.764254 | 3.6 |
+| midstream | 晶圆制造 | `category-midstream-wafer-manufacturing` | 0.555129 | 0.307018 | 3.6 |
+| midstream | 存储芯片产品 | `category-midstream-memory-products` | 0.648382 | 0.481360 | 3.6 |
+| midstream | 先进封装 | `category-midstream-advanced-packaging` | 0.526056 | 0.656798 | 3.6 |
+| midstream | 模组与存储产品 | `category-midstream-memory-modules` | 0.525507 | 0.830044 | 3.6 |
+| downstream | 算力与服务器 | `category-downstream-compute-servers` | 0.851892 | 0.268640 | 3.6 |
+| downstream | 终端电子 | `category-downstream-terminal-electronics` | 0.783873 | 0.676535 | 3.6 |
 
-`focusRect` 列顺序为 `x, y, width, height`。所有临时矩形使用公共默认宽高 0.22×0.18，圆角 12、遮罩透明度 0.48；背景镜头中心与 marker 一致，zoom 为 3.6。
+## 三级节点坐标
 
-| 阶段 | 二级分类 | 三级节点 | marker.x | marker.y | focusRect | 校准状态 |
-| --- | --- | --- | ---: | ---: | --- | --- |
-| upstream | 晶圆制造材料 | 半导体硅片 | 0.046249 | 0.369410 | 0.000000, 0.279410, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 晶圆制造材料 | 光刻胶与配套试剂 | 0.127280 | 0.295378 | 0.017280, 0.205378, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 晶圆制造材料 | 电子特气 | 0.224478 | 0.295753 | 0.114478, 0.205753, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 晶圆制造材料 | 靶材与前驱体 | 0.308329 | 0.295753 | 0.198329, 0.205753, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 晶圆制造材料 | CMP抛光材料 | 0.035157 | 0.544156 | 0.000000, 0.454156, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 前道制造设备 | 光刻设备 | 0.124459 | 0.465239 | 0.014459, 0.375239, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 前道制造设备 | 刻蚀设备 | 0.207934 | 0.464863 | 0.097934, 0.374863, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 前道制造设备 | 薄膜沉积设备 | 0.283888 | 0.465239 | 0.173888, 0.375239, 0.22, 0.18 | 估算，优先校准 |
-| upstream | 前道制造设备 | 清洗与CMP设备 | 0.247791 | 0.633972 | 0.137791, 0.543972, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 前道制造设备 | 量检测设备 | 0.049069 | 0.810973 | 0.000000, 0.720973, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 封测设备与材料 | 封装设备 | 0.122203 | 0.633972 | 0.012203, 0.543972, 0.22, 0.18 | 估算，优先校准 |
-| upstream | 封测设备与材料 | 测试设备 | 0.174093 | 0.822247 | 0.064093, 0.732247, 0.22, 0.18 | 标注点；矩形待校准 |
-| upstream | 封测设备与材料 | 封装基板与引线材料 | 0.297236 | 0.822247 | 0.187236, 0.732247, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 晶圆制造 | 存储晶圆制造 | 0.514382 | 0.350620 | 0.404382, 0.260620, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 存储芯片产品 | DRAM | 0.412860 | 0.487411 | 0.302860, 0.397411, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 存储芯片产品 | 3D NAND Flash | 0.484490 | 0.487411 | 0.374490, 0.397411, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 存储芯片产品 | NOR Flash | 0.565332 | 0.487411 | 0.455332, 0.397411, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 存储芯片产品 | EEPROM | 0.632826 | 0.487411 | 0.522826, 0.397411, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 先进封装 | HBM堆叠封装 | 0.397631 | 0.671176 | 0.287631, 0.581176, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 先进封装 | TSV与微凸块互连 | 0.522467 | 0.671176 | 0.412467, 0.581176, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 先进封装 | 硅中介层 | 0.636586 | 0.671176 | 0.526586, 0.581176, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 模组与存储产品 | 内存模组 | 0.462305 | 0.821871 | 0.352305, 0.731871, 0.22, 0.18 | 标注点；矩形待校准 |
-| midstream | 模组与存储产品 | 固态硬盘SSD | 0.640346 | 0.821871 | 0.530346, 0.731871, 0.22, 0.18 | 标注点；矩形待校准 |
-| downstream | 算力与服务器 | AI服务器 | 0.752585 | 0.403983 | 0.642585, 0.313983, 0.22, 0.18 | 标注点；矩形待校准 |
-| downstream | 算力与服务器 | 数据中心存储 | 0.870840 | 0.403983 | 0.760840, 0.313983, 0.22, 0.18 | 标注点；矩形待校准 |
-| downstream | 终端电子 | 智能手机与AI PC | 0.795450 | 0.670800 | 0.685450, 0.580800, 0.22, 0.18 | 标注点；矩形待校准 |
-| downstream | 终端电子 | 汽车电子与工业控制 | 0.846588 | 0.831266 | 0.736588, 0.741266, 0.22, 0.18 | 标注点；矩形待校准 |
+Atlas callout、Catalog marker、Catalog focusRect 中心和三级 viewportOverride 均基于同一组新 marker。`focusRect` 列顺序为 `x, y, width, height`。
 
-## 需要优先人工校准的节点
+| 阶段 | 二级分类 | 三级节点 | marker.x | marker.y | focusRect | zoom |
+| --- | --- | --- | ---: | ---: | --- | ---: |
+| upstream | 晶圆制造材料 | 半导体硅片 | 0.058325 | 0.577199 | 0.000000, 0.487199, 0.22, 0.18 | 3.6 |
+| upstream | 晶圆制造材料 | 光刻胶与配套试剂 | 0.039752 | 0.506189 | 0.000000, 0.416189, 0.22, 0.18 | 3.6 |
+| upstream | 晶圆制造材料 | 电子特气 | 0.061909 | 0.388274 | 0.000000, 0.298274, 0.22, 0.18 | 3.6 |
+| upstream | 晶圆制造材料 | 靶材与前驱体 | 0.047898 | 0.730293 | 0.000000, 0.640293, 0.22, 0.18 | 3.6 |
+| upstream | 晶圆制造材料 | CMP抛光材料 | 0.135549 | 0.523779 | 0.025549, 0.433779, 0.22, 0.18 | 3.6 |
+| upstream | 前道制造设备 | 光刻设备 | 0.178886 | 0.303583 | 0.068886, 0.213583, 0.22, 0.18 | 3.6 |
+| upstream | 前道制造设备 | 刻蚀设备 | 0.234930 | 0.357655 | 0.124930, 0.267655, 0.22, 0.18 | 3.6 |
+| upstream | 前道制造设备 | 薄膜沉积设备 | 0.256435 | 0.251466 | 0.146435, 0.161466, 0.22, 0.18 | 3.6 |
+| upstream | 前道制造设备 | 清洗与CMP设备 | 0.294558 | 0.162215 | 0.184558, 0.072215, 0.22, 0.18 | 3.6 |
+| upstream | 前道制造设备 | 量检测设备 | 0.320626 | 0.072964 | 0.210626, 0.000000, 0.22, 0.18 | 3.6 |
+| upstream | 封测设备与材料 | 封装设备 | 0.170414 | 0.811726 | 0.060414, 0.721726, 0.22, 0.18 | 3.6 |
+| upstream | 封测设备与材料 | 测试设备 | 0.279570 | 0.751140 | 0.169570, 0.661140, 0.22, 0.18 | 3.6 |
+| upstream | 封测设备与材料 | 封装基板与引线材料 | 0.256109 | 0.858632 | 0.146109, 0.768632, 0.22, 0.18 | 3.6 |
+| midstream | 晶圆制造 | 存储晶圆制造 | 0.556533 | 0.309446 | 0.446533, 0.219446, 0.22, 0.18 | 3.6 |
+| midstream | 存储芯片产品 | DRAM | 0.475073 | 0.506189 | 0.365073, 0.416189, 0.22, 0.18 | 3.6 |
+| midstream | 存储芯片产品 | 3D NAND Flash | 0.546432 | 0.506840 | 0.436432, 0.416840, 0.22, 0.18 | 3.6 |
+| midstream | 存储芯片产品 | NOR Flash | 0.617139 | 0.506189 | 0.507139, 0.416189, 0.22, 0.18 | 3.6 |
+| midstream | 存储芯片产品 | EEPROM | 0.676768 | 0.507492 | 0.566768, 0.417492, 0.22, 0.18 | 3.6 |
+| midstream | 先进封装 | HBM堆叠封装 | 0.535679 | 0.677524 | 0.425679, 0.587524, 0.22, 0.18 | 3.6 |
+| midstream | 先进封装 | TSV与微凸块互连 | 0.475399 | 0.605212 | 0.365399, 0.515212, 0.22, 0.18 | 3.6 |
+| midstream | 先进封装 | 硅中介层 | 0.609645 | 0.631922 | 0.499645, 0.541922, 0.22, 0.18 | 3.6 |
+| midstream | 模组与存储产品 | 内存模组 | 0.443793 | 0.842997 | 0.333793, 0.752997, 0.22, 0.18 | 3.6 |
+| midstream | 模组与存储产品 | 固态硬盘SSD | 0.610297 | 0.842997 | 0.500297, 0.752997, 0.22, 0.18 | 3.6 |
+| downstream | 算力与服务器 | AI服务器 | 0.749756 | 0.213681 | 0.639756, 0.123681, 0.22, 0.18 | 3.6 |
+| downstream | 算力与服务器 | 数据中心存储 | 0.851092 | 0.251466 | 0.741092, 0.161466, 0.22, 0.18 | 3.6 |
+| downstream | 终端电子 | 智能手机与AI PC | 0.785272 | 0.824756 | 0.675272, 0.734756, 0.22, 0.18 | 3.6 |
+| downstream | 终端电子 | 汽车电子与工业控制 | 0.939068 | 0.731596 | 0.780000, 0.641596, 0.22, 0.18 | 3.6 |
 
-三级标注图明确包含 25 个圆点。“薄膜沉积设备”和“封装设备”没有独立标注点，本次为了保证 27 个节点均可进入两份产品，按相邻未标注设备位置进行了临时估算：
+## 校准状态
 
-- 薄膜沉积设备：`marker = (0.283888, 0.465239)`
-- 封装设备：`marker = (0.122203, 0.633972)`
+新版 `image_third.png` 已包含全部 27 个三级节点圆点：
 
-这两项需要优先在 Atlas 编辑器中校准 marker，并在 Catalog 编辑器中同步校准背景镜头与 focusRect。其余 25 项的 marker 来自标注圆点，但 27 个 focusRect 均是统一尺寸的临时框，仍需人工调整物体边界。
+- “薄膜沉积设备”和“封装设备”已改用明确标注坐标，旧估算坐标已删除。
+- 27 个 marker 均来自新标注图。
+- focusRect 保留原有 0.22×0.18 尺寸，以新 marker 为中心重新定位并完成边界钳制。
+- 所有分类与三级背景镜头均保留原 zoom 3.6，仅更新中心位置。
+- 27 个 focusRect 均位于 `[0,1]` 边界内。
+
+focusRect 尺寸仍是此前确认的临时统一值，后续可在 Catalog 编辑器中按实际物体边界精细调整。
 
 ## 验证记录
 
-- GuideProject release validator：通过，0 个 issue
-- 未映射知识：0
-- 未填写空间项：0
-- Atlas compiler：9 categories、27 items、1 asset
-- Catalog compiler：3 stages、9 categories、27 items、1 asset
-- TypeScript typecheck：通过
-- bootstrap 单元测试：1/1 通过
-- Atlas/Catalog compiler 测试：18/18 通过
-- 重复执行保护：通过；目标存在时退出码为 1，现有 `project.json` 哈希不变
-- Atlas/Catalog 预览 HTTP：均返回 200
+- 项目 revision：3 → 4
+- 名称匹配：9/9 个二级分类、27/27 个三级节点
+- Atlas manifest：9 categories、27 items
+- Catalog manifest：3 stages、9 categories、27 items
+- Atlas hotspot/viewport 与项目数据逐项一致
+- Atlas marker/viewportOverride 与项目数据逐项一致
+- Catalog marker/focusRect/viewportOverride 与项目数据逐项一致
+- 越界 focusRect：0
+- 原有 category zoom、item zoom、focusRect 宽高和 callout 配置保持不变
+- 两份预览均成功生成
 
-预览地址：
+最新预览：
 
-- Atlas：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784103185674-3/index.html`
-- Catalog：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784103186755-3/index.html`
-
-浏览器自动控制插件在本轮初始化失败，因此视觉层面的人工确认仍需由操作者打开上述地址完成；编译、文件闭包与 HTTP 可访问性已经验证。
+- Atlas：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784105931859-4/index.html`
+- Catalog：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784105932915-4/index.html`
