@@ -89,7 +89,13 @@ export interface BootstrapInput {
     onFailure?: 'abort-navigation' | 'cut'
   }>
   integrations?: {
-    analytics?: { enabled: boolean; profileId: string; pageType: string; contentName?: string }
+    analytics?: {
+      enabled: boolean
+      appKey: string
+      pageType: string
+      name: string
+      defaultSource: string
+    }
     share?: { enabled: boolean; title?: string; description?: string }
   }
 }
@@ -281,11 +287,10 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     project.integrations.analytics = {
       enabled: input.integrations.analytics.enabled,
       provider: 'weblog',
-      profileId: input.integrations.analytics.profileId,
+      appKey: input.integrations.analytics.appKey,
       pageType: input.integrations.analytics.pageType,
-      ...(input.integrations.analytics.contentName
-        ? { contentName: input.integrations.analytics.contentName }
-        : {}),
+      name: input.integrations.analytics.name,
+      defaultSource: input.integrations.analytics.defaultSource,
     }
   }
   if (input.integrations?.share) {

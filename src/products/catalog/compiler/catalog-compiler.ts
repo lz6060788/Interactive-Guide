@@ -13,6 +13,7 @@ import type {
   CatalogStageEntry,
 } from '../contract/catalog-manifest.js'
 import type { AssetClosure } from '../../atlas/compiler/atlas-compiler.js'
+import { compileRuntimeIntegrations } from '../../contracts/runtime-integrations.js'
 
 export interface CatalogCompileResult {
   manifest: CatalogManifest
@@ -140,6 +141,9 @@ export function compileCatalog(
   for (const r of reachableRoutes) {
     if (r.transition?.assetId) referencedAssets.add(r.transition.assetId)
   }
+  if (normalizedProject.integrations.share?.imageAssetId) {
+    referencedAssets.add(normalizedProject.integrations.share.imageAssetId)
+  }
   const assets = Object.values(normalizedProject.assets.byId)
     .filter(a => referencedAssets.has(a.id))
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -175,7 +179,9 @@ export function compileCatalog(
       chrome: normalizedProject.products.catalog.chrome ?? {},
       theme: normalizedProject.products.catalog.theme,
     },
-    integrations: normalizedProject.integrations,
+    integrations: compileRuntimeIntegrations(normalizedProject, assetClosure, {
+      includeAnalytics: false,
+    }),
   }
 
   return { manifest, assets }

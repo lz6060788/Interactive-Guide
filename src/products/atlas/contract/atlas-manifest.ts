@@ -13,10 +13,10 @@ import type {
   ExperienceNavigation,
   ExperienceRoute,
   ProductChromeConfig,
-  ProjectIntegrations,
   SchemaVersion,
   Viewport,
 } from '../../../domain/project-types.js'
+import type { RuntimeIntegrations } from '../../contracts/runtime-integrations.js'
 
 export type { Viewport }
 
@@ -126,7 +126,7 @@ export interface AtlasManifest {
       itemMarkerMinZoom?: number
     }
   }
-  integrations: ProjectIntegrations
+  integrations: RuntimeIntegrations
 }
 
 export type { AssetDefinition, ExperienceNavigation }

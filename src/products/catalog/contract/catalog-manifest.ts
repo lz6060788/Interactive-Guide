@@ -11,10 +11,10 @@ import type {
   ExperienceNavigation,
   ExperienceRoute,
   ProductChromeConfig,
-  ProjectIntegrations,
   SchemaVersion,
   Viewport,
 } from '../../../domain/project-types.js'
+import type { RuntimeIntegrations } from '../../contracts/runtime-integrations.js'
 
 export interface CatalogAssetRef {
   assetId: string
@@ -107,7 +107,7 @@ export interface CatalogManifest {
       maskOpacity?: number
     }
   }
-  integrations: ProjectIntegrations
+  integrations: RuntimeIntegrations
 }
 
 export type { AssetDefinition, ExperienceNavigation }

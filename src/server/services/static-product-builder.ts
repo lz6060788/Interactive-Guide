@@ -43,6 +43,9 @@ export function buildStaticProduct(options: {
     sceneAssetIds,
     transitionAssetIds,
   )
+  if (project.integrations.share?.imageAssetId) {
+    referencedAssetIds.add(project.integrations.share.imageAssetId)
+  }
   const { closure, assets } = buildAssetClosure({
     projectId: project.id,
     assets: project.assets.byId,
@@ -97,7 +100,10 @@ function copyReferencedAssets(
 }
 
 function normalizeAssetSourcePath(sourcePath: string): string {
-  return sourcePath.replaceAll('\\', '/').replace(/^assets\//, '').replace(/^\/+/, '')
+  return sourcePath
+    .replaceAll('\\', '/')
+    .replace(/^assets\//, '')
+    .replace(/^\/+/, '')
 }
 
 function resolveInside(root: string, relativePath: string, assetId: string): string {
@@ -117,7 +123,9 @@ export class StaticProductValidationError extends Error {
     public readonly product: ProductShellProduct,
     public readonly failures: ValidationReport['failures'],
   ) {
-    super(`${product} static product validation failed: ${failures.map(item => item.message).join('; ')}`)
+    super(
+      `${product} static product validation failed: ${failures.map(item => item.message).join('; ')}`,
+    )
     this.name = 'StaticProductValidationError'
   }
 }

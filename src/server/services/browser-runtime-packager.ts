@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { transformSync } from '@babel/core'
 import presetEnv from '@babel/preset-env'
@@ -29,7 +30,11 @@ export function buildBrowserRuntimeBundle(options: {
   )
   const bootstrapExport =
     options.product === 'atlas' ? 'bootstrapAtlasProduct' : 'bootstrapCatalogProduct'
-  const bootstrapSource = buildBootstrapSource(entrySourcePath, bootstrapExport)
+  const bootstrapSource = buildBootstrapSource(
+    entrySourcePath,
+    bootstrapExport,
+    loadKingFisherVendorScripts(),
+  )
 
   const bundle = buildSync({
     stdin: {
@@ -95,10 +100,16 @@ export function assertEs5Syntax(source: string, label = 'browser runtime'): void
   }
 }
 
-function buildBootstrapSource(entrySourcePath: string, bootstrapExport: string): string {
+function buildBootstrapSource(
+  entrySourcePath: string,
+  bootstrapExport: string,
+  kingFisherScripts: { bridge: string; falcon: string },
+): string {
   const entrySpecifier = normalizePath(entrySourcePath)
   return `
 import { ${bootstrapExport} } from ${JSON.stringify(entrySpecifier)}
+
+window.__interactiveGuideKingFisherScripts = ${JSON.stringify(kingFisherScripts)}
 
 var app = document.getElementById('app')
 if (!app) {
@@ -117,6 +128,14 @@ Promise.resolve(${bootstrapExport}(app, manifestUrl)).catch(function (error) {
   app.appendChild(pre)
 })
 `
+}
+
+function loadKingFisherVendorScripts(): { bridge: string; falcon: string } {
+  const vendorRoot = path.resolve('vendor', 'king-fisher')
+  return {
+    bridge: fs.readFileSync(path.join(vendorRoot, 'bridge-0.6.0.umd.js'), 'utf8'),
+    falcon: fs.readFileSync(path.join(vendorRoot, 'falcon-0.5.26-zcp-692-snapshot.umd.js'), 'utf8'),
+  }
 }
 
 function normalizePath(value: string): string {

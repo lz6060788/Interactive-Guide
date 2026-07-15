@@ -27,6 +27,7 @@ import { AssetsPanel } from '../features/projects/settings/AssetsPanel'
 import { HtmlScenePanel } from '../features/projects/settings/HtmlScenePanel'
 import { DangerZone } from '../features/projects/settings/DangerZone'
 import { AnalyticsPanel } from '../features/projects/settings/AnalyticsPanel'
+import { SharePanel } from '../features/projects/settings/SharePanel'
 import { PageHeader, StatusFooter, TableSkeleton } from '../components/PageHeader'
 
 export function ProjectSettingsPage(): JSX.Element {
@@ -166,7 +167,17 @@ export function ProjectSettingsPage(): JSX.Element {
               />
             </SettingsCard>
 
-            <SettingsCard eyebrow="05" title="生命周期">
+            <SettingsCard eyebrow="05" title="分享">
+              <SharePanel
+                projectId={project.id}
+                projectTitle={project.title}
+                revision={m.revision}
+                initial={project.integrations}
+                assets={project.assets.byId}
+              />
+            </SettingsCard>
+
+            <SettingsCard eyebrow="06" title="生命周期">
               <DangerZone projectId={project.id} projectTitle={project.title} />
             </SettingsCard>
           </Stack>

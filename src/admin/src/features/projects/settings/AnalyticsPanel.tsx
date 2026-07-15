@@ -6,11 +6,10 @@ import { useUpdateProjectIntegrations } from '../api'
 
 interface Draft {
   enabled: boolean
-  profileId: string
+  appKey: string
   pageType: string
-  contentName: string
+  name: string
   defaultSource: string
-  dimensionsJson: string
 }
 
 interface Props {
@@ -23,25 +22,11 @@ function toDraft(integrations: ProjectIntegrations): Draft {
   const analytics = integrations.analytics
   return {
     enabled: analytics?.enabled ?? false,
-    profileId: analytics?.profileId ?? '',
+    appKey: analytics?.appKey ?? '',
     pageType: analytics?.pageType ?? '',
-    contentName: analytics?.contentName ?? '',
+    name: analytics?.name ?? '',
     defaultSource: analytics?.defaultSource ?? '',
-    dimensionsJson: JSON.stringify(analytics?.dimensions ?? {}, null, 2),
   }
-}
-
-function normalizeDimensions(value: string): Record<string, string> | undefined {
-  if (!value.trim()) return undefined
-  const parsed: unknown = JSON.parse(value)
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
-    throw new Error('扩展参数必须是 JSON 对象')
-  }
-  const entries = Object.entries(parsed)
-  if (!entries.every(([key, item]) => key.trim() && typeof item === 'string')) {
-    throw new Error('扩展参数的键和值都必须是非空字符串')
-  }
-  return Object.fromEntries(entries) as Record<string, string>
 }
 
 export function AnalyticsPanel({ projectId, revision, initial }: Props): JSX.Element {
@@ -64,9 +49,9 @@ export function AnalyticsPanel({ projectId, revision, initial }: Props): JSX.Ele
   const save = async () => {
     setError(null)
     try {
-      const dimensions = normalizeDimensions(draft.dimensionsJson)
-      if (draft.enabled && (!draft.profileId.trim() || !draft.pageType.trim())) {
-        throw new Error('启用埋点时，Profile ID 和页面类型为必填项')
+      const required = [draft.appKey, draft.pageType, draft.name, draft.defaultSource]
+      if (draft.enabled && required.some(value => !value.trim())) {
+        throw new Error('启用埋点时，App Key、页面类型、产业链名称和默认来源均为必填项')
       }
       const integrations: ProjectIntegrations = {
         ...initial,
@@ -75,13 +60,10 @@ export function AnalyticsPanel({ projectId, revision, initial }: Props): JSX.Ele
               analytics: {
                 enabled: true,
                 provider: 'weblog',
-                profileId: draft.profileId.trim(),
+                appKey: draft.appKey.trim(),
                 pageType: draft.pageType.trim(),
-                ...(draft.contentName.trim() ? { contentName: draft.contentName.trim() } : {}),
-                ...(draft.defaultSource.trim()
-                  ? { defaultSource: draft.defaultSource.trim() }
-                  : {}),
-                ...(dimensions && Object.keys(dimensions).length ? { dimensions } : {}),
+                name: draft.name.trim(),
+                defaultSource: draft.defaultSource.trim(),
               },
             }
           : { analytics: undefined }),
@@ -98,10 +80,10 @@ export function AnalyticsPanel({ projectId, revision, initial }: Props): JSX.Ele
       <HStack justify="space-between" align="center">
         <Box>
           <Text fontSize="13px" fontWeight="600" color="ink">
-            WeBlog 埋点
+            Atlas WeBlog 埋点
           </Text>
           <Text fontSize="11px" color="ink.faint" mt="0.5">
-            Atlas 与 Catalog 共享触发语义，按各自产品维度上报。
+            仅 Atlas 上报页面曝光、停留时长、分享点击和分享回流。
           </Text>
         </Box>
         <Switch.Root
@@ -119,74 +101,35 @@ export function AnalyticsPanel({ projectId, revision, initial }: Props): JSX.Ele
 
       {draft.enabled && (
         <Stack gap="3">
-          <Field.Root required>
-            <Field.Label fontSize="12px" color="ink.muted">
-              Profile ID <Field.RequiredIndicator />
-            </Field.Label>
-            <Input
-              size="sm"
-              value={draft.profileId}
-              onChange={event => updateField('profileId', event.target.value)}
-              bg="bg.raised"
-            />
-          </Field.Root>
-          <Field.Root required>
-            <Field.Label fontSize="12px" color="ink.muted">
-              页面类型 <Field.RequiredIndicator />
-            </Field.Label>
-            <Input
-              size="sm"
-              value={draft.pageType}
-              onChange={event => updateField('pageType', event.target.value)}
-              bg="bg.raised"
-              placeholder="interactive-guide"
-            />
-          </Field.Root>
-          <Field.Root>
-            <Field.Label fontSize="12px" color="ink.muted">
-              内容名称
-            </Field.Label>
-            <Input
-              size="sm"
-              value={draft.contentName}
-              onChange={event => updateField('contentName', event.target.value)}
-              bg="bg.raised"
-            />
-          </Field.Root>
-          <Field.Root>
-            <Field.Label fontSize="12px" color="ink.muted">
-              默认来源
-            </Field.Label>
-            <Input
-              size="sm"
-              value={draft.defaultSource}
-              onChange={event => updateField('defaultSource', event.target.value)}
-              bg="bg.raised"
-            />
-          </Field.Root>
-          <Field.Root>
-            <Field.Label fontSize="12px" color="ink.muted">
-              扩展参数（JSON）
-            </Field.Label>
-            <textarea
-              rows={4}
-              value={draft.dimensionsJson}
-              onChange={event => updateField('dimensionsJson', event.target.value)}
-              style={{
-                width: '100%',
-                boxSizing: 'border-box',
-                resize: 'vertical',
-                border: '1px solid var(--chakra-colors-border)',
-                borderRadius: '6px',
-                background: 'var(--chakra-colors-bg-raised)',
-                color: 'var(--chakra-colors-ink)',
-                fontFamily: 'monospace',
-                fontSize: '12px',
-                lineHeight: '1.5',
-                padding: '8px',
-              }}
-            />
-          </Field.Root>
+          <ConfigInput
+            label="App Key"
+            value={draft.appKey}
+            onChange={value => updateField('appKey', value)}
+            required
+          />
+          <ConfigInput
+            label="页面类型"
+            value={draft.pageType}
+            onChange={value => updateField('pageType', value)}
+            placeholder="visindustry"
+            required
+          />
+          <ConfigInput
+            label="产业链名称"
+            value={draft.name}
+            onChange={value => updateField('name', value)}
+            required
+          />
+          <ConfigInput
+            label="默认来源"
+            value={draft.defaultSource}
+            onChange={value => updateField('defaultSource', value)}
+            placeholder="industry"
+            required
+          />
+          <Text fontSize="11px" color="ink.faint">
+            页面 URL 中存在非空 source 参数时，会覆盖默认来源。
+          </Text>
         </Stack>
       )}
 
@@ -221,5 +164,34 @@ export function AnalyticsPanel({ projectId, revision, initial }: Props): JSX.Ele
         </Button>
       </HStack>
     </Stack>
+  )
+}
+
+function ConfigInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  required,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  required?: boolean
+}): JSX.Element {
+  return (
+    <Field.Root required={required}>
+      <Field.Label fontSize="12px" color="ink.muted">
+        {label} {required && <Field.RequiredIndicator />}
+      </Field.Label>
+      <Input
+        size="sm"
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        bg="bg.raised"
+        placeholder={placeholder}
+      />
+    </Field.Root>
   )
 }

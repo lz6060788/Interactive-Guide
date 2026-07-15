@@ -4,11 +4,17 @@
 
 - 项目 ID：`memory-chip-industry-chain`
 - 项目标题：存储芯片产业链
-- 当前 revision：4
+- 当前 revision：13（本页空间表记录的是 revision 4 的自动导入基线，后续已在编辑器中人工校准）
 - 知识结构：3 个一级阶段、9 个二级分类、27 个三级节点
 - 场景与转场：0 个 HTML Scene、0 条转场路由
 - 运行时资产：1 张全景底图
 - 公司标的：未导入
+
+当前运行时集成：
+
+- Atlas WeBlog：`appKey=ce19ea099b`、`pageType=visindustry`、`name=存储芯片产业链`、`defaultSource=industry`
+- 分享：已启用，分享标题和描述均为“存储芯片产业链”，图片使用全景底图
+- Catalog 打开 Atlas：`http://o.thsi.cn/datav.narrative-vision/interactive-guide/memory-chip-industry-chain-atlas/0.1.0/index.html`
 
 当前空间基准：
 
@@ -82,7 +88,7 @@ focusRect 尺寸仍是此前确认的临时统一值，后续可在 Catalog 编�
 
 ## 验证记录
 
-- 项目 revision：3 → 4
+- 空间自动导入 revision：3 → 4；当前项目 revision：13
 - 名称匹配：9/9 个二级分类、27/27 个三级节点
 - Atlas manifest：9 categories、27 items
 - Catalog manifest：3 stages、9 categories、27 items
@@ -95,5 +101,7 @@ focusRect 尺寸仍是此前确认的临时统一值，后续可在 Catalog 编�
 
 最新预览：
 
-- Atlas：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784105931859-4/index.html`
-- Catalog：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784105932915-4/index.html`
+- Atlas：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784114357897-13/index.html`
+- Catalog：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784114328229-13/index.html`
+
+revision 13 运行时验收：Atlas 产物只包含页面曝光、分享点击、分享回流、停留时长四个 WeBlog 事件；Catalog manifest 和脚本均不包含埋点代码；两份产物均通过 ES5 语法校验并返回 HTTP 200。

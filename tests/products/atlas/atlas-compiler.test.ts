@@ -3,7 +3,10 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { compileAtlas, AtlasCompileError } from '../../../src/products/atlas/compiler/atlas-compiler.js'
+import {
+  compileAtlas,
+  AtlasCompileError,
+} from '../../../src/products/atlas/compiler/atlas-compiler.js'
 import { createDraftProject } from '../../../src/domain/project-normalizer.js'
 import type { GuideProject } from '../../../src/domain/project-types.js'
 
@@ -92,6 +95,26 @@ test('compileAtlas rewrites asset URLs through the closure', () => {
   assert.equal(manifest.panorama.url, './release/image.jpg')
 })
 
+test('compileAtlas includes Atlas analytics and resolves the configured share image', () => {
+  const p = sample()
+  p.integrations.analytics = {
+    enabled: true,
+    provider: 'weblog',
+    appKey: 'ce19ea099b',
+    pageType: 'visindustry',
+    name: 'Rocket',
+    defaultSource: 'industry',
+  }
+  p.integrations.share = {
+    enabled: true,
+    imageAssetId: 'asset-pano',
+  }
+  const { manifest, assets } = compileAtlas(p, closure)
+  assert.equal(manifest.integrations.analytics?.appKey, 'ce19ea099b')
+  assert.equal(manifest.integrations.share?.imageUrl, './assets/images/asset-pano/image.jpg')
+  assert.ok(assets.some(asset => asset.id === 'asset-pano'))
+})
+
 test('compileAtlas includes routes reachable from panorama or scene', () => {
   const p = sample()
   p.assets.byId['asset-scene'] = {
@@ -111,7 +134,14 @@ test('compileAtlas includes routes reachable from panorama or scene', () => {
       title: 'Rocket Scene',
       assetId: 'asset-scene',
       protocol: { channel: 'interactive-guide:scene-bridge', version: '1.0.0' },
-      views: [{ id: 'v-overview', title: 'Overview', activationMessage: { type: 'init' }, categoryIds: [] }],
+      views: [
+        {
+          id: 'v-overview',
+          title: 'Overview',
+          activationMessage: { type: 'init' },
+          categoryIds: [],
+        },
+      ],
     },
   ]
   p.navigation.routes = [
@@ -146,5 +176,8 @@ test('compileAtlas preserves authored category.itemIds order for drawer and firs
 
   const { manifest } = compileAtlas(p, closure)
   assert.deepEqual(manifest.categories[0].itemIds, ['item-2', 'item-1'])
-  assert.deepEqual(manifest.items.map((item) => item.id), ['item-2', 'item-1'])
+  assert.deepEqual(
+    manifest.items.map(item => item.id),
+    ['item-2', 'item-1'],
+  )
 })

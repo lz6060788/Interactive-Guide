@@ -125,12 +125,15 @@ class FakeEl {
   }
   removeEventListener(type: string, listener: (event?: any) => void): void {
     const list = this.listeners.get(type) ?? []
-    this.listeners.set(type, list.filter((entry) => entry !== listener))
+    this.listeners.set(
+      type,
+      list.filter(entry => entry !== listener),
+    )
   }
   scrollIntoView(): void {}
   remove(): void {
     if (!this.parent) return
-    this.parent.children = this.parent.children.filter((child) => child !== this)
+    this.parent.children = this.parent.children.filter(child => child !== this)
     this.parent = null
   }
   click(): void {
@@ -145,7 +148,10 @@ class FakeEl {
 
 // Minimal DOM stand-ins via a Proxy that returns FakeEl / arrays
 const fakeHead = new FakeEl()
-const fakeDocument: Pick<Document, 'createElement' | 'createElementNS' | 'getElementById' | 'head'> = {
+const fakeDocument: Pick<
+  Document,
+  'createElement' | 'createElementNS' | 'getElementById' | 'head'
+> = {
   head: fakeHead as unknown as HTMLHeadElement,
   createElement(tag: string): HTMLElement {
     const el = new FakeEl()
@@ -160,7 +166,7 @@ const fakeDocument: Pick<Document, 'createElement' | 'createElementNS' | 'getEle
     return el as unknown as Element
   },
   getElementById(id: string): HTMLElement | null {
-    return collectAll([fakeHead]).find((node) => node.id === id) as unknown as HTMLElement ?? null
+    return (collectAll([fakeHead]).find(node => node.id === id) as unknown as HTMLElement) ?? null
   },
 }
 
@@ -168,7 +174,9 @@ const fakeDocument: Pick<Document, 'createElement' | 'createElementNS' | 'getEle
 // runtime can mount without a real DOM. We monkey-patch the globals.
 ;(globalThis as { document?: unknown }).document = fakeDocument
 ;(globalThis as { performance?: unknown }).performance = { now: () => Date.now() }
-;(globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = (cb: (t: number) => void) => {
+;(globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame = (
+  cb: (t: number) => void,
+) => {
   setTimeout(() => cb(Date.now()), 0)
   return 0
 }
@@ -191,7 +199,7 @@ test('AtlasRuntime.loadManifest + mount sets up children', async () => {
   // Verify the testids are present somewhere in the tree (catches a
   // regression where the viewport layer or panel disappears).
   const allNodes = collectAll(kids)
-  const testids = new Set(allNodes.map((n) => n.dataset?.testid).filter(Boolean))
+  const testids = new Set(allNodes.map(n => n.dataset?.testid).filter(Boolean))
   assert.ok(testids.has('atlas-viewport-layer'), 'viewport layer missing')
   assert.ok(testids.has('atlas-panorama'), 'panorama image missing')
   assert.ok(testids.has('atlas-card-drawer'), 'drawer missing')
@@ -200,20 +208,17 @@ test('AtlasRuntime.loadManifest + mount sets up children', async () => {
   rt.destroy()
 })
 
-test('AtlasRuntime.focusCategory emits analytics:expose and activates marker', async () => {
+test('AtlasRuntime.focusCategory activates the default marker and drawer card', async () => {
   const loader = makeLoader()
-  const events: AtlasEvent[] = []
   const rt = new AtlasRuntime({ assets: loader })
   const manifest = minimalManifest()
   manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
   rt.loadManifest(manifest)
-  rt.on((e) => events.push(e))
   const containerEl = new FakeEl()
   containerEl.ownerDocument = fakeDocument as unknown as Document
   const container = containerEl as unknown as HTMLElement
   await rt.mount(container)
   rt.focusCategory('cat-1')
-  assert.ok(events.some((e) => e.type === 'analytics:expose' && e.target.kind === 'category'))
   const drawer = findByTestId(containerEl, 'atlas-card-drawer')
   const card = findByTestId(containerEl, 'atlas-card-item-1')
   const hotspot = findByTestId(containerEl, 'atlas-hotspot-cat-1')
@@ -238,10 +243,13 @@ test('AtlasRuntime.focusCategory focuses the default highlighted item with categ
   await rt.mount(container)
 
   const animateCalls: Array<{ centerX: number; centerY: number; zoom: number }> = []
-  ;(rt as unknown as { camera: { animateTo: (viewport: { centerX: number; centerY: number; zoom: number }) => void } }).camera.animateTo =
-    (viewport) => {
-      animateCalls.push(viewport)
+  ;(
+    rt as unknown as {
+      camera: { animateTo: (viewport: { centerX: number; centerY: number; zoom: number }) => void }
     }
+  ).camera.animateTo = viewport => {
+    animateCalls.push(viewport)
+  }
 
   rt.focusCategory('cat-1')
 
@@ -297,7 +305,7 @@ test('AtlasRuntime hotspot click opens the drawer and item click keeps card stat
   manifest.items[0].viewportOverride = { centerX: 0.3, centerY: 0.4, zoom: 3 }
   manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
   rt.loadManifest(manifest)
-  rt.on((event) => events.push(event))
+  rt.on(event => events.push(event))
   const containerEl = new FakeEl()
   containerEl.ownerDocument = fakeDocument as unknown as Document
   const container = containerEl as unknown as HTMLElement
@@ -309,10 +317,10 @@ test('AtlasRuntime hotspot click opens the drawer and item click keeps card stat
   const card = findByTestId(containerEl, 'atlas-card-item-1')
   assert.equal(drawer?.style.opacity, '1')
   assert.equal(card?.dataset.active, 'true')
-  assert.ok(events.some((event) => event.type === 'hotspotclick' && event.categoryId === 'cat-1'))
+  assert.ok(events.some(event => event.type === 'hotspotclick' && event.categoryId === 'cat-1'))
 
   card?.click()
-  assert.ok(events.some((event) => event.type === 'itemclick' && event.itemId === 'item-1'))
+  assert.ok(events.some(event => event.type === 'itemclick' && event.itemId === 'item-1'))
   assert.equal(card?.dataset.active, 'true')
 
   const closeButton = findByTestId(containerEl, 'atlas-card-drawer-close')
@@ -401,7 +409,7 @@ test('AtlasRuntime hotspot click opens html-scene categories through their panor
 
   const hotspot = findByTestId(containerEl, 'atlas-hotspot-cat-1')
   hotspot?.children[1]?.click()
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise(resolve => setTimeout(resolve, 0))
 
   assert.equal(loader.events.at(-1), 'open:s-1')
   rt.destroy()
@@ -420,7 +428,7 @@ test('AtlasRuntime.openRoute handles panorama targets by focusing the requested 
   ]
   const rt = new AtlasRuntime({ assets: loader })
   rt.loadManifest(manifest)
-  rt.on((event) => events.push(event))
+  rt.on(event => events.push(event))
   const containerEl = new FakeEl()
   containerEl.ownerDocument = fakeDocument as unknown as Document
   const container = containerEl as unknown as HTMLElement
@@ -428,7 +436,7 @@ test('AtlasRuntime.openRoute handles panorama targets by focusing the requested 
 
   rt.openRoute('route-scene-back-to-item')
 
-  assert.ok(events.some((event) => event.type === 'itemclick' && event.itemId === 'item-1'))
+  assert.ok(events.some(event => event.type === 'itemclick' && event.itemId === 'item-1'))
   rt.destroy()
 })
 
@@ -439,8 +447,11 @@ test('AtlasRuntime.mount survives destroy() called during awaited image load', a
   // and bails out instead of calling appendChild on null.
   let resolveLoad!: (img: HTMLImageElement) => void
   const loader: AtlasRuntimeAssetLoader = {
-    resolveUrl: (u) => u,
-    loadImage: () => new Promise<HTMLImageElement>((res) => { resolveLoad = res }),
+    resolveUrl: u => u,
+    loadImage: () =>
+      new Promise<HTMLImageElement>(res => {
+        resolveLoad = res
+      }),
     openScene: () => {},
   }
   const rt = new AtlasRuntime({ assets: loader })
@@ -461,25 +472,8 @@ test('AtlasRuntime.mount survives destroy() called during awaited image load', a
   // before the destroy (that's OK — the panic we care about was an
   // appendChild on null after the await).
   const kids = (container as unknown as FakeEl).children
-  const hasImage = collectAll(kids).some((n) => n.dataset?.testid === 'atlas-panorama')
+  const hasImage = collectAll(kids).some(n => n.dataset?.testid === 'atlas-panorama')
   assert.equal(hasImage, false, 'destroyed runtime must not append the panorama image')
-})
-
-test('AtlasRuntime.destroy emits analytics:stay with non-zero duration', async () => {
-  let now = 1000
-  const loader = makeLoader()
-  const events: AtlasEvent[] = []
-  const rt = new AtlasRuntime({ assets: loader, now: () => now })
-  rt.loadManifest(minimalManifest())
-  rt.on((e) => events.push(e))
-  const containerEl = new FakeEl()
-  containerEl.ownerDocument = fakeDocument as unknown as Document
-  const container = containerEl as unknown as HTMLElement
-  await rt.mount(container)
-  now = 1500
-  rt.destroy()
-  const stay = events.find((e) => e.type === 'analytics:stay')
-  assert.ok(stay && stay.type === 'analytics:stay' && stay.durationMs === 500)
 })
 
 test('AtlasRuntime.mount throws when no manifest is loaded', async () => {
@@ -505,5 +499,5 @@ function collectAll(roots: FakeEl[]): FakeEl[] {
 }
 
 function findByTestId(root: FakeEl, testId: string): FakeEl | undefined {
-  return collectAll([root]).find((node) => node.dataset.testid === testId)
+  return collectAll([root]).find(node => node.dataset.testid === testId)
 }

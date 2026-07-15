@@ -246,3 +246,19 @@ Catalog 默认全景场景没有顶部分享工具栏。Catalog HTML Scene 若�
 8. 项目设置可保存、回读 appKey/pageType/name/defaultSource 以及分享配置。
 9. Atlas 与 Catalog 的独立产物继续通过 ES5 语法校验，并能在普通浏览器预览。
 
+## 10. 实施结果（2026-07-15）
+
+本设计已经落地：
+
+- 领域层和项目设置页均已切换到 `appKey/pageType/name/defaultSource`，并新增项目级分享配置入口。
+- Atlas 使用专用 `AtlasPageTracker`，运行时代码中只有本设计约定的四个事件 ID；Catalog manifest 与 `app.js` 均不包含 analytics/WeBlog 代码。
+- Atlas 全景图与 HTML Scene 共用 `ProductShareController` 和 `F10HostAdapter`；Catalog 右下入口也复用同一适配器调用 `jumpTofullScreenPage`。
+- `@king-fisher/bridge` 0.6.0 与 `@king-fisher/falcon` 0.5.26-zcp-692-snapshot 以隔离 UMD vendor 形式进入两份独立产物，F10Utils 1.6.3 和 WeBlog 0.0.8 按需加载。
+- 静态构建继续执行 ES5 语法解析校验。完整测试结果为 178/178 通过，TypeScript 类型检查和 ESLint 均无错误。
+
+存储芯片项目 revision 13 的验收预览：
+
+- Atlas：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784114357897-13/index.html`
+- Catalog：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784114328229-13/index.html`
+
+产物核对结果：Atlas 使用 `appKey: ce19ea099b`、`pageType: visindustry`、`name: 存储芯片产业链`、`defaultSource: industry`；Catalog 使用项目配置的完整 Atlas 线上地址，且两份预览入口均返回 HTTP 200。

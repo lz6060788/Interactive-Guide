@@ -236,11 +236,10 @@ export const CatalogProductConfigSchema = z.object({
 export const AnalyticsConfigSchema = z.object({
   enabled: z.boolean(),
   provider: z.literal('weblog'),
-  profileId: z.string().min(1),
+  appKey: z.string().min(1),
   pageType: z.string().min(1),
-  contentName: z.string().optional(),
-  defaultSource: z.string().optional(),
-  dimensions: z.record(z.string(), z.string()).optional(),
+  name: z.string().min(1),
+  defaultSource: z.string().min(1),
 })
 
 export const ShareConfigSchema = z.object({

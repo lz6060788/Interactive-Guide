@@ -29,11 +29,11 @@ export class DraftBuildService {
     return this.root
   }
 
-  buildDraft(
+  async buildDraft(
     projectId: string,
     product: DraftProduct,
     now: () => string = () => new Date().toISOString(),
-  ): DraftBuildResult {
+  ): Promise<DraftBuildResult> {
     const project = this.projects.get(projectId)
     const buildId = `${product}-${Date.now()}-${project.metadata.revision}`
     const draftDir = path.join(this.root, projectId, buildId)
@@ -52,7 +52,7 @@ export class DraftBuildService {
         now,
       })
       if (fs.existsSync(draftDir)) fs.rmSync(draftDir, { recursive: true, force: true })
-      fs.renameSync(temporaryDir, draftDir)
+      await renameWithTransientWindowsRetry(temporaryDir, draftDir)
       return {
         product,
         sourceRevision: project.metadata.revision,
@@ -64,6 +64,22 @@ export class DraftBuildService {
     } catch (error) {
       if (fs.existsSync(temporaryDir)) fs.rmSync(temporaryDir, { recursive: true, force: true })
       throw error
+    }
+  }
+}
+
+async function renameWithTransientWindowsRetry(source: string, destination: string): Promise<void> {
+  const retryableCodes = new Set(['EACCES', 'EBUSY', 'EPERM'])
+  const attempts = process.platform === 'win32' ? 8 : 1
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await fs.promises.rename(source, destination)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (!code || !retryableCodes.has(code) || attempt === attempts) throw error
+      await new Promise(resolve => setTimeout(resolve, attempt * 50))
     }
   }
 }

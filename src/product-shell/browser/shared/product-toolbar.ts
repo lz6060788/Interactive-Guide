@@ -6,6 +6,7 @@ export interface ProductToolbarOptions {
   textColor?: string
   onBack?: () => void
   onShare?: () => void
+  shareEnabled?: boolean
 }
 
 export class ProductToolbar {
@@ -36,6 +37,7 @@ export class ProductToolbar {
         }
         void shareCurrentPage(this.options.projectTitle)
       },
+      showShare: this.options.shareEnabled !== false,
       testIds: {
         toolbar: 'product-shell-toolbar',
       },
@@ -59,4 +61,3 @@ export async function shareCurrentPage(title: string): Promise<void> {
     await navigator.clipboard.writeText(url).catch(() => undefined)
   }
 }
-

@@ -88,6 +88,22 @@ test('compileCatalog projects the configured Atlas launch URL only into Catalog'
   assert.equal(manifest.config.atlasLaunchUrl, p.products.catalog.atlasLaunchUrl)
 })
 
+test('compileCatalog omits Atlas analytics while retaining resolved share configuration', () => {
+  const p = sample()
+  p.integrations.analytics = {
+    enabled: true,
+    provider: 'weblog',
+    appKey: 'ce19ea099b',
+    pageType: 'visindustry',
+    name: 'Rocket',
+    defaultSource: 'industry',
+  }
+  p.integrations.share = { enabled: true, imageAssetId: 'asset-pano' }
+  const { manifest } = compileCatalog(p, closure)
+  assert.equal(manifest.integrations.analytics, undefined)
+  assert.equal(manifest.integrations.share?.imageUrl, './assets/images/asset-pano/image.jpg')
+})
+
 test('compileCatalog throws when panorama.assetId is missing', () => {
   const p = sample()
   p.panorama.assetId = ''
@@ -143,14 +159,22 @@ test('compileCatalog preserves authored category and item order for default sele
     experience: { kind: 'panorama' },
   })
   p.knowledge.items['item-2'] = {
-    id: 'item-2', categoryId: 'cat-first', title: 'First item', description: '', order: 0,
+    id: 'item-2',
+    categoryId: 'cat-first',
+    title: 'First item',
+    description: '',
+    order: 0,
   }
   p.panorama.items['item-2'] = {
     marker: { x: 0.2, y: 0.2 },
     focusRect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
   }
   p.knowledge.items['item-3'] = {
-    id: 'item-3', categoryId: 'cat-first', title: 'Second item', description: '', order: 1,
+    id: 'item-3',
+    categoryId: 'cat-first',
+    title: 'Second item',
+    description: '',
+    order: 1,
   }
   p.panorama.items['item-3'] = {
     marker: { x: 0.3, y: 0.3 },
@@ -159,7 +183,10 @@ test('compileCatalog preserves authored category and item order for default sele
   const { manifest } = compileCatalog(p, closure)
   assert.equal(manifest.stages[0].categories[0].id, 'cat-first')
   assert.deepEqual(manifest.stages[0].categories[0].itemIds, ['item-2', 'item-3'])
-  assert.deepEqual(manifest.items.filter(item => item.categoryId === 'cat-first').map(item => item.id), ['item-2', 'item-3'])
+  assert.deepEqual(
+    manifest.items.filter(item => item.categoryId === 'cat-first').map(item => item.id),
+    ['item-2', 'item-3'],
+  )
 })
 
 test('compileCatalog includes only scenes reachable via navigation', () => {

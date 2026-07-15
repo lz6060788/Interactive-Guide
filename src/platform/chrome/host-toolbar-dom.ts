@@ -1,7 +1,4 @@
-import {
-  HOST_INFO_SHEET_DEFAULT_SECTIONS,
-  HOST_INFO_SHEET_TITLE,
-} from './host-info-sheet.js'
+import { HOST_INFO_SHEET_DEFAULT_SECTIONS, HOST_INFO_SHEET_TITLE } from './host-info-sheet.js'
 import {
   HOST_BACK_ICON_SVG,
   HOST_INFO_ICON_SVG,
@@ -30,6 +27,7 @@ export interface HostToolbarDomOptions {
   textColor: string
   onBack: () => void
   onShare: () => void
+  showShare?: boolean
   showGradient?: boolean
   testIds?: HostToolbarDomTestIds
   zIndexBase?: number
@@ -128,6 +126,7 @@ export class HostToolbarDomController {
     shareButton.style.top = `${HOST_TOOLBAR_TOP_OFFSET_PX}px`
     shareButton.style.width = '24px'
     shareButton.style.height = '24px'
+    shareButton.style.display = this.options.showShare === false ? 'none' : 'flex'
 
     center.appendChild(title)
     center.appendChild(infoButton)
@@ -135,7 +134,11 @@ export class HostToolbarDomController {
     toolbar.appendChild(center)
     toolbar.appendChild(shareButton)
 
-    const { backdrop, sheet } = createInfoSheet(() => this.closeInfo(), this.options.testIds, zIndexBase)
+    const { backdrop, sheet } = createInfoSheet(
+      () => this.closeInfo(),
+      this.options.testIds,
+      zIndexBase,
+    )
 
     this.options.root.appendChild(gradient)
     this.options.root.appendChild(toolbar)
@@ -211,14 +214,15 @@ function createIconButton(
   button.style.alignItems = 'center'
   button.style.justifyContent = 'center'
   button.style.color = color
-  button.addEventListener('click', (event) => {
+  button.addEventListener('click', event => {
     event.preventDefault()
     event.stopPropagation()
     onClick()
   })
-  const svgEl = typeof (button as HTMLButtonElement & { querySelector?: unknown }).querySelector === 'function'
-    ? button.querySelector('svg')
-    : null
+  const svgEl =
+    typeof (button as HTMLButtonElement & { querySelector?: unknown }).querySelector === 'function'
+      ? button.querySelector('svg')
+      : null
   if (svgEl) svgEl.style.display = 'block'
   return button
 }
@@ -238,7 +242,7 @@ function createInfoSheet(
   backdrop.style.transition = 'opacity 220ms ease'
   backdrop.style.pointerEvents = 'none'
   backdrop.style.zIndex = String(zIndexBase + 9)
-  backdrop.addEventListener('click', (event) => {
+  backdrop.addEventListener('click', event => {
     event.preventDefault()
     event.stopPropagation()
     onClose()
@@ -294,7 +298,7 @@ function createInfoSheet(
   close.style.color = 'rgba(0, 0, 0, 0.36)'
   close.style.fontSize = '24px'
   close.style.cursor = 'pointer'
-  close.addEventListener('click', (event) => {
+  close.addEventListener('click', event => {
     event.preventDefault()
     event.stopPropagation()
     onClose()

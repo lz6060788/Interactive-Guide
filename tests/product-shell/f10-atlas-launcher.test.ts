@@ -16,12 +16,11 @@ test('openAtlasWithF10 prefers the host fullscreen helper', async () => {
       throw new Error('browser fallback must not run')
     },
   }
-  openAtlasWithF10(targetUrl)
-  await Promise.resolve()
+  await openAtlasWithF10(targetUrl)
   assert.deepEqual(calls, [targetUrl])
 })
 
-test('openAtlasWithF10 falls back to the best available browser window', () => {
+test('openAtlasWithF10 falls back to the best available browser window', async () => {
   const calls: string[] = []
   const fakeWindow = {
     open: (url: string) => {
@@ -35,6 +34,6 @@ test('openAtlasWithF10 falls back to the best available browser window', () => {
       throw new Error('top window should be preferred')
     },
   }
-  openAtlasWithF10(targetUrl)
+  await openAtlasWithF10(targetUrl)
   assert.deepEqual(calls, [targetUrl])
 })

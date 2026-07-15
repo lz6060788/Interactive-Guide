@@ -28,8 +28,7 @@
  *   - `mount(container)`: render the manifest into the container
  *   - `destroy()`: tear down listeners and child nodes
  *   - events: viewportchange, hotspotclick, itemclick, sceneenter,
- *     routechange, analytics:expose, analytics:click, analytics:stay,
- *     analytics:share
+ *     routechange
  */
 import type {
   AtlasCategoryEntry,
@@ -43,10 +42,7 @@ import { MarkerRenderer } from './marker-renderer.js'
 import { CalloutRenderer } from './callout-renderer.js'
 import { SceneLauncher } from './scene-launcher.js'
 import { CardDrawerController } from './card-drawer-controller.js'
-import {
-  ATLAS_BOTTOM_HINT_GRADIENT,
-  ensureAtlasVisualStyles,
-} from './atlas-visual-tokens.js'
+import { ATLAS_BOTTOM_HINT_GRADIENT, ensureAtlasVisualStyles } from './atlas-visual-tokens.js'
 import { TransitionVideoController } from '../../../platform/transition-video/transition-video-controller.js'
 import { HostToolbarDomController } from '../../../platform/chrome/host-toolbar-dom.js'
 import { HOST_SHEET_BACK_ICON_SVG } from '../../../platform/chrome/host-toolbar-icons.js'
@@ -67,18 +63,14 @@ export type AtlasEvent =
   | { type: 'itemclick'; itemId: string }
   | { type: 'sceneenter'; sceneId: string; viewId: string }
   | { type: 'routechange'; routeId: string }
-  | { type: 'analytics:expose'; target: { kind: 'category' | 'item'; id: string } }
-  | { type: 'analytics:click'; target: { kind: 'category' | 'item'; id: string } }
-  | { type: 'analytics:stay'; durationMs: number }
-  | { type: 'analytics:share'; channel: string }
 
 export type AtlasListener = (event: AtlasEvent) => void
 
 export interface AtlasRuntimeOptions {
   assets: AtlasRuntimeAssetLoader
   listeners?: AtlasListener[]
-  /** Test seam: when provided, Date.now() is replaced with this function. */
-  now?: () => number
+  onShare?: () => void | Promise<void>
+  shareEnabled?: boolean
 }
 
 export class AtlasRuntime {
@@ -90,8 +82,6 @@ export class AtlasRuntime {
   private drawer: CardDrawerController | null = null
   private sceneLauncher: SceneLauncher | null = null
   private readonly listeners: AtlasListener[]
-  private readonly now: () => number
-  private mountedAt: number = 0
   private readonly opts: AtlasRuntimeOptions
   // Set to true when destroy() runs. mount() awaits image loading; if
   // destroy() runs during that await, the next DOM access on mountedEl
@@ -113,7 +103,6 @@ export class AtlasRuntime {
 
   constructor(opts: AtlasRuntimeOptions) {
     this.listeners = opts.listeners ?? []
-    this.now = opts.now ?? (() => Date.now())
     this.opts = opts
   }
 
@@ -184,7 +173,7 @@ export class AtlasRuntime {
         height: img.naturalHeight || this.manifest.config.viewport.height,
       },
     )
-    this.camera.onChange((viewport) => {
+    this.camera.onChange(viewport => {
       this.applyTransform()
       this.emit({ type: 'viewportchange', viewport })
     })
@@ -195,11 +184,12 @@ export class AtlasRuntime {
       this.overlayLayer,
       this.manifest.panorama.cameraBounds,
       this.manifest.config.theme.hotspotVariant,
-      { onCategoryClick: (categoryId) => this.handleCategoryClick(categoryId) },
+      { onCategoryClick: categoryId => this.handleCategoryClick(categoryId) },
     )
     this.markers.setZoomThresholds({
       hotspotMinZoom: this.manifest.config.theme.hotspotMinZoom ?? DEFAULT_HOTSPOT_MIN_ZOOM,
-      itemMarkerMinZoom: this.manifest.config.theme.itemMarkerMinZoom ?? DEFAULT_ITEM_MARKER_MIN_ZOOM,
+      itemMarkerMinZoom:
+        this.manifest.config.theme.itemMarkerMinZoom ?? DEFAULT_ITEM_MARKER_MIN_ZOOM,
     })
     for (const cat of this.manifest.categories) this.markers.addCategory(cat)
     for (const item of this.manifest.items) this.markers.addItem(item)
@@ -208,7 +198,7 @@ export class AtlasRuntime {
     this.callouts = new CalloutRenderer(
       this.overlayLayer,
       this.manifest.config.theme.calloutVariant,
-      { onItemClick: (itemId) => this.handleItemClick(itemId) },
+      { onItemClick: itemId => this.handleItemClick(itemId) },
     )
     this.callouts.setZoomThresholds({
       calloutMinZoom: this.manifest.config.theme.calloutMinZoom ?? DEFAULT_CALLOUT_MIN_ZOOM,
@@ -217,7 +207,7 @@ export class AtlasRuntime {
     this.callouts.setZoom(this.camera.getViewport().zoom)
 
     this.drawer = new CardDrawerController(this.mountedEl, {
-      onItemClick: (itemId) => this.handleDrawerItemClick(itemId),
+      onItemClick: itemId => this.handleDrawerItemClick(itemId),
       onClose: () => {
         this.clearActiveItem()
         this.updateFloatingBackButton()
@@ -234,15 +224,12 @@ export class AtlasRuntime {
 
     this.applyTransform()
     this.observeRuntimeSize()
-    this.mountedAt = this.now()
   }
 
   destroy(): void {
     this.destroyed = true
     this.stopObservingRuntimeSize()
     if (this.mountedEl) {
-      const stayDuration = this.mountedAt ? this.now() - this.mountedAt : 0
-      if (this.mountedAt) this.emit({ type: 'analytics:stay', durationMs: stayDuration })
       this.mountedEl.innerHTML = ''
       this.mountedEl = null
     }
@@ -300,17 +287,16 @@ export class AtlasRuntime {
    */
   focusCategory(categoryId: string): void {
     if (!this.manifest || !this.camera || !this.markers) return
-    const cat = this.manifest.categories.find((c) => c.id === categoryId)
+    const cat = this.manifest.categories.find(c => c.id === categoryId)
     if (!cat) return
     const firstItemId = cat.itemIds[0] ?? null
     const firstItem = firstItemId
-      ? this.manifest.items.find((entry) => entry.id === firstItemId) ?? null
+      ? (this.manifest.items.find(entry => entry.id === firstItemId) ?? null)
       : null
     this.camera.animateTo(this.resolveCategoryFocusViewport(cat, firstItem))
     this.markers.activate(firstItemId ? null : categoryId)
     this.activateItemSelection(firstItemId, { scrollIntoView: true })
     this.openDrawerForCategory(categoryId, firstItemId)
-    this.emit({ type: 'analytics:expose', target: { kind: 'category', id: categoryId } })
   }
 
   /**
@@ -327,12 +313,12 @@ export class AtlasRuntime {
 
   private async openRouteInternal(routeId: string): Promise<void> {
     if (!this.manifest || !this.sceneLauncher) return
-    const route = this.manifest.routes.find((r) => r.id === routeId)
+    const route = this.manifest.routes.find(r => r.id === routeId)
     if (!route) return
     this.emit({ type: 'routechange', routeId })
     const to = route.to
     if (to.kind === 'scene') {
-      const scene = this.manifest.scenes.find((s) => s.sceneId === to.sceneId)
+      const scene = this.manifest.scenes.find(s => s.sceneId === to.sceneId)
       if (scene) {
         const viewId = to.viewId ?? scene.views[0]?.id
         const transition = this.manifest.routeTransitions?.[route.id]
@@ -394,11 +380,14 @@ export class AtlasRuntime {
 
   private handleCategoryClick(categoryId: string): void {
     this.emit({ type: 'hotspotclick', categoryId })
-    this.emit({ type: 'analytics:click', target: { kind: 'category', id: categoryId } })
-    const category = this.manifest?.categories.find((entry) => entry.id === categoryId)
+    const category = this.manifest?.categories.find(entry => entry.id === categoryId)
     if (
       category?.experience.kind === 'html-scene' &&
-      this.tryOpenSceneRouteForCategory(categoryId, category.experience.sceneId, category.experience.viewId)
+      this.tryOpenSceneRouteForCategory(
+        categoryId,
+        category.experience.sceneId,
+        category.experience.viewId,
+      )
     ) {
       return
     }
@@ -407,9 +396,8 @@ export class AtlasRuntime {
 
   private handleItemClick(itemId: string): void {
     this.emit({ type: 'itemclick', itemId })
-    this.emit({ type: 'analytics:click', target: { kind: 'item', id: itemId } })
     this.activateItemSelection(itemId, { scrollIntoView: true })
-    const item = this.manifest?.items.find((entry) => entry.id === itemId)
+    const item = this.manifest?.items.find(entry => entry.id === itemId)
     if (item) {
       this.markers?.activate(null)
       this.openDrawerForCategory(item.categoryId, itemId)
@@ -418,9 +406,8 @@ export class AtlasRuntime {
 
   private handleDrawerItemClick(itemId: string): void {
     this.emit({ type: 'itemclick', itemId })
-    this.emit({ type: 'analytics:click', target: { kind: 'item', id: itemId } })
     this.activateItemSelection(itemId, { scrollIntoView: false })
-    const item = this.manifest?.items.find((entry) => entry.id === itemId)
+    const item = this.manifest?.items.find(entry => entry.id === itemId)
     if (!item) return
     const viewport = item.viewportOverride ?? this.viewportForItem(item)
     this.camera?.animateTo(viewport)
@@ -428,11 +415,11 @@ export class AtlasRuntime {
 
   private openDrawerForCategory(categoryId: string, activeItemId: string | null): void {
     if (!this.manifest || !this.drawer) return
-    const category = this.manifest.categories.find((entry) => entry.id === categoryId)
+    const category = this.manifest.categories.find(entry => entry.id === categoryId)
     if (!category) return
-    const itemsById = new Map(this.manifest.items.map((item) => [item.id, item]))
+    const itemsById = new Map(this.manifest.items.map(item => [item.id, item]))
     const orderedItems = category.itemIds
-      .map((itemId) => itemsById.get(itemId))
+      .map(itemId => itemsById.get(itemId))
       .filter((item): item is AtlasItemEntry => Boolean(item))
     if (orderedItems.length === 0) {
       this.drawer.close()
@@ -461,7 +448,7 @@ export class AtlasRuntime {
   ): boolean {
     if (!this.manifest || !this.sceneLauncher) return false
     const route = this.manifest.routes.find(
-      (entry) =>
+      entry =>
         entry.from.kind === 'panorama' &&
         entry.from.categoryId === categoryId &&
         entry.to.kind === 'scene' &&
@@ -472,7 +459,7 @@ export class AtlasRuntime {
       this.openRoute(route.id)
       return true
     }
-    const scene = this.manifest.scenes.find((entry) => entry.sceneId === sceneId)
+    const scene = this.manifest.scenes.find(entry => entry.sceneId === sceneId)
     if (!scene) return false
     this.sceneLauncher.launch(scene, viewId)
     return true
@@ -521,12 +508,9 @@ export class AtlasRuntime {
           this.updateFloatingBackButton()
         },
         onShare: () => {
-          this.emit({ type: 'analytics:share', channel: 'toolbar' })
-          const nav = (globalThis as typeof globalThis & { navigator?: Navigator }).navigator
-          if (nav?.share) {
-            void nav.share({ title: this.manifest?.projectTitle ?? '' }).catch(() => {})
-          }
+          void this.opts.onShare?.()
         },
+        showShare: this.opts.shareEnabled !== false,
         showGradient: false,
         testIds: {
           toolbar: 'atlas-runtime-toolbar',
@@ -565,11 +549,14 @@ export class AtlasRuntime {
     floatingBack.style.alignItems = 'center'
     floatingBack.style.justifyContent = 'center'
     floatingBack.style.opacity = '0'
-    floatingBack.style.transition = 'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease'
+    floatingBack.style.transition =
+      'bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 220ms ease'
     floatingBack.style.zIndex = '29'
-    const floatingBackSvg = typeof (floatingBack as HTMLButtonElement & { querySelector?: unknown }).querySelector === 'function'
-      ? floatingBack.querySelector('svg')
-      : null
+    const floatingBackSvg =
+      typeof (floatingBack as HTMLButtonElement & { querySelector?: unknown }).querySelector ===
+      'function'
+        ? floatingBack.querySelector('svg')
+        : null
     if (floatingBackSvg) {
       floatingBackSvg.style.width = '16px'
       floatingBackSvg.style.height = '13px'
@@ -607,11 +594,14 @@ export class AtlasRuntime {
       hint.style.transition = 'opacity 220ms ease'
       hint.style.zIndex = '22'
       const stagger = ['0s', '0.12s', '0.24s', '0.24s', '0.12s', '0s']
-      const arrows = typeof (hint as HTMLElement & { querySelectorAll?: unknown }).querySelectorAll === 'function'
-        ? Array.from(hint.querySelectorAll('[data-drag-hint-arrow]'))
-        : []
+      const arrows =
+        typeof (hint as HTMLElement & { querySelectorAll?: unknown }).querySelectorAll ===
+        'function'
+          ? Array.from(hint.querySelectorAll('[data-drag-hint-arrow]'))
+          : []
       arrows.forEach((arrow, index) => {
-        ;(arrow as HTMLElement).style.animation = 'atlas-drag-hint-arrow-glow 1.6s ease-in-out infinite'
+        ;(arrow as HTMLElement).style.animation =
+          'atlas-drag-hint-arrow-glow 1.6s ease-in-out infinite'
         ;(arrow as HTMLElement).style.animationDelay = stagger[index] ?? '0s'
       })
       this.mountedEl.appendChild(hint)
@@ -620,7 +610,12 @@ export class AtlasRuntime {
     }
   }
 
-  private createIconButton(testid: string, label: string, svg: string, onClick: () => void): HTMLButtonElement {
+  private createIconButton(
+    testid: string,
+    label: string,
+    svg: string,
+    onClick: () => void,
+  ): HTMLButtonElement {
     const button = document.createElement('button')
     button.type = 'button'
     button.dataset.testid = testid
@@ -635,14 +630,15 @@ export class AtlasRuntime {
     button.style.display = 'flex'
     button.style.alignItems = 'center'
     button.style.justifyContent = 'center'
-    button.addEventListener('click', (event) => {
+    button.addEventListener('click', event => {
       event.preventDefault()
       event.stopPropagation()
       onClick()
     })
-    const svgEl = typeof (button as HTMLElement & { querySelector?: unknown }).querySelector === 'function'
-      ? button.querySelector('svg')
-      : null
+    const svgEl =
+      typeof (button as HTMLElement & { querySelector?: unknown }).querySelector === 'function'
+        ? button.querySelector('svg')
+        : null
     if (svgEl) {
       ;(svgEl as SVGElement).style.display = 'block'
     }
@@ -652,12 +648,12 @@ export class AtlasRuntime {
   private syncAnnotationVisibility(zoom: number): void {
     if (!this.manifest || !this.markers) return
     const calloutMinZoom = this.manifest.config.theme.calloutMinZoom ?? DEFAULT_CALLOUT_MIN_ZOOM
-    const visibleCalloutItems = this.manifest.items.filter((item) =>
-      item.callout && zoom >= (item.callout.minZoom ?? calloutMinZoom),
+    const visibleCalloutItems = this.manifest.items.filter(
+      item => item.callout && zoom >= (item.callout.minZoom ?? calloutMinZoom),
     )
-    const suppressedCategoryIds = new Set(visibleCalloutItems.map((item) => item.categoryId))
+    const suppressedCategoryIds = new Set(visibleCalloutItems.map(item => item.categoryId))
     const suppressedItemIds = new Set(
-      this.manifest.items.filter((item) => item.callout).map((item) => item.id),
+      this.manifest.items.filter(item => item.callout).map(item => item.id),
     )
     this.markers.suppressCategories(suppressedCategoryIds)
     this.markers.suppressItems(suppressedItemIds)
@@ -665,23 +661,24 @@ export class AtlasRuntime {
 
   private updateFloatingBackButton(): void {
     if (!this.floatingBackEl) return
-    const root = this.mountedEl as (HTMLElement & { querySelector?: typeof HTMLElement.prototype.querySelector }) | null
+    const root = this.mountedEl as
+      | (HTMLElement & { querySelector?: typeof HTMLElement.prototype.querySelector })
+      | null
     const drawerHeight = this.drawer?.getState().open
-      ? (typeof root?.querySelector === 'function'
-        ? root.querySelector<HTMLElement>('[data-testid="atlas-card-drawer"]')?.offsetHeight ?? 0
-        : 0)
+      ? typeof root?.querySelector === 'function'
+        ? (root.querySelector<HTMLElement>('[data-testid="atlas-card-drawer"]')?.offsetHeight ?? 0)
+        : 0
       : 0
     const shouldShow = true
     this.floatingBackEl.style.display = 'flex'
     this.floatingBackEl.style.opacity = shouldShow ? '1' : '0'
     this.floatingBackEl.style.pointerEvents = shouldShow ? 'auto' : 'none'
-    this.floatingBackEl.style.bottom = drawerHeight > 0
-      ? `${drawerHeight + 24}px`
-      : '24px'
+    this.floatingBackEl.style.bottom = drawerHeight > 0 ? `${drawerHeight + 24}px` : '24px'
   }
 
   private syncHintChromeVisibility(): void {
-    const shouldShow = this.manifest?.config.chrome.showHints !== false && !!this.manifest?.config.hintText
+    const shouldShow =
+      this.manifest?.config.chrome.showHints !== false && !!this.manifest?.config.hintText
     if (this.bottomGradientEl) {
       this.bottomGradientEl.style.display = shouldShow ? 'block' : 'none'
       this.bottomGradientEl.style.opacity = shouldShow ? '1' : '0'
@@ -693,11 +690,12 @@ export class AtlasRuntime {
   }
 
   private viewportForItem(item: AtlasItemEntry): Viewport {
-    const base = this.camera?.getViewport() ?? this.manifest?.panorama.initialViewport ?? {
-      centerX: item.marker.x,
-      centerY: item.marker.y,
-      zoom: 2,
-    }
+    const base = this.camera?.getViewport() ??
+      this.manifest?.panorama.initialViewport ?? {
+        centerX: item.marker.x,
+        centerY: item.marker.y,
+        zoom: 2,
+      }
     return {
       centerX: item.marker.x,
       centerY: item.marker.y,
@@ -724,10 +722,7 @@ export class AtlasRuntime {
 }
 
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }
 
 function ensureAtlasDragHintAnimationStyles(doc: Document): void {

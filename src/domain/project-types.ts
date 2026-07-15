@@ -256,11 +256,10 @@ export interface CatalogProductConfig {
 export interface AnalyticsConfig {
   enabled: boolean
   provider: 'weblog'
-  profileId: string
+  appKey: string
   pageType: string
-  contentName?: string
-  defaultSource?: string
-  dimensions?: Record<string, string>
+  name: string
+  defaultSource: string
 }
 
 export interface ShareConfig {

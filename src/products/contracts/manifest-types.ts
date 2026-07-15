@@ -13,13 +13,11 @@ import type {
   AssetDefinition,
   ExperienceNavigation,
   ExperienceRoute,
-  IndustryCategory,
-  IndustryItem,
   IndustryStage,
-  ProjectIntegrations,
   SchemaVersion,
   Viewport,
 } from '../../domain/project-types.js'
+import type { RuntimeIntegrations } from './runtime-integrations.js'
 
 export interface AssetRef {
   assetId: string
@@ -80,7 +78,7 @@ export interface ProductManifestBase {
   /** Only the routes that originate at a location reachable from this product. */
   routes: ExperienceRoute[]
   scenes: HtmlSceneManifest[]
-  integrations: ProjectIntegrations
+  integrations: RuntimeIntegrations
 }
 
 export interface AtlasManifest extends ProductManifestBase {

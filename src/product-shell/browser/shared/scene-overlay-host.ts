@@ -12,7 +12,8 @@ export interface SceneOverlayHostOptions {
   projectTitle: string
   sessionId: string
   onRouteRequest: (routeId: string) => void
-  onShare?: () => void
+  onShare?: () => void | Promise<void>
+  shareEnabled?: boolean
 }
 
 export class SceneOverlayHost {
@@ -81,9 +82,13 @@ export class SceneOverlayHost {
       textColor: active.chromeTextColor,
       onBack: () => this.closeScene(),
       onShare: () => {
-        this.options.onShare?.()
+        if (this.options.onShare) {
+          void this.options.onShare()
+          return
+        }
         void shareCurrentPage(this.options.projectTitle)
       },
+      shareEnabled: this.options.shareEnabled,
     })
     this.toolbar.mount()
   }

@@ -117,14 +117,20 @@ class FakeEl {
     return { left: 0, top: 0, width: 1024, height: 768 }
   }
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    const callback = typeof listener === 'function' ? listener : event => listener.handleEvent(event as Event)
+    const callback =
+      typeof listener === 'function' ? listener : event => listener.handleEvent(event as Event)
     const current = this.listeners.get(type) ?? []
     current.push(callback as (event: unknown) => void)
     this.listeners.set(type, current)
   }
   removeEventListener(): void {}
-  emit(type: string, event: unknown): void { for (const listener of this.listeners.get(type) ?? []) listener(event) }
-  scrollTo(options: ScrollToOptions): void { this.scrollTop = Number(options.top) || 0; this.lastScrollBehavior = options.behavior }
+  emit(type: string, event: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event)
+  }
+  scrollTo(options: ScrollToOptions): void {
+    this.scrollTop = Number(options.top) || 0
+    this.lastScrollBehavior = options.behavior
+  }
   setPointerCapture(): void {}
   releasePointerCapture(): void {}
 }
@@ -156,7 +162,10 @@ test('CatalogRuntime.loadManifest + mount creates the complete catalog scene', a
   assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-scene-original'))
   assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-scene-stage-tabs'))
   assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-scene-detail-list'))
-  assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-atlas-launch'), 'legacy-compatible Atlas entry remains visible before a URL is configured')
+  assert.ok(
+    sceneChildren.some(child => child.dataset.testid === 'catalog-atlas-launch'),
+    'legacy-compatible Atlas entry remains visible before a URL is configured',
+  )
   rt.destroy()
 })
 
@@ -168,8 +177,14 @@ test('CatalogRuntime uses the legacy 520ms focus and camera easing contract', as
   let nextFrameId = 1
   let now = 1000
   ;(globalThis as { performance: { now: () => number } }).performance = { now: () => now }
-  globalThis.requestAnimationFrame = callback => { const id = nextFrameId++; frames.set(id, callback); return id }
-  globalThis.cancelAnimationFrame = id => { frames.delete(id) }
+  globalThis.requestAnimationFrame = callback => {
+    const id = nextFrameId++
+    frames.set(id, callback)
+    return id
+  }
+  globalThis.cancelAnimationFrame = id => {
+    frames.delete(id)
+  }
   const runFrames = (timestamp: number) => {
     const pending = [...frames.values()]
     frames.clear()
@@ -179,7 +194,15 @@ test('CatalogRuntime uses the legacy 520ms focus and camera easing contract', as
   const rt = new CatalogRuntime({ assets: loader })
   try {
     const manifest = minimalManifest()
-    manifest.items.push({ id: 'item-2', categoryId: 'cat-1', title: 'Item 2', description: 'desc 2', order: 1, marker: { x: .7, y: .6 }, focusRect: { x: .6, y: .5, width: .1, height: .1 } })
+    manifest.items.push({
+      id: 'item-2',
+      categoryId: 'cat-1',
+      title: 'Item 2',
+      description: 'desc 2',
+      order: 1,
+      marker: { x: 0.7, y: 0.6 },
+      focusRect: { x: 0.6, y: 0.5, width: 0.1, height: 0.1 },
+    })
     manifest.stages[0].categories[0].itemIds.push('item-2')
     rt.loadManifest(manifest)
     const container = new FakeEl() as unknown as HTMLElement
@@ -191,17 +214,30 @@ test('CatalogRuntime uses the legacy 520ms focus and camera easing contract', as
     const initialLeft = Number.parseFloat(focus?.style.left ?? '')
 
     rt.selectItem('item-2')
-    assert.ok(frames.size >= 2, 'selection must schedule focus interpolation and list centering frames')
-    assert.equal(Number.parseFloat(focus?.style.left ?? ''), initialLeft, 'focus must not jump before the first animation frame')
+    assert.ok(
+      frames.size >= 2,
+      'selection must schedule focus interpolation and list centering frames',
+    )
+    assert.equal(
+      Number.parseFloat(focus?.style.left ?? ''),
+      initialLeft,
+      'focus must not jump before the first animation frame',
+    )
 
     now = 1260
     runFrames(now)
     const middleLeft = Number.parseFloat(focus?.style.left ?? '')
-    assert.ok(middleLeft > initialLeft && middleLeft < 716.8, 'half-time frame must be between the old and target positions')
+    assert.ok(
+      middleLeft > initialLeft && middleLeft < 716.8,
+      'half-time frame must be between the old and target positions',
+    )
 
     now = 1520
     runFrames(now)
-    assert.ok(Math.abs(Number.parseFloat(focus?.style.left ?? '') - 716.8) < .001, '520ms frame must land on the target position')
+    assert.ok(
+      Math.abs(Number.parseFloat(focus?.style.left ?? '') - 716.8) < 0.001,
+      '520ms frame must land on the target position',
+    )
     rt.destroy()
   } finally {
     globalThis.requestAnimationFrame = originalRaf
@@ -237,9 +273,7 @@ test('CatalogRuntime uses the complete host rectangle instead of an inner square
   container.clientHeight = 600
   await rt.mount(container as unknown as HTMLElement)
 
-  const focus = container.children.find(
-    child => child.dataset.testid === 'catalog-focus-window',
-  )
+  const focus = container.children.find(child => child.dataset.testid === 'catalog-focus-window')
   assert.equal(container.style.width, '100%')
   assert.equal(container.style.height, '100%')
   assert.equal(
@@ -252,13 +286,23 @@ test('CatalogRuntime uses the complete host rectangle instead of an inner square
 
 test('CatalogRuntime centers the active detail and supports pointer-drag list scrolling', async () => {
   const manifest = minimalManifest()
-  manifest.items.push({ id: 'item-2', categoryId: 'cat-1', title: 'Item 2', description: 'desc 2', order: 1, marker: { x: .7, y: .6 }, focusRect: { x: .6, y: .5, width: .1, height: .1 } })
+  manifest.items.push({
+    id: 'item-2',
+    categoryId: 'cat-1',
+    title: 'Item 2',
+    description: 'desc 2',
+    order: 1,
+    marker: { x: 0.7, y: 0.6 },
+    focusRect: { x: 0.6, y: 0.5, width: 0.1, height: 0.1 },
+  })
   manifest.stages[0].categories[0].itemIds.push('item-2')
   const rt = new CatalogRuntime({ assets: makeLoader() })
   rt.loadManifest(manifest)
   const container = new FakeEl() as unknown as HTMLElement
   await rt.mount(container)
-  const list = (container as unknown as FakeEl).children.find(child => child.dataset.testid === 'catalog-scene-detail-list')
+  const list = (container as unknown as FakeEl).children.find(
+    child => child.dataset.testid === 'catalog-scene-detail-list',
+  )
   assert.ok(list)
   await new Promise(resolve => setTimeout(resolve, 0))
   assert.equal(list.lastScrollBehavior, 'smooth')
@@ -293,7 +337,7 @@ test('CatalogRuntime renders and emits the optional Atlas launch entry', async (
   rt.destroy()
 })
 
-test('CatalogRuntime.selectItem emits itemselect, analytics:click, and viewport animation events', async () => {
+test('CatalogRuntime.selectItem emits itemselect and viewport animation events', async () => {
   const loader = makeLoader()
   const events: CatalogEvent[] = []
   const rt = new CatalogRuntime({ assets: loader })
@@ -304,7 +348,6 @@ test('CatalogRuntime.selectItem emits itemselect, analytics:click, and viewport 
   rt.selectItem('item-1')
   const types = events.map(e => e.type)
   assert.ok(types.includes('itemselect'))
-  assert.ok(types.includes('analytics:click'))
   assert.ok(types.includes('viewportanimationstart'))
   rt.destroy()
 })
@@ -359,21 +402,6 @@ test('CatalogRuntime.openRoute handles panorama targets by selecting an item', a
   rt.openRoute('r-panorama')
   assert.ok(events.some(event => event.type === 'itemselect' && event.itemId === 'item-1'))
   rt.destroy()
-})
-
-test('CatalogRuntime.destroy emits analytics:stay with non-zero duration', async () => {
-  let now = 1000
-  const loader = makeLoader()
-  const events: CatalogEvent[] = []
-  const rt = new CatalogRuntime({ assets: loader, now: () => now })
-  rt.loadManifest(minimalManifest())
-  rt.on(e => events.push(e))
-  const container = new FakeEl() as unknown as HTMLElement
-  await rt.mount(container)
-  now = 1500
-  rt.destroy()
-  const stay = events.find(e => e.type === 'analytics:stay')
-  assert.ok(stay && stay.type === 'analytics:stay' && stay.durationMs === 500)
 })
 
 test('CatalogRuntime.mount throws when no manifest is loaded', async () => {

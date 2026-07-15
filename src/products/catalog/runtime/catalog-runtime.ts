@@ -29,10 +29,6 @@ export type CatalogEvent =
   | { type: 'sceneenter'; sceneId: string; viewId: string }
   | { type: 'routechange'; routeId: string }
   | { type: 'atlaslaunch'; url: string }
-  | { type: 'analytics:expose'; target: { kind: 'category' | 'item'; id: string } }
-  | { type: 'analytics:click'; target: { kind: 'category' | 'item'; id: string } }
-  | { type: 'analytics:stay'; durationMs: number }
-  | { type: 'analytics:share'; channel: string }
   | { type: 'viewportanimationstart' }
   | { type: 'viewportanimationend' }
 
@@ -41,7 +37,6 @@ export type CatalogListener = (event: CatalogEvent) => void
 export interface CatalogRuntimeOptions {
   assets: CatalogRuntimeAssetLoader
   listeners?: CatalogListener[]
-  now?: () => number
 }
 
 export class CatalogRuntime {
@@ -50,13 +45,10 @@ export class CatalogRuntime {
   private scene: CatalogScene | null = null
   private sceneLauncher: SceneLauncher | null = null
   private readonly listeners: CatalogListener[]
-  private readonly now: () => number
   private readonly opts: CatalogRuntimeOptions
-  private mountedAt: number = 0
 
   constructor(opts: CatalogRuntimeOptions) {
     this.listeners = opts.listeners ?? []
-    this.now = opts.now ?? (() => Date.now())
     this.opts = opts
   }
 
@@ -90,21 +82,20 @@ export class CatalogRuntime {
       root: this.mountedEl,
       manifest: this.manifest,
       panoramaUrl: imgUrl,
-      imageSize: { width: image.naturalWidth || this.manifest.config.viewport.width, height: image.naturalHeight || this.manifest.config.viewport.height },
+      imageSize: {
+        width: image.naturalWidth || this.manifest.config.viewport.width,
+        height: image.naturalHeight || this.manifest.config.viewport.height,
+      },
       onSelectionChange: selection => this.handleSceneSelection(selection),
       onAtlasLaunch: url => this.emit({ type: 'atlaslaunch', url }),
     })
     this.scene.mount()
 
     this.sceneLauncher = new SceneLauncher(this.opts.assets.openScene, this.listeners)
-
-    this.mountedAt = this.now()
   }
 
   destroy(): void {
     if (this.mountedEl) {
-      const dur = this.now() - this.mountedAt
-      this.emit({ type: 'analytics:stay', durationMs: dur })
       this.mountedEl.innerHTML = ''
       this.mountedEl = null
     }
@@ -138,13 +129,11 @@ export class CatalogRuntime {
     const category = selection.categoryId ? this.findCategoryById(selection.categoryId) : null
     if (category) {
       this.emit({ type: 'categoryfocus', categoryId: category.id, viewport: category.viewport })
-      this.emit({ type: 'analytics:expose', target: { kind: 'category', id: category.id } })
     }
     if (!selection.itemId) return
     const item = this.manifest.items.find(entry => entry.id === selection.itemId)
     if (!item) return
     this.emit({ type: 'itemselect', itemId: item.id })
-    this.emit({ type: 'analytics:click', target: { kind: 'item', id: item.id } })
     if (category) this.animateViewport(category.viewport)
   }
 

@@ -51,7 +51,13 @@ interface BootstrapInput {
     onFailure?: 'abort-navigation' | 'cut'
   }>
   integrations?: {
-    analytics?: { enabled: boolean; profileId: string; pageType: string; contentName?: string }
+    analytics?: {
+      enabled: boolean
+      appKey: string
+      pageType: string
+      name: string
+      defaultSource: string
+    }
     share?: { enabled: boolean; title?: string; description?: string }
   }
 }
@@ -108,3 +114,6 @@ interface BootstrapInput {
 - The panorama image defaults to the project's first category viewport when
   no panorama image is supplied (the `autoPickPanoramaAsset` branch of the
   normalizer). In practice, always supply a real panorama.
+- Bootstrap analytics always uses the `weblog` provider. `appKey` configures
+  the SDK; `pageType`, `name`, and `defaultSource` are the Atlas event
+  dimensions. Catalog does not report analytics.

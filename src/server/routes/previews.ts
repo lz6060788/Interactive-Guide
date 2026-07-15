@@ -9,18 +9,20 @@ import path from 'node:path'
 import { ProjectRepository } from '../storage/project-repository.js'
 import { DraftBuildService, type DraftProduct } from '../services/draft-build-service.js'
 
-export function createPreviewsRouter(projects: ProjectRepository = new ProjectRepository()): Router {
+export function createPreviewsRouter(
+  projects: ProjectRepository = new ProjectRepository(),
+): Router {
   const router = Router()
   const draft = new DraftBuildService(projects)
 
-  router.post('/projects/:id/previews/:product', (req, res) => {
+  router.post('/projects/:id/previews/:product', async (req, res) => {
     const product = String(req.params.product)
     if (product !== 'atlas' && product !== 'catalog') {
       res.status(400).json({ error: `unknown product "${product}"`, code: 'BAD_PRODUCT' })
       return
     }
     try {
-      const result = draft.buildDraft(String(req.params.id), product as DraftProduct)
+      const result = await draft.buildDraft(String(req.params.id), product as DraftProduct)
       const buildId = path.basename(result.draftDir)
       const baseUrl = `/api/projects/${encodeURIComponent(String(req.params.id))}/previews/${product}/builds/${encodeURIComponent(buildId)}`
       res.json({

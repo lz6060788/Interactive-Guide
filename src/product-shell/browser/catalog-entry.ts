@@ -4,9 +4,10 @@ import { AssetLoader } from '../../platform/asset-loader/asset-loader.js'
 import { createShellFrame } from './shared/shell-frame.js'
 import { loadManifest } from './shared/browser-runtime-entry.js'
 import { SceneOverlayHost } from './shared/scene-overlay-host.js'
-import { ProductToolbar, shareCurrentPage } from './shared/product-toolbar.js'
+import { ProductToolbar } from './shared/product-toolbar.js'
 import { openAtlasWithF10 } from './shared/f10-atlas-launcher.js'
-import { createRuntimeAnalytics } from './shared/runtime-analytics.js'
+import { F10HostAdapter } from '../../platform/f10/f10-host-adapter.js'
+import { ProductShareController } from './shared/product-sharing.js'
 
 export async function bootstrapCatalogProduct(
   app: HTMLElement,
@@ -15,7 +16,13 @@ export async function bootstrapCatalogProduct(
   const manifest = await loadManifest<CatalogManifest>(manifestUrl)
   const { shell, runtimeMount } = createShellFrame(app)
   const assetLoader = new AssetLoader()
-  const analytics = createRuntimeAnalytics(manifest.integrations, 'catalog', manifest.projectId)
+  const f10 = new F10HostAdapter()
+  const sharing = new ProductShareController({
+    projectTitle: manifest.projectTitle,
+    config: manifest.integrations.share,
+    resolveAssetUrl: url => assetLoader.resolveUrl(url),
+    f10,
+  })
   let runtime: CatalogRuntime | null = null
 
   // The Catalog reference scene owns its own stage/category navigation. Unlike
@@ -25,10 +32,8 @@ export async function bootstrapCatalogProduct(
       root: shell,
       projectTitle: manifest.projectTitle,
       textColor: manifest.config.theme.textColor ?? '#FFFFFF',
-      onShare: () => {
-        analytics.track('share', { channel: 'toolbar' })
-        void shareCurrentPage(manifest.projectTitle)
-      },
+      onShare: () => void sharing.share(),
+      shareEnabled: sharing.enabled,
     })
     toolbar.mount()
   }
@@ -40,7 +45,8 @@ export async function bootstrapCatalogProduct(
     projectTitle: manifest.projectTitle,
     sessionId: createSessionId(manifest.projectId, manifest.product),
     onRouteRequest: routeId => runtime?.openRoute(routeId),
-    onShare: () => analytics.track('share', { channel: 'html-scene-toolbar' }),
+    onShare: () => sharing.share(),
+    shareEnabled: sharing.enabled,
   })
 
   runtime = new CatalogRuntime({
@@ -51,25 +57,13 @@ export async function bootstrapCatalogProduct(
     },
     listeners: [
       event => {
-        switch (event.type) {
-          case 'analytics:expose':
-          case 'analytics:click':
-          case 'analytics:stay':
-          case 'analytics:share':
-          case 'sceneenter':
-          case 'routechange':
-          case 'atlaslaunch':
-            analytics.trackRuntimeEvent(event)
-            break
-        }
-        if (event.type === 'atlaslaunch') openAtlasWithF10(event.url)
+        if (event.type === 'atlaslaunch') void openAtlasWithF10(event.url, f10)
       },
     ],
   })
 
   runtime.loadManifest(manifest)
   await runtime.mount(runtimeMount)
-  analytics.track('expose', { target: { kind: 'route', id: 'initial' } })
 }
 
 function createSessionId(projectId: string, product: string): string {

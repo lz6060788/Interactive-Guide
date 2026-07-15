@@ -28,6 +28,25 @@ test('GuideProjectSchema accepts only a complete optional Catalog Atlas URL', ()
   assert.equal(GuideProjectSchema.safeParse(draft).success, false)
 })
 
+test('GuideProjectSchema requires appKey and the fixed Atlas analytics dimensions', () => {
+  const draft = base()
+  draft.integrations.analytics = {
+    enabled: true,
+    provider: 'weblog',
+    appKey: 'ce19ea099b',
+    pageType: 'visindustry',
+    name: '存储芯片产业链',
+    defaultSource: 'industry',
+  }
+  assert.equal(GuideProjectSchema.safeParse(draft).success, true)
+  const legacy = structuredClone(draft) as unknown as {
+    integrations: { analytics: Record<string, unknown> }
+  }
+  delete legacy.integrations.analytics.appKey
+  legacy.integrations.analytics.profileId = 'ce19ea099b'
+  assert.equal(GuideProjectSchema.safeParse(legacy).success, false)
+})
+
 test('GuideProjectSchema rejects projects with wrong stage key order', () => {
   const draft = base()
   // @ts-expect-error mutate stages

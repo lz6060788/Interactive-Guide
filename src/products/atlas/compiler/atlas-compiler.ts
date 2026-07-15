@@ -22,6 +22,7 @@
 import type { GuideProject } from '../../../domain/project-types.js'
 import type { AssetDefinition } from '../../../domain/project-types.js'
 import type { AtlasManifest, AtlasRouteTransitionAsset } from '../contract/atlas-manifest.js'
+import { compileRuntimeIntegrations } from '../../contracts/runtime-integrations.js'
 
 export interface AtlasCompileResult {
   manifest: AtlasManifest
@@ -160,6 +161,9 @@ export function compileAtlas(
   for (const r of reachableRoutes) {
     if (r.transition?.assetId) referencedAssets.add(r.transition.assetId)
   }
+  if (normalizedProject.integrations.share?.imageAssetId) {
+    referencedAssets.add(normalizedProject.integrations.share.imageAssetId)
+  }
   const assets = Object.values(normalizedProject.assets.byId)
     .filter(a => referencedAssets.has(a.id))
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -236,7 +240,9 @@ export function compileAtlas(
           : {}),
       },
     },
-    integrations: normalizedProject.integrations,
+    integrations: compileRuntimeIntegrations(normalizedProject, assetClosure, {
+      includeAnalytics: true,
+    }),
   }
 
   return { manifest, assets }
