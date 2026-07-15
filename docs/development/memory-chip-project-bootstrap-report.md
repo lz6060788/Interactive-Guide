@@ -4,7 +4,7 @@
 
 - 项目 ID：`memory-chip-industry-chain`
 - 项目标题：存储芯片产业链
-- 当前 revision：14（本页空间表记录的是 revision 4 的自动导入基线，后续已在编辑器中人工校准）
+- 当前 revision：21（本页空间表记录的是 revision 4 的自动导入基线，后续已在编辑器中人工校准）
 - 知识结构：3 个一级阶段、9 个二级分类、27 个三级节点
 - 场景与转场：0 个 HTML Scene、0 条转场路由
 - 运行时资产：1 张全景底图
@@ -88,7 +88,7 @@ focusRect 尺寸仍是此前确认的临时统一值，后续可在 Catalog 编�
 
 ## 验证记录
 
-- 空间自动导入 revision：3 → 4；当前项目 revision：14
+- 空间自动导入 revision：3 → 4；当前项目 revision：21
 - 名称匹配：9/9 个二级分类、27/27 个三级节点
 - Atlas manifest：9 categories、27 items
 - Catalog manifest：3 stages、9 categories、27 items
@@ -101,7 +101,7 @@ focusRect 尺寸仍是此前确认的临时统一值，后续可在 Catalog 编�
 
 最新预览：
 
-- Atlas：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784116217783-14/index.html`
-- Catalog：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784116219490-14/index.html`
+- Atlas：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784117006854-21/index.html`
+- Catalog：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784117008363-21/index.html`
 
-revision 14 运行时验收：Atlas 产物只包含页面曝光、分享点击、分享回流、停留时长四个 WeBlog 事件，停留 `value` 按完整 5 秒区间发送数字 `1、2、3……`；F10 分享和 Catalog 跳转异常分别兜底到 `navigator.share` 和 `window.open`；Catalog manifest 和脚本均不包含埋点代码；两份产物均通过 ES5 语法校验并返回 HTTP 200。
+revision 21 运行时验收：Atlas 产物只包含页面曝光、分享点击、分享回流、停留时长四个 WeBlog 事件，停留 `value` 按完整 5 秒区间发送数字 `1、2、3……`；Falcon 环境调用 F10，普通浏览器不加载 F10/King Fisher 并直接使用 `navigator.share` 或 `window.open`；Catalog manifest 和脚本均不包含埋点代码；两份产物均通过 ES5 语法校验并返回 HTTP 200。

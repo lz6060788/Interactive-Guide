@@ -22,7 +22,12 @@ interface KingFisherVendorScripts {
   falcon?: string
 }
 
-interface F10HostWindow extends Window {
+export interface FalconHostMarkers {
+  _falcon?: unknown
+  FalconJavaInterface?: unknown
+}
+
+interface F10HostWindow extends Window, FalconHostMarkers {
   F10Utils?: F10UtilsApi
   _f?: F10UtilsApi
   Bridge?: unknown
@@ -39,6 +44,7 @@ export class F10HostAdapter {
   ) {}
 
   async shareUrlCard(payload: F10SharePayload): Promise<boolean> {
+    if (!isFalconHost(this.hostWindow)) return false
     const utils = await this.ensureLoaded()
     if (typeof utils?.shareUrlCard !== 'function') return false
     await utils.shareUrlCard(payload)
@@ -46,6 +52,7 @@ export class F10HostAdapter {
   }
 
   async jumpTofullScreenPage(url: string): Promise<boolean> {
+    if (!isFalconHost(this.hostWindow)) return false
     const utils = await this.ensureLoaded()
     if (typeof utils?.jumpTofullScreenPage !== 'function') return false
     await utils.jumpTofullScreenPage(url)
@@ -91,6 +98,13 @@ export class F10HostAdapter {
     )
     return resolveF10Utils(this.hostWindow)
   }
+}
+
+export function isFalconHost(hostWindow: FalconHostMarkers): boolean {
+  return (
+    typeof hostWindow._falcon !== 'undefined' ||
+    typeof hostWindow.FalconJavaInterface !== 'undefined'
+  )
 }
 
 export function createShareUrl(href: string): string {

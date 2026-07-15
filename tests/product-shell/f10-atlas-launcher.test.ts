@@ -7,6 +7,7 @@ const targetUrl = 'https://example.com/atlas/index.html'
 test('openAtlasWithF10 prefers the host fullscreen helper', async () => {
   const calls: string[] = []
   ;(globalThis as unknown as { window: unknown }).window = {
+    _falcon: {},
     F10Utils: {
       jumpTofullScreenPage: async (url: string) => {
         calls.push(url)

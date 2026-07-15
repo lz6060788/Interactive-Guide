@@ -11,6 +11,7 @@ test('ProductShareController reports the click and shares a marked URL through F
   const payloads: F10SharePayload[] = []
   let shareReports = 0
   const fakeWindow = {
+    _falcon: {},
     F10Utils: {
       shareUrlCard: (payload: F10SharePayload) => payloads.push(payload),
     },
@@ -95,4 +96,33 @@ test('shareWithBestAvailableHost catches F10 errors and falls back to navigator.
       url: 'https://example.com/atlas?from=share',
     },
   ])
+})
+
+test('ordinary browsers skip F10 dependency loading and use navigator.share', async () => {
+  const browserPayloads: ShareData[] = []
+  const payload: F10SharePayload = {
+    title: '产业链',
+    text: '产业链',
+    content: '分享描述',
+    description: '分享描述',
+    url: 'https://example.com/atlas?from=share',
+    shareUrl: 'https://example.com/atlas?from=share',
+  }
+  const ordinaryWindow = {} as Window
+  const dependencyDocument = {
+    querySelector: () => {
+      throw new Error('ordinary browsers must not inspect or inject F10 scripts')
+    },
+  } as unknown as Document
+  const adapter = new F10HostAdapter(ordinaryWindow, dependencyDocument)
+
+  await shareWithBestAvailableHost(adapter, payload, {
+    share: async browserPayload => {
+      browserPayloads.push(browserPayload)
+    },
+    clipboard: {} as Clipboard,
+  })
+
+  assert.equal(browserPayloads.length, 1)
+  assert.equal(browserPayloads[0].url, payload.url)
 })
