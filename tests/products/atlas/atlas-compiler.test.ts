@@ -9,6 +9,7 @@ import {
 } from '../../../src/products/atlas/compiler/atlas-compiler.js'
 import { createDraftProject } from '../../../src/domain/project-normalizer.js'
 import type { GuideProject } from '../../../src/domain/project-types.js'
+import { resolveAtlasManifest } from '../../../src/products/contracts/manifest-localization.js'
 
 const closure = (_id: string, sourcePath: string): string => `./${sourcePath}`
 
@@ -67,6 +68,24 @@ test('compileAtlas projects project fields into the manifest', () => {
   assert.equal(manifest.items.length, 1)
   assert.equal(manifest.items[0].marker.y, 0.6)
   assert.equal('viewportOverride' in manifest.items[0], false)
+})
+
+test('Atlas draft preview permits a missing selected-language translation without weakening runtime strictness', () => {
+  const project = createDraftProject({ id: 'draft-preview', title: '中文标题', locale: 'zh-CN' })
+  project.panorama.assetId = 'asset-pano'
+  project.assets.byId['asset-pano'] = {
+    id: 'asset-pano',
+    kind: 'image',
+    sourcePath: 'assets/images/panorama.jpg',
+  }
+  const { manifest } = compileAtlas(project, closure)
+
+  assert.throws(() => resolveAtlasManifest(manifest, 'en-US'), /projectTitle is missing translation/)
+  const preview = resolveAtlasManifest(manifest, 'en-US', {
+    allowMissingTranslations: true,
+  })
+  assert.equal(preview.projectTitle, '')
+  assert.equal(preview.locale, 'en-US')
 })
 
 test('compileAtlas throws when panorama.assetId is missing', () => {

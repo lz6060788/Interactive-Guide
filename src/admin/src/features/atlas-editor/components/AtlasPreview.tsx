@@ -106,7 +106,9 @@ export function AtlasPreview({
     runtimeRef.current = rt
     try {
       const { manifest } = compileAtlas(project, resolveSourcePath)
-      rt.loadManifest(resolveAtlasManifest(manifest, locale))
+      rt.loadManifest(
+        resolveAtlasManifest(manifest, locale, { allowMissingTranslations: true }),
+      )
       void rt.mount(hostRef.current)
     } catch (e) {
       if (hostRef.current) {

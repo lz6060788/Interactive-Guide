@@ -71,7 +71,9 @@ export function CatalogEditorCanvas({
     if (blocked || !host) return
     const resolver = createProjectAssetUrlResolver(project)
     const { manifest: localizedManifest } = compileCatalog(project, resolver)
-    const manifest = resolveCatalogManifest(localizedManifest, locale)
+    const manifest = resolveCatalogManifest(localizedManifest, locale, {
+      allowMissingTranslations: true,
+    })
     const initialSelection: Partial<CatalogSceneSelection> = {
       stageKey: selectedStage,
       ...(selection?.kind === 'item' ? { itemId: selection.id } : {}),

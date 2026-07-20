@@ -1,4 +1,4 @@
-import { requireLocalizedText } from '../../domain/localization.js'
+import { readLocalizedText, requireLocalizedText } from '../../domain/localization.js'
 import type { LocaleCode, LocalizedText } from '../../domain/project-types.js'
 import type { AtlasManifest, ResolvedAtlasManifest } from '../atlas/contract/atlas-manifest.js'
 import type {
@@ -6,14 +6,29 @@ import type {
   ResolvedCatalogManifest,
 } from '../catalog/contract/catalog-manifest.js'
 
-function text(value: LocalizedText | undefined, locale: LocaleCode, path: string): string {
-  return requireLocalizedText(value, locale, path)
+export interface ManifestLocalizationOptions {
+  /** Draft previews may render incomplete translations; released runtimes remain strict by default. */
+  allowMissingTranslations?: boolean
+}
+
+function text(
+  value: LocalizedText | undefined,
+  locale: LocaleCode,
+  path: string,
+  options: ManifestLocalizationOptions,
+): string {
+  return options.allowMissingTranslations
+    ? readLocalizedText(value, locale)
+    : requireLocalizedText(value, locale, path)
 }
 
 function resolveIntegrations(
   integrations: AtlasManifest['integrations'],
   locale: LocaleCode,
+  options: ManifestLocalizationOptions,
 ): ResolvedAtlasManifest['integrations'] {
+  const resolveText = (value: LocalizedText | undefined, path: string) =>
+    text(value, locale, path, options)
   const share = integrations.share
   return {
     ...(integrations.analytics ? { analytics: integrations.analytics } : {}),
@@ -22,10 +37,10 @@ function resolveIntegrations(
           share: {
             ...share,
             ...(share.title
-              ? { title: text(share.title, locale, 'integrations.share.title') }
+              ? { title: resolveText(share.title, 'integrations.share.title') }
               : {}),
             ...(share.description
-              ? { description: text(share.description, locale, 'integrations.share.description') }
+              ? { description: resolveText(share.description, 'integrations.share.description') }
               : {}),
           },
         }
@@ -36,22 +51,24 @@ function resolveIntegrations(
 export function resolveAtlasManifest(
   manifest: AtlasManifest,
   locale: LocaleCode,
+  options: ManifestLocalizationOptions = {},
 ): ResolvedAtlasManifest {
+  const resolveText = (value: LocalizedText | undefined, path: string) =>
+    text(value, locale, path, options)
   return {
     ...manifest,
     locale,
-    projectTitle: text(manifest.projectTitle, locale, 'projectTitle'),
+    projectTitle: resolveText(manifest.projectTitle, 'projectTitle'),
     categories: manifest.categories.map(category => ({
       ...category,
-      title: text(category.title, locale, `categories.${category.id}.title`),
+      title: resolveText(category.title, `categories.${category.id}.title`),
       ...(category.stageLabel
-        ? { stageLabel: text(category.stageLabel, locale, `categories.${category.id}.stageLabel`) }
+        ? { stageLabel: resolveText(category.stageLabel, `categories.${category.id}.stageLabel`) }
         : {}),
       ...(category.description
         ? {
-            description: text(
+            description: resolveText(
               category.description,
-              locale,
               `categories.${category.id}.description`,
             ),
           }
@@ -59,46 +76,48 @@ export function resolveAtlasManifest(
     })),
     items: manifest.items.map(item => ({
       ...item,
-      title: text(item.title, locale, `items.${item.id}.title`),
-      description: text(item.description, locale, `items.${item.id}.description`),
+      title: resolveText(item.title, `items.${item.id}.title`),
+      description: resolveText(item.description, `items.${item.id}.description`),
     })),
     scenes: manifest.scenes.map(scene => ({
       ...scene,
-      title: text(scene.title, locale, `scenes.${scene.sceneId}.title`),
+      title: resolveText(scene.title, `scenes.${scene.sceneId}.title`),
       views: scene.views.map(view => ({
         ...view,
-        title: text(view.title, locale, `scenes.${scene.sceneId}.views.${view.id}.title`),
+        title: resolveText(view.title, `scenes.${scene.sceneId}.views.${view.id}.title`),
       })),
     })),
     config: {
       ...manifest.config,
       ...(manifest.config.hintText
-        ? { hintText: text(manifest.config.hintText, locale, 'config.hintText') }
+        ? { hintText: resolveText(manifest.config.hintText, 'config.hintText') }
         : {}),
     },
-    integrations: resolveIntegrations(manifest.integrations, locale),
+    integrations: resolveIntegrations(manifest.integrations, locale, options),
   } as unknown as ResolvedAtlasManifest
 }
 
 export function resolveCatalogManifest(
   manifest: CatalogManifest,
   locale: LocaleCode,
+  options: ManifestLocalizationOptions = {},
 ): ResolvedCatalogManifest {
+  const resolveText = (value: LocalizedText | undefined, path: string) =>
+    text(value, locale, path, options)
   return {
     ...manifest,
     locale,
-    projectTitle: text(manifest.projectTitle, locale, 'projectTitle'),
+    projectTitle: resolveText(manifest.projectTitle, 'projectTitle'),
     stages: manifest.stages.map(stage => ({
       ...stage,
-      label: text(stage.label, locale, `stages.${stage.key}.label`),
+      label: resolveText(stage.label, `stages.${stage.key}.label`),
       categories: stage.categories.map(category => ({
         ...category,
-        title: text(category.title, locale, `categories.${category.id}.title`),
+        title: resolveText(category.title, `categories.${category.id}.title`),
         ...(category.description
           ? {
-              description: text(
+              description: resolveText(
                 category.description,
-                locale,
                 `categories.${category.id}.description`,
               ),
             }
@@ -107,23 +126,23 @@ export function resolveCatalogManifest(
     })),
     items: manifest.items.map(item => ({
       ...item,
-      title: text(item.title, locale, `items.${item.id}.title`),
-      description: text(item.description, locale, `items.${item.id}.description`),
+      title: resolveText(item.title, `items.${item.id}.title`),
+      description: resolveText(item.description, `items.${item.id}.description`),
     })),
     scenes: manifest.scenes.map(scene => ({
       ...scene,
-      title: text(scene.title, locale, `scenes.${scene.sceneId}.title`),
+      title: resolveText(scene.title, `scenes.${scene.sceneId}.title`),
       views: scene.views.map(view => ({
         ...view,
-        title: text(view.title, locale, `scenes.${scene.sceneId}.views.${view.id}.title`),
+        title: resolveText(view.title, `scenes.${scene.sceneId}.views.${view.id}.title`),
       })),
     })),
     config: {
       ...manifest.config,
       ...(manifest.config.hintText
-        ? { hintText: text(manifest.config.hintText, locale, 'config.hintText') }
+        ? { hintText: resolveText(manifest.config.hintText, 'config.hintText') }
         : {}),
     },
-    integrations: resolveIntegrations(manifest.integrations, locale),
+    integrations: resolveIntegrations(manifest.integrations, locale, options),
   } as unknown as ResolvedCatalogManifest
 }
