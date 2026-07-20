@@ -15,16 +15,10 @@
  *   └────────────────────────────────────────────────────┘
  */
 import { useNavigate, useParams } from 'react-router-dom'
-import {
-  Box,
-  Button,
-  EmptyState,
-  Flex,
-  HStack,
-  Text,
-} from '@chakra-ui/react'
+import { Box, Button, EmptyState, Flex, HStack, Text } from '@chakra-ui/react'
 import { ListTree, Settings as SettingsIcon } from 'lucide-react'
 import { useProject } from '../features/projects/api'
+import { readLocalizedText } from '@domain/localization'
 import { CatalogEditor } from '../features/catalog-editor/components/CatalogEditor'
 import { useCatalogEditorStore } from '../features/catalog-editor/store'
 import { ApiError } from '../lib/api-client'
@@ -34,7 +28,7 @@ export function CatalogEditorPage(): JSX.Element {
   const navigate = useNavigate()
   const { projectId = '' } = useParams<{ projectId: string }>()
   const projectQuery = useProject(projectId)
-  const isDirty = useCatalogEditorStore((s) => s.dirty)
+  const isDirty = useCatalogEditorStore(s => s.dirty)
 
   if (projectQuery.isLoading) {
     return (
@@ -89,7 +83,10 @@ export function CatalogEditorPage(): JSX.Element {
       <PageHeader
         crumbs={[
           { label: 'Projects', to: '/' },
-          { label: project.title, to: `/projects/${project.id}/catalog-editor` },
+          {
+            label: readLocalizedText(project.title, project.localization.defaultLocale),
+            to: `/projects/${project.id}/catalog-editor`,
+          },
           { label: 'Catalog Editor' },
         ]}
         actions={

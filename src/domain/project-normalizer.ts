@@ -45,7 +45,7 @@ export function normalizeProject(
   // metadata defaults
   next.metadata = {
     ...next.metadata,
-    schemaVersion: '2.0.0',
+    schemaVersion: '3.0.0',
     updatedAt: now,
   }
   if (!next.metadata.createdAt) {
@@ -54,7 +54,7 @@ export function normalizeProject(
 
   // panorama defaults
   if (options.autoPickPanoramaAsset && !next.panorama.assetId) {
-    const firstImage = Object.values(next.assets.byId).find((a) => a.kind === 'image')
+    const firstImage = Object.values(next.assets.byId).find(a => a.kind === 'image')
     if (firstImage) next.panorama.assetId = firstImage.id
   }
   if (!next.panorama.assetId) {
@@ -122,7 +122,7 @@ function normalizeAtlas(config: AtlasProductConfig): AtlasProductConfig {
   return {
     ...config,
     viewport: withViewportDefaults(config.viewport),
-    hintText: config.hintText ?? PROJECT_DEFAULTS.products.atlas.hintText,
+    hintText: config.hintText ?? { ...PROJECT_DEFAULTS.products.atlas.hintText },
   }
 }
 
@@ -133,9 +133,10 @@ function normalizeCatalog(config: CatalogProductConfig): CatalogProductConfig {
     interaction: {
       ...config.interaction,
       viewportAnimationMs:
-        config.interaction.viewportAnimationMs ?? PROJECT_DEFAULTS.products.catalog.viewportAnimationMs,
+        config.interaction.viewportAnimationMs ??
+        PROJECT_DEFAULTS.products.catalog.viewportAnimationMs,
     },
-    hintText: config.hintText ?? PROJECT_DEFAULTS.products.catalog.hintText,
+    hintText: config.hintText ?? { ...PROJECT_DEFAULTS.products.catalog.hintText },
   }
 }
 
@@ -158,19 +159,42 @@ function layoutCentroid(layout: CategorySpatialLayout | undefined) {
  * Build a minimal-but-shape-valid DraftProject from a title. Used by
  * `createProject()` and the bootstrap Skill to produce a starting draft.
  */
-export function createDraftProject(input: { id: string; title: string; locale?: string }): GuideProject {
+export function createDraftProject(input: {
+  id: string
+  title: string
+  locale?: string
+}): GuideProject {
   const now = new Date().toISOString()
+  const defaultLocale = input.locale ?? 'zh-CN'
   return {
-    schemaVersion: '2.0.0',
+    schemaVersion: '3.0.0',
     id: input.id,
-    title: input.title,
+    title: { [defaultLocale]: input.title },
     version: '0.1.0',
-    locale: input.locale ?? 'zh-CN',
+    localization: {
+      defaultLocale,
+      supportedLocales: Array.from(new Set([defaultLocale, 'zh-CN', 'en-US'])),
+    },
     knowledge: {
       stages: [
-        { key: 'upstream', label: '上游', order: 1, categories: [] },
-        { key: 'midstream', label: '中游', order: 2, categories: [] },
-        { key: 'downstream', label: '下游', order: 3, categories: [] },
+        {
+          key: 'upstream',
+          label: { 'zh-CN': '上游', 'en-US': 'Upstream' },
+          order: 1,
+          categories: [],
+        },
+        {
+          key: 'midstream',
+          label: { 'zh-CN': '中游', 'en-US': 'Midstream' },
+          order: 2,
+          categories: [],
+        },
+        {
+          key: 'downstream',
+          label: { 'zh-CN': '下游', 'en-US': 'Downstream' },
+          order: 3,
+          categories: [],
+        },
       ],
       items: {},
     },
@@ -193,16 +217,20 @@ export function createDraftProject(input: { id: string; title: string; locale?: 
         chrome: {},
         interaction: { wheelZoom: true, dragPan: true, pinchZoom: true, resetCameraEnabled: true },
         categoryIds: [],
-        hintText: PROJECT_DEFAULTS.products.atlas.hintText,
+        hintText: { ...PROJECT_DEFAULTS.products.atlas.hintText },
       },
       catalog: {
         enabled: true,
         viewport: { width: 375, height: 808 },
         theme: { listDensity: 'comfortable', focusVariant: 'rect' },
         chrome: {},
-        interaction: { listActivation: 'center-nearest', markerActivation: true, viewportAnimationMs: 360 },
+        interaction: {
+          listActivation: 'center-nearest',
+          markerActivation: true,
+          viewportAnimationMs: 360,
+        },
         stageOrder: ['upstream', 'midstream', 'downstream'],
-        hintText: PROJECT_DEFAULTS.products.catalog.hintText,
+        hintText: { ...PROJECT_DEFAULTS.products.catalog.hintText },
       },
     },
     integrations: {},
@@ -210,7 +238,7 @@ export function createDraftProject(input: { id: string; title: string; locale?: 
       createdAt: now,
       updatedAt: now,
       revision: 1,
-      schemaVersion: '2.0.0',
+      schemaVersion: '3.0.0',
     },
   }
 }

@@ -7,6 +7,7 @@ import type { GuideProject } from '../../src/domain/project-types.js'
 
 function buildSampleProject(): GuideProject {
   const draft = createDraftProject({ id: 'p1', title: 'Sample', locale: 'zh-CN' })
+  draft.localization.supportedLocales = ['zh-CN']
   draft.panorama.assetId = 'asset-pano'
   draft.assets.byId['asset-pano'] = {
     id: 'asset-pano',
@@ -27,21 +28,21 @@ function buildSampleProject(): GuideProject {
   }
   draft.knowledge.stages[0].categories.push({
     id: 'upstream-rocket',
-    title: '火箭',
+    title: { 'zh-CN': '火箭' },
     order: 0,
     itemIds: ['upstream-rocket-1', 'upstream-rocket-2'],
     experience: { kind: 'html-scene', sceneId: 'scene-rocket', viewId: 'v1' },
   })
   draft.knowledge.stages[1].categories.push({
     id: 'midstream-launch',
-    title: '发射服务',
+    title: { 'zh-CN': '发射服务' },
     order: 0,
     itemIds: ['midstream-launch-1', 'midstream-launch-2'],
     experience: { kind: 'panorama' },
   })
   draft.knowledge.stages[2].categories.push({
     id: 'downstream-satcom',
-    title: '卫星通信',
+    title: { 'zh-CN': '卫星通信' },
     order: 0,
     itemIds: ['downstream-satcom-1'],
     experience: { kind: 'panorama' },
@@ -49,44 +50,51 @@ function buildSampleProject(): GuideProject {
   draft.knowledge.items['upstream-rocket-1'] = {
     id: 'upstream-rocket-1',
     categoryId: 'upstream-rocket',
-    title: '运载火箭总体',
-    description: '',
+    title: { 'zh-CN': '运载火箭总体' },
+    description: { 'zh-CN': '运载火箭总体描述' },
     order: 0,
   }
   draft.knowledge.items['upstream-rocket-2'] = {
     id: 'upstream-rocket-2',
     categoryId: 'upstream-rocket',
-    title: '火箭发动机',
-    description: '',
+    title: { 'zh-CN': '火箭发动机' },
+    description: { 'zh-CN': '火箭发动机描述' },
     order: 1,
   }
   draft.knowledge.items['midstream-launch-1'] = {
     id: 'midstream-launch-1',
     categoryId: 'midstream-launch',
-    title: '星箭测试',
-    description: '',
+    title: { 'zh-CN': '星箭测试' },
+    description: { 'zh-CN': '星箭测试描述' },
     order: 0,
   }
   draft.knowledge.items['midstream-launch-2'] = {
     id: 'midstream-launch-2',
     categoryId: 'midstream-launch',
-    title: '发射场',
-    description: '',
+    title: { 'zh-CN': '发射场' },
+    description: { 'zh-CN': '发射场描述' },
     order: 1,
   }
   draft.knowledge.items['downstream-satcom-1'] = {
     id: 'downstream-satcom-1',
     categoryId: 'downstream-satcom',
-    title: '通信地面站',
-    description: '',
+    title: { 'zh-CN': '通信地面站' },
+    description: { 'zh-CN': '通信地面站描述' },
     order: 0,
   }
   draft.scenes.push({
     id: 'scene-rocket',
-    title: 'Rocket',
+    title: { 'zh-CN': '火箭' },
     assetId: 'asset-html-1',
     protocol: { channel: 'interactive-guide:scene-bridge', version: '1.0.0' },
-    views: [{ id: 'v1', title: 'Rocket', activationMessage: { type: 'init' }, categoryIds: ['upstream-rocket'] }],
+    views: [
+      {
+        id: 'v1',
+        title: { 'zh-CN': '火箭' },
+        activationMessage: { type: 'init' },
+        categoryIds: ['upstream-rocket'],
+      },
+    ],
   })
   draft.navigation.routes.push({
     id: 'route-1',
@@ -106,11 +114,10 @@ test('validateDraftProject accepts a shape-valid sample with empty coordinates',
 
 test('validateReleaseProject requires labels to be exactly 上游/中游/下游', () => {
   const project = buildSampleProject()
-  // @ts-expect-error mutate label
-  project.knowledge.stages[0].label = '上 游'
+  project.knowledge.stages[0].label = { 'zh-CN': '上 游' }
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'STAGE_LABEL_FIXED'))
+  assert.ok(r.issues.some(i => i.code === 'STAGE_LABEL_FIXED'))
 })
 
 test('validateReleaseProject requires all coordinates to be in [0,1]', () => {
@@ -119,7 +126,7 @@ test('validateReleaseProject requires all coordinates to be in [0,1]', () => {
   normalized.panorama.categories['midstream-launch'].viewport.centerX = 1.5
   const r = validateReleaseProject(normalized)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'COORD_OUT_OF_RANGE'))
+  assert.ok(r.issues.some(i => i.code === 'COORD_OUT_OF_RANGE'))
 })
 
 test('validateReleaseProject rejects unknown sceneId in category.experience', () => {
@@ -131,7 +138,7 @@ test('validateReleaseProject rejects unknown sceneId in category.experience', ()
   }
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'SCENE_MISSING'))
+  assert.ok(r.issues.some(i => i.code === 'SCENE_MISSING'))
 })
 
 test('validateReleaseProject rejects unknown viewId in category.experience', () => {
@@ -143,7 +150,7 @@ test('validateReleaseProject rejects unknown viewId in category.experience', () 
   }
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'SCENE_VIEW_MISSING'))
+  assert.ok(r.issues.some(i => i.code === 'SCENE_VIEW_MISSING'))
 })
 
 test('validateReleaseProject rejects route referencing missing panorama item', () => {
@@ -155,7 +162,7 @@ test('validateReleaseProject rejects route referencing missing panorama item', (
   })
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'ROUTE_PANORAMA_ITEM_MISSING'))
+  assert.ok(r.issues.some(i => i.code === 'ROUTE_PANORAMA_ITEM_MISSING'))
 })
 
 test('validateReleaseProject rejects route referencing non-video transition asset', () => {
@@ -164,7 +171,7 @@ test('validateReleaseProject rejects route referencing non-video transition asse
   project.navigation.routes[0].transition!.assetId = 'asset-pano'
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'ASSET_KIND_MISMATCH'))
+  assert.ok(r.issues.some(i => i.code === 'ASSET_KIND_MISMATCH'))
 })
 
 test('validateReleaseProject rejects duplicate item ids', () => {
@@ -181,7 +188,7 @@ test('validateReleaseProject rejects items declared in multiple categories', () 
   project.knowledge.stages[1].categories[0].itemIds.push('upstream-rocket-1')
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'ITEM_IN_MULTIPLE_CATEGORIES'))
+  assert.ok(r.issues.some(i => i.code === 'ITEM_IN_MULTIPLE_CATEGORIES'))
 })
 
 test('validateReleaseProject rejects items with mismatched categoryId', () => {
@@ -189,7 +196,7 @@ test('validateReleaseProject rejects items with mismatched categoryId', () => {
   project.knowledge.items['upstream-rocket-1'].categoryId = 'midstream-launch'
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'ITEM_CATEGORY_MISMATCH'))
+  assert.ok(r.issues.some(i => i.code === 'ITEM_CATEGORY_MISMATCH'))
 })
 
 test('validateReleaseProject rejects orphaned items', () => {
@@ -197,7 +204,7 @@ test('validateReleaseProject rejects orphaned items', () => {
   delete project.knowledge.items['upstream-rocket-2']
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'ITEM_NOT_IN_REGISTRY'))
+  assert.ok(r.issues.some(i => i.code === 'ITEM_NOT_IN_REGISTRY'))
 })
 
 test('validateReleaseProject rejects atlas categoryIds referencing unknown category', () => {
@@ -205,7 +212,7 @@ test('validateReleaseProject rejects atlas categoryIds referencing unknown categ
   project.products.atlas.categoryIds.push('cat-ghost')
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'ATLAS_CATEGORY_NOT_FOUND'))
+  assert.ok(r.issues.some(i => i.code === 'ATLAS_CATEGORY_NOT_FOUND'))
 })
 
 test('validateReleaseProject requires every released project to round-trip through Zod', () => {
@@ -214,7 +221,7 @@ test('validateReleaseProject requires every released project to round-trip throu
   project.knowledge.stages[1].categories[0].order = 5
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
-  assert.ok(r.issues.some((i) => i.code === 'CATEGORY_ORDER'))
+  assert.ok(r.issues.some(i => i.code === 'CATEGORY_ORDER'))
   // Round-trip
   const parsed = GuideProjectSchema.safeParse(project)
   // Order mismatch is in the shape-valid range (any nonneg int) so Zod will accept it; the validator catches it.

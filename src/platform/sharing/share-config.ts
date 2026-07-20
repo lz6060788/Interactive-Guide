@@ -8,6 +8,7 @@
  * release time.
  */
 import type { GuideProject, ProjectIntegrations } from '../../domain/project-types.js'
+import { readLocalizedText } from '../../domain/localization.js'
 
 export interface ShareMetaConfig {
   url: string
@@ -22,6 +23,7 @@ export function deriveShareConfig(
   manifestEntryUrl: string,
   baseUrl?: string,
   share?: ProjectIntegrations['share'],
+  locale: string = project.localization.defaultLocale,
 ): ShareMetaConfig {
   const url = baseUrl ? joinUrl(baseUrl, manifestEntryUrl) : manifestEntryUrl
   const imageAssetId = share?.imageAssetId
@@ -33,8 +35,8 @@ export function deriveShareConfig(
     : undefined
   const cfg: ShareMetaConfig = {
     url,
-    title: share?.title ?? project.title,
-    description: share?.description ?? project.title,
+    title: readLocalizedText(share?.title ?? project.title, locale),
+    description: readLocalizedText(share?.description ?? project.title, locale),
   }
   if (imageUrl) cfg.imageUrl = imageUrl
   if (imageAssetId) cfg.imageAssetId = imageAssetId

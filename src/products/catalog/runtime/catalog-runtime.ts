@@ -9,10 +9,10 @@
  */
 import type { Viewport } from '../../../domain/project-types.js'
 import type {
-  CatalogCategoryEntry,
-  CatalogHtmlSceneManifest,
-  CatalogItemEntry,
-  CatalogManifest,
+  ResolvedCatalogCategoryEntry as CatalogCategoryEntry,
+  ResolvedCatalogHtmlSceneManifest as CatalogHtmlSceneManifest,
+  ResolvedCatalogItemEntry as CatalogItemEntry,
+  ResolvedCatalogManifest as CatalogManifest,
 } from '../contract/catalog-manifest.js'
 import { SceneLauncher } from './scene-launcher.js'
 import { CatalogScene, type CatalogSceneSelection } from './catalog-scene.js'

@@ -13,20 +13,29 @@ import type { GuideProject } from '@domain/project-types'
 import { SceneHostController } from '../../../../../platform/scene-host/scene-host-controller'
 import { createProjectAssetUrlResolver } from '../../projects/asset-url-resolver'
 import { SceneHostOverlay, type SceneHostOverlayState } from '../../../components/SceneHostOverlay'
+import { resolveAtlasManifest } from '@products/contracts/manifest-localization'
+import { localized } from '../../projects/localization'
 
-export function AtlasPreview({ project }: { project: GuideProject }): JSX.Element {
+export function AtlasPreview({
+  project,
+  locale,
+}: {
+  project: GuideProject
+  locale: string
+}): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const runtimeRef = useRef<AtlasRuntime | null>(null)
   const sceneHostRef = useRef<SceneHostController | null>(null)
-  const sessionIdRef = useRef(`atlas-preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
+  const sessionIdRef = useRef(
+    `atlas-preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+  )
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 })
   const [activeScene, setActiveScene] = useState<SceneHostOverlayState | null>(null)
   const [sceneInfoOpen, setSceneInfoOpen] = useState(false)
   const panoramaMissing = !project.panorama.assetId
-  const panoramaAssetMissing =
-    !panoramaMissing && !project.assets.byId[project.panorama.assetId]
+  const panoramaAssetMissing = !panoramaMissing && !project.assets.byId[project.panorama.assetId]
   const blocked = panoramaMissing || panoramaAssetMissing
   const viewport = project.products.atlas.viewport
 
@@ -65,6 +74,8 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
       product: 'atlas',
       projectId: project.id,
       sessionId: sessionIdRef.current,
+      locale,
+      supportedLocales: project.localization.supportedLocales,
       baseHref: window.location.href,
       getIframeWindow: () => iframeRef.current?.contentWindow ?? null,
       onRequestBack: () => {
@@ -72,7 +83,7 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
         setSceneInfoOpen(false)
         setActiveScene(null)
       },
-      onRequestRoute: (routeId) => {
+      onRequestRoute: routeId => {
         runtimeRef.current?.openRoute(routeId)
       },
     })
@@ -95,7 +106,7 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
     runtimeRef.current = rt
     try {
       const { manifest } = compileAtlas(project, resolveSourcePath)
-      rt.loadManifest(manifest)
+      rt.loadManifest(resolveAtlasManifest(manifest, locale))
       void rt.mount(hostRef.current)
     } catch (e) {
       if (hostRef.current) {
@@ -108,7 +119,7 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
       rt.destroy()
       runtimeRef.current = null
     }
-  }, [project, blocked])
+  }, [project, blocked, locale])
 
   const closeActiveScene = () => {
     sceneHostRef.current?.closeScene()
@@ -122,7 +133,7 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
     if (!nav?.share) return
     void nav
       .share({
-        title: project.title,
+        title: localized(project.title, locale),
       })
       .catch(() => {})
   }
@@ -147,9 +158,7 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
         height: '100%',
       }}
     >
-      <h4 style={{ margin: '4px 0 8px', fontSize: 12, color: '#cbd5e1' }}>
-        实时预览
-      </h4>
+      <h4 style={{ margin: '4px 0 8px', fontSize: 12, color: '#cbd5e1' }}>实时预览</h4>
       {blocked ? (
         <div
           data-testid="atlas-preview-placeholder"
@@ -224,7 +233,7 @@ export function AtlasPreview({ project }: { project: GuideProject }): JSX.Elemen
                 }}
               >
                 <SceneHostOverlay
-                  projectTitle={project.title}
+                  projectTitle={localized(project.title, locale)}
                   activeScene={activeScene}
                   infoOpen={sceneInfoOpen}
                   onClose={closeActiveScene}

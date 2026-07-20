@@ -1,4 +1,7 @@
-import type { AtlasCategoryEntry, AtlasItemEntry } from '../contract/atlas-manifest.js'
+import type {
+  ResolvedAtlasCategoryEntry as AtlasCategoryEntry,
+  ResolvedAtlasItemEntry as AtlasItemEntry,
+} from '../contract/atlas-manifest.js'
 import {
   ATLAS_DRAWER_BACKDROP_BLUR,
   ATLAS_DRAWER_BG,

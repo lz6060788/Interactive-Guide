@@ -8,6 +8,7 @@ import { buildAssetClosure, computeReferencedAssetIds } from './asset-closure.js
 import { buildBrowserRuntimeBundle } from './browser-runtime-packager.js'
 import { buildProductShell, type ProductShellProduct } from './product-shell.js'
 import { validateProduct, type ValidationReport } from './static-validator.js'
+import { requireLocalizedText } from '../../domain/localization.js'
 
 export interface StaticProductBuildResult {
   product: ProductShellProduct
@@ -58,7 +59,12 @@ export function buildStaticProduct(options: {
 
   fs.mkdirSync(productDir, { recursive: true })
   const runtime = buildBrowserRuntimeBundle({ product })
-  const shell = buildProductShell(project.title, runtime.appJs)
+  const defaultLocale = project.localization.defaultLocale
+  const shell = buildProductShell(
+    requireLocalizedText(project.title, defaultLocale, 'title'),
+    runtime.appJs,
+    defaultLocale,
+  )
   fs.writeFileSync(path.join(productDir, 'index.html'), shell['index.html'])
   fs.writeFileSync(path.join(productDir, 'app.js'), shell['app.js'])
   const manifestPath = path.join(productDir, 'manifest.json')

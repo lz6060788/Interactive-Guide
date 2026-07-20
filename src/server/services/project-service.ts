@@ -8,14 +8,10 @@
  * `expectedRevision`. The base update is reserved for metadata.
  */
 import type { GuideProject } from '../../domain/project-types.js'
-import {
-  GuideProjectSchema,
-} from '../../domain/project-schema.js'
-import {
-  ProjectRepository,
-  type ListEntry,
-} from '../storage/project-repository.js'
+import { GuideProjectSchema } from '../../domain/project-schema.js'
+import { ProjectRepository, type ListEntry } from '../storage/project-repository.js'
 import { normalizeProject, createDraftProject } from '../../domain/project-normalizer.js'
+import { setLocalizedText } from '../../domain/localization.js'
 
 export interface ProjectServiceOptions {
   now?: () => string
@@ -62,31 +58,69 @@ export class ProjectService {
 
   updateMetadata(
     projectId: string,
-    patch: { title?: string; version?: string; locale?: string },
+    patch: { title?: string; titleLocale?: string; version?: string; locale?: string },
     expectedRevision: number,
   ): GuideProject {
-    return this.patch(projectId, expectedRevision, (project) => ({
+    return this.patch(projectId, expectedRevision, project => ({
       ...project,
-      title: patch.title ?? project.title,
+      title:
+        patch.title === undefined
+          ? project.title
+          : setLocalizedText(
+              project.title,
+              patch.titleLocale ?? project.localization.defaultLocale,
+              patch.title,
+            ),
       version: patch.version ?? project.version,
-      locale: patch.locale ?? project.locale,
+      localization: patch.locale
+        ? {
+            defaultLocale: patch.locale,
+            supportedLocales: project.localization.supportedLocales.includes(patch.locale)
+              ? project.localization.supportedLocales
+              : [...project.localization.supportedLocales, patch.locale],
+          }
+        : project.localization,
     }))
   }
 
-  updateKnowledge(projectId: string, knowledge: GuideProject['knowledge'], expectedRevision: number): GuideProject {
-    return this.patch(projectId, expectedRevision, (project) => ({ ...project, knowledge }))
+  updateLocalization(
+    projectId: string,
+    localization: GuideProject['localization'],
+    expectedRevision: number,
+  ): GuideProject {
+    return this.patch(projectId, expectedRevision, project => ({ ...project, localization }))
   }
 
-  updatePanorama(projectId: string, panorama: GuideProject['panorama'], expectedRevision: number): GuideProject {
-    return this.patch(projectId, expectedRevision, (project) => ({ ...project, panorama }))
+  updateKnowledge(
+    projectId: string,
+    knowledge: GuideProject['knowledge'],
+    expectedRevision: number,
+  ): GuideProject {
+    return this.patch(projectId, expectedRevision, project => ({ ...project, knowledge }))
   }
 
-  updateScenes(projectId: string, scenes: GuideProject['scenes'], expectedRevision: number): GuideProject {
-    return this.patch(projectId, expectedRevision, (project) => ({ ...project, scenes }))
+  updatePanorama(
+    projectId: string,
+    panorama: GuideProject['panorama'],
+    expectedRevision: number,
+  ): GuideProject {
+    return this.patch(projectId, expectedRevision, project => ({ ...project, panorama }))
   }
 
-  updateNavigation(projectId: string, navigation: GuideProject['navigation'], expectedRevision: number): GuideProject {
-    return this.patch(projectId, expectedRevision, (project) => ({ ...project, navigation }))
+  updateScenes(
+    projectId: string,
+    scenes: GuideProject['scenes'],
+    expectedRevision: number,
+  ): GuideProject {
+    return this.patch(projectId, expectedRevision, project => ({ ...project, scenes }))
+  }
+
+  updateNavigation(
+    projectId: string,
+    navigation: GuideProject['navigation'],
+    expectedRevision: number,
+  ): GuideProject {
+    return this.patch(projectId, expectedRevision, project => ({ ...project, navigation }))
   }
 
   updateAtlasConfig(
@@ -94,7 +128,7 @@ export class ProjectService {
     atlas: GuideProject['products']['atlas'],
     expectedRevision: number,
   ): GuideProject {
-    return this.patch(projectId, expectedRevision, (project) => ({
+    return this.patch(projectId, expectedRevision, project => ({
       ...project,
       products: { ...project.products, atlas },
     }))
@@ -105,7 +139,7 @@ export class ProjectService {
     catalog: GuideProject['products']['catalog'],
     expectedRevision: number,
   ): GuideProject {
-    return this.patch(projectId, expectedRevision, (project) => ({
+    return this.patch(projectId, expectedRevision, project => ({
       ...project,
       products: { ...project.products, catalog },
     }))
@@ -116,7 +150,7 @@ export class ProjectService {
     integrations: GuideProject['integrations'],
     expectedRevision: number,
   ): GuideProject {
-    return this.patch(projectId, expectedRevision, (project) => ({ ...project, integrations }))
+    return this.patch(projectId, expectedRevision, project => ({ ...project, integrations }))
   }
 
   delete(projectId: string): void {
@@ -128,7 +162,7 @@ export class ProjectService {
     const parsed = GuideProjectSchema.safeParse(project)
     if (!parsed.success) {
       throw new ProjectValidationError(
-        `importNormalized shape invalid: ${parsed.error.issues.map((i) => i.message).join('; ')}`,
+        `importNormalized shape invalid: ${parsed.error.issues.map(i => i.message).join('; ')}`,
       )
     }
     const normalized = normalizeProject(parsed.data)
@@ -149,7 +183,7 @@ export class ProjectService {
     const parsed = GuideProjectSchema.safeParse(next)
     if (!parsed.success) {
       throw new ProjectValidationError(
-        `project update shape invalid: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
+        `project update shape invalid: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
       )
     }
     const result = this.repo.save(parsed.data, { expectedRevision })
@@ -161,7 +195,10 @@ export class ProjectService {
 }
 
 export class RevisionConflictErrorPublic extends Error {
-  constructor(public readonly currentRevision: number, public readonly currentUpdatedAt: string) {
+  constructor(
+    public readonly currentRevision: number,
+    public readonly currentUpdatedAt: string,
+  ) {
     super(`revision conflict: current revision is ${currentRevision}`)
     this.name = 'RevisionConflictError'
   }
@@ -184,7 +221,11 @@ function blankCatalogConfig(): GuideProject['products']['catalog'] {
     viewport: { width: 375, height: 808 },
     theme: { listDensity: 'comfortable', focusVariant: 'rect' },
     chrome: {},
-    interaction: { listActivation: 'center-nearest', markerActivation: true, viewportAnimationMs: 360 },
+    interaction: {
+      listActivation: 'center-nearest',
+      markerActivation: true,
+      viewportAnimationMs: 360,
+    },
     stageOrder: ['upstream', 'midstream', 'downstream'],
   }
 }

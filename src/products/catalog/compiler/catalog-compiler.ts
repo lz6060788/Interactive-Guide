@@ -78,7 +78,7 @@ export function compileCatalog(
           id: item.id,
           categoryId: item.categoryId,
           title: item.title,
-          description: item.description ?? '',
+          description: item.description,
           order: item.order ?? 0,
           marker: { x: layout.marker.x, y: layout.marker.y },
           ...(layout.viewportOverride ? { viewportOverride: { ...layout.viewportOverride } } : {}),
@@ -154,7 +154,7 @@ export function compileCatalog(
     projectId: normalizedProject.id,
     projectTitle: normalizedProject.title,
     projectVersion: normalizedProject.version,
-    locale: normalizedProject.locale,
+    localization: normalizedProject.localization,
     generatedAt: now(),
     panorama: {
       assetId: panoramaAsset.id,

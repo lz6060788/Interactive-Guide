@@ -3,6 +3,7 @@ import { Alert, Box, Button, Field, HStack, Input, Stack, Switch, Text } from '@
 import { RotateCcw, Save } from 'lucide-react'
 import type { AssetDefinition, ProjectIntegrations } from '@domain/project-types'
 import { useUpdateProjectIntegrations } from '../api'
+import { localized, updateLocalized } from '../localization'
 
 interface Draft {
   enabled: boolean
@@ -17,14 +18,15 @@ interface Props {
   revision: number
   initial: ProjectIntegrations
   assets: Record<string, AssetDefinition>
+  locale: string
 }
 
-function toDraft(integrations: ProjectIntegrations): Draft {
+function toDraft(integrations: ProjectIntegrations, locale: string): Draft {
   const share = integrations.share
   return {
     enabled: share?.enabled ?? false,
-    title: share?.title ?? '',
-    description: share?.description ?? '',
+    title: localized(share?.title, locale),
+    description: localized(share?.description, locale),
     imageAssetId: share?.imageAssetId ?? '',
   }
 }
@@ -35,17 +37,18 @@ export function SharePanel({
   revision,
   initial,
   assets,
+  locale,
 }: Props): JSX.Element {
-  const [draft, setDraft] = useState(() => toDraft(initial))
-  const [snapshot, setSnapshot] = useState(() => toDraft(initial))
+  const [draft, setDraft] = useState(() => toDraft(initial, locale))
+  const [snapshot, setSnapshot] = useState(() => toDraft(initial, locale))
   const [error, setError] = useState<string | null>(null)
   const update = useUpdateProjectIntegrations(projectId)
 
   useEffect(() => {
-    const next = toDraft(initial)
+    const next = toDraft(initial, locale)
     setDraft(next)
     setSnapshot(next)
-  }, [initial])
+  }, [initial, locale])
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(snapshot)
   const imageAssets = Object.values(assets)
@@ -64,8 +67,18 @@ export function SharePanel({
           ? {
               share: {
                 enabled: true,
-                ...(draft.title.trim() ? { title: draft.title.trim() } : {}),
-                ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
+                ...(draft.title.trim()
+                  ? { title: updateLocalized(initial.share?.title, locale, draft.title.trim()) }
+                  : {}),
+                ...(draft.description.trim()
+                  ? {
+                      description: updateLocalized(
+                        initial.share?.description,
+                        locale,
+                        draft.description.trim(),
+                      ),
+                    }
+                  : {}),
                 ...(draft.imageAssetId ? { imageAssetId: draft.imageAssetId } : {}),
               },
             }

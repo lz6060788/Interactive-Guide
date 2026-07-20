@@ -17,6 +17,8 @@ export type SceneBridgeResponseType = SceneBridgeHostEventType | SceneBridgeScen
 
 export interface SceneBridgeRuntimeSnapshot {
   product: 'atlas' | 'catalog'
+  locale: string
+  supportedLocales: string[]
   projectId: string
   sceneId: string
   viewId: string

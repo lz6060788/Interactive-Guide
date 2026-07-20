@@ -1,20 +1,30 @@
-import type { AnalyticsConfig, GuideProject, ShareConfig } from '../../domain/project-types.js'
+import type {
+  AnalyticsConfig,
+  GuideProject,
+  LocalizedText,
+  ShareConfig,
+} from '../../domain/project-types.js'
 
-export interface RuntimeShareConfig extends ShareConfig {
+export interface RuntimeShareConfig<TText = LocalizedText> extends Omit<
+  ShareConfig,
+  'title' | 'description'
+> {
+  title?: TText
+  description?: TText
   /** Package-relative URL resolved by the compiler for runtime sharing. */
   imageUrl?: string
 }
 
-export interface RuntimeIntegrations {
+export interface RuntimeIntegrations<TText = LocalizedText> {
   analytics?: AnalyticsConfig
-  share?: RuntimeShareConfig
+  share?: RuntimeShareConfig<TText>
 }
 
 export function compileRuntimeIntegrations(
   project: GuideProject,
   assetClosure: (projectId: string, sourcePath: string) => string,
   options: { includeAnalytics: boolean },
-): RuntimeIntegrations {
+): RuntimeIntegrations<LocalizedText> {
   const analytics = options.includeAnalytics ? project.integrations.analytics : undefined
   const share = project.integrations.share
   if (!share) return analytics ? { analytics } : {}

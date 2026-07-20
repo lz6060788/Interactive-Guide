@@ -9,7 +9,14 @@ import { z } from 'zod'
 import { ExperienceNavigationSchema } from './experience-navigation.js'
 import { SceneProtocolSchema } from './scene-protocol.js'
 
-export const SchemaVersionSchema = z.literal('2.0.0')
+export const SchemaVersionSchema = z.literal('3.0.0')
+
+export const LocalizedTextSchema = z.record(z.string().min(1), z.string())
+
+export const LocalizationConfigSchema = z.object({
+  defaultLocale: z.string().min(1),
+  supportedLocales: z.array(z.string().min(1)).min(1),
+})
 
 export const NormalizedPointSchema = z.object({
   x: z.number().min(0).max(1),
@@ -108,23 +115,23 @@ export const CategoryExperienceBindingSchema = z.discriminatedUnion('kind', [
 export const IndustryItemSchema = z.object({
   id: z.string().min(1),
   categoryId: z.string().min(1),
-  title: z.string().min(1),
-  description: z.string().default(''),
+  title: LocalizedTextSchema,
+  description: LocalizedTextSchema,
   order: z.number().int().nonnegative(),
 })
 
 export const IndustryCategorySchema = z.object({
   id: z.string().min(1),
-  title: z.string().min(1),
+  title: LocalizedTextSchema,
   order: z.number().int().nonnegative(),
-  description: z.string().optional(),
+  description: LocalizedTextSchema.optional(),
   itemIds: z.array(z.string().min(1)),
   experience: CategoryExperienceBindingSchema,
 })
 
 export const IndustryStageSchema = z.object({
   key: IndustryStageKeySchema,
-  label: z.string().min(1),
+  label: LocalizedTextSchema,
   order: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   categories: z.array(IndustryCategorySchema),
 })
@@ -149,7 +156,7 @@ export const HtmlSceneViewSchema = z.object({
   // (checkUniqueIds / checkSceneReferences) catches dangling refs at
   // publish time.
   id: z.string(),
-  title: z.string(),
+  title: LocalizedTextSchema,
   activationMessage: z.object({
     type: z.string(),
     payload: z.record(z.string(), z.unknown()).optional(),
@@ -161,7 +168,7 @@ export const HtmlSceneViewSchema = z.object({
 
 export const HtmlScenePackageSchema = z.object({
   id: z.string().min(1),
-  title: z.string().min(1),
+  title: LocalizedTextSchema,
   // assetId may be '' on a freshly-created scene that has not yet been
   // paired with an uploaded zip bundle. The release-tier validator
   // (checkSceneAsset in static-validator / project-validator) catches
@@ -215,7 +222,7 @@ export const AtlasProductConfigSchema = z.object({
     resetCameraEnabled: z.boolean(),
   }),
   categoryIds: z.array(z.string().min(1)),
-  hintText: z.string().optional(),
+  hintText: LocalizedTextSchema.optional(),
 })
 
 export const CatalogProductConfigSchema = z.object({
@@ -229,7 +236,7 @@ export const CatalogProductConfigSchema = z.object({
     viewportAnimationMs: z.number().int().nonnegative(),
   }),
   stageOrder: z.tuple([IndustryStageKeySchema, IndustryStageKeySchema, IndustryStageKeySchema]),
-  hintText: z.string().optional(),
+  hintText: LocalizedTextSchema.optional(),
   atlasLaunchUrl: z.string().url().optional(),
 })
 
@@ -244,8 +251,8 @@ export const AnalyticsConfigSchema = z.object({
 
 export const ShareConfigSchema = z.object({
   enabled: z.boolean(),
-  title: z.string().optional(),
-  description: z.string().optional(),
+  title: LocalizedTextSchema.optional(),
+  description: LocalizedTextSchema.optional(),
   imageAssetId: z.string().optional(),
 })
 
@@ -265,9 +272,9 @@ export const GuideProjectSchema = z
   .object({
     schemaVersion: SchemaVersionSchema,
     id: z.string().min(1),
-    title: z.string().min(1),
+    title: LocalizedTextSchema,
     version: z.string().min(1),
-    locale: z.string().min(1),
+    localization: LocalizationConfigSchema,
     knowledge: IndustryChainSchema,
     assets: AssetRegistrySchema,
     panorama: PanoramaModelSchema,
@@ -282,6 +289,30 @@ export const GuideProjectSchema = z
   })
   .strict()
   .superRefine((project, ctx) => {
+    if (!project.localization.supportedLocales.includes(project.localization.defaultLocale)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['localization', 'defaultLocale'],
+        message: 'defaultLocale must be included in supportedLocales',
+      })
+    }
+    if (
+      new Set(project.localization.supportedLocales).size !==
+      project.localization.supportedLocales.length
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['localization', 'supportedLocales'],
+        message: 'supportedLocales must not contain duplicates',
+      })
+    }
+    if (!project.title[project.localization.defaultLocale]?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['title', project.localization.defaultLocale],
+        message: 'project title is required for defaultLocale',
+      })
+    }
     // Hard structural invariants that Zod's declarative shape cannot express.
     const expected: Array<['upstream', 1] | ['midstream', 2] | ['downstream', 3]> = [
       ['upstream', 1],

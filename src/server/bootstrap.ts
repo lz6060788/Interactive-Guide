@@ -139,6 +139,7 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     locale: input.project.locale,
   })
   if (input.project.version) project.version = input.project.version
+  const locale = project.localization.defaultLocale
 
   // Knowledge
   const usedIds = new Set<string>()
@@ -181,15 +182,15 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
         return {
           id: itemId,
           categoryId: id,
-          title: itemInput.title,
-          description: itemInput.description ?? '',
+          title: { [locale]: itemInput.title },
+          description: { [locale]: itemInput.description ?? '' },
           order: itemIndex,
         }
       })
       totalItems += items.length
       const category: IndustryCategory = {
         id,
-        title: catInput.title,
+        title: { [locale]: catInput.title },
         order: catIndex,
         itemIds: items.map(i => i.id),
         experience,
@@ -212,12 +213,12 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     const stat = fs.statSync(bundle.path)
     const scene: HtmlScenePackage = {
       id: bundle.id,
-      title: bundle.title,
+      title: { [locale]: bundle.title },
       assetId: `asset-${bundle.id}`,
       protocol: { channel: SCENE_PROTOCOL_CHANNEL, version: SCENE_PROTOCOL_VERSION },
       views: bundle.views.map(v => ({
         id: v.id,
-        title: v.title,
+        title: { [locale]: v.title },
         activationMessage: { type: v.activationMessageType },
         categoryIds: v.categoryBindings,
       })),
@@ -293,7 +294,15 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
     }
   }
   if (input.integrations?.share) {
-    project.integrations.share = { ...input.integrations.share }
+    project.integrations.share = {
+      enabled: input.integrations.share.enabled,
+      ...(input.integrations.share.title
+        ? { title: { [locale]: input.integrations.share.title } }
+        : {}),
+      ...(input.integrations.share.description
+        ? { description: { [locale]: input.integrations.share.description } }
+        : {}),
+    }
   }
 
   // Apply authored layouts; entries without spatial input remain in the

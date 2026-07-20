@@ -1,5 +1,5 @@
-import type { AtlasHtmlSceneManifest } from '../../../products/atlas/contract/atlas-manifest.js'
-import type { CatalogHtmlSceneManifest } from '../../../products/catalog/contract/catalog-manifest.js'
+import type { ResolvedAtlasHtmlSceneManifest as AtlasHtmlSceneManifest } from '../../../products/atlas/contract/atlas-manifest.js'
+import type { ResolvedCatalogHtmlSceneManifest as CatalogHtmlSceneManifest } from '../../../products/catalog/contract/catalog-manifest.js'
 import { SceneHostController } from '../../../platform/scene-host/scene-host-controller.js'
 import { ProductToolbar, shareCurrentPage } from './product-toolbar.js'
 
@@ -11,6 +11,8 @@ export interface SceneOverlayHostOptions {
   projectId: string
   projectTitle: string
   sessionId: string
+  locale: string
+  supportedLocales: string[]
   onRouteRequest: (routeId: string) => void
   onShare?: () => void | Promise<void>
   shareEnabled?: boolean
@@ -52,6 +54,8 @@ export class SceneOverlayHost {
       product: options.product,
       projectId: options.projectId,
       sessionId: options.sessionId,
+      locale: options.locale,
+      supportedLocales: options.supportedLocales,
       baseHref: window.location.href,
       getIframeWindow: () => this.iframeEl.contentWindow,
       onRequestBack: () => this.closeScene(),
@@ -89,6 +93,7 @@ export class SceneOverlayHost {
         void shareCurrentPage(this.options.projectTitle)
       },
       shareEnabled: this.options.shareEnabled,
+      locale: this.options.locale,
     })
     this.toolbar.mount()
   }

@@ -45,6 +45,7 @@ import {
 import { LiveCoordinateReadout } from './LiveCoordinateReadout'
 import { AxisIndicator } from './AxisIndicator'
 import type { Tool } from './AtlasToolbar'
+import { localized } from '../../projects/localization'
 
 interface Props {
   project: GuideProject
@@ -53,6 +54,7 @@ interface Props {
   onSelect: (s: ReturnType<typeof useAtlasEditorStore.getState>['selection']) => void
   onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void
   onRenameItem: (itemId: string, title: string) => void
+  locale: string
 }
 
 type HandleKind = 'hotspot' | 'item-marker'
@@ -73,6 +75,7 @@ export function AtlasCanvas({
   onSelect,
   onPatchPanorama,
   onRenameItem,
+  locale,
 }: Props): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const layerRef = useRef<HTMLDivElement>(null)
@@ -85,8 +88,8 @@ export function AtlasCanvas({
   const assetId = project.panorama.assetId || null
   const { url: imageUrl, isLoading, error } = usePanoramaBlobUrl(project.id, assetId)
 
-  const setHoveredCoord = useAtlasEditorStore((s) => s.setHoveredCoord)
-  const setZoomStore = useAtlasEditorStore((s) => s.setZoom)
+  const setHoveredCoord = useAtlasEditorStore(s => s.setHoveredCoord)
+  const setZoomStore = useAtlasEditorStore(s => s.setZoom)
 
   const viewportW = project.products.atlas.viewport.width
   const viewportH = project.products.atlas.viewport.height
@@ -119,7 +122,7 @@ export function AtlasCanvas({
       sourceSize,
     )
     cameraRef.current = camera
-    const unsubscribe = camera.onChange((viewport) => {
+    const unsubscribe = camera.onChange(viewport => {
       setCameraViewport(viewport)
       setZoomStore(viewport.zoom)
       applyCameraTransform()
@@ -147,31 +150,31 @@ export function AtlasCanvas({
 
   const projection = cameraRef.current?.getProjection() ?? null
 
-  const eventToNormalized = useCallback((clientX: number, clientY: number): NormalizedPoint | null => {
-    const el = containerRef.current
-    if (!el || !projection) return null
-    const rect = el.getBoundingClientRect()
-    const logicalWidth = el.clientWidth || el.offsetWidth || rect.width || 1
-    const logicalHeight = el.clientHeight || el.offsetHeight || rect.height || 1
-    const scaleX = rect.width > 0 ? logicalWidth / rect.width : 1
-    const scaleY = rect.height > 0 ? logicalHeight / rect.height : 1
-    return clamp(
-      unprojectScreenPoint(
-        {
-          x: (clientX - rect.left) * scaleX,
-          y: (clientY - rect.top) * scaleY,
-        },
-        projection,
-      ),
-    )
-  }, [projection])
-
-  const stagesArr = useMemo(
-    () => project.knowledge.stages as unknown as Array<{ key: string; categories: Array<{ id: string; title: string; itemIds: string[] }> }>,
-    [project.knowledge.stages],
+  const eventToNormalized = useCallback(
+    (clientX: number, clientY: number): NormalizedPoint | null => {
+      const el = containerRef.current
+      if (!el || !projection) return null
+      const rect = el.getBoundingClientRect()
+      const logicalWidth = el.clientWidth || el.offsetWidth || rect.width || 1
+      const logicalHeight = el.clientHeight || el.offsetHeight || rect.height || 1
+      const scaleX = rect.width > 0 ? logicalWidth / rect.width : 1
+      const scaleY = rect.height > 0 ? logicalHeight / rect.height : 1
+      return clamp(
+        unprojectScreenPoint(
+          {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY,
+          },
+          projection,
+        ),
+      )
+    },
+    [projection],
   )
+
+  const stagesArr = useMemo(() => project.knowledge.stages, [project.knowledge.stages])
   const allCategories = useMemo(
-    () => stagesArr.flatMap((s) => s.categories.map((c) => ({ stage: s.key, cat: c }))),
+    () => stagesArr.flatMap(s => s.categories.map(c => ({ stage: s.key, cat: c }))),
     [stagesArr],
   )
 
@@ -182,14 +185,11 @@ export function AtlasCanvas({
     if (tool === 'marker') {
       const targetCategoryId = selection?.kind === 'category' ? selection.id : null
       if (!targetCategoryId) return
-      onPatchPanorama((p) => ({
+      onPatchPanorama(p => ({
         ...p,
         categories: {
           ...p.categories,
-          [targetCategoryId]: ensureCategoryLayout(
-            p.categories[targetCategoryId],
-            coord,
-          ),
+          [targetCategoryId]: ensureCategoryLayout(p.categories[targetCategoryId], coord),
         },
       }))
       onSelect({ kind: 'category', id: targetCategoryId })
@@ -211,9 +211,7 @@ export function AtlasCanvas({
     setHoverCoord(eventToNormalized(event.clientX, event.clientY))
   }
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-  )
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
   const handleDragStart = (event: { active: { data: { current: unknown } } }) => {
     const data = event.active.data.current as DragData | undefined
@@ -228,7 +226,7 @@ export function AtlasCanvas({
     const dy = event.delta.y / projection.scaledHeight
 
     if (data.kind === 'hotspot' && data.categoryId) {
-      onPatchPanorama((p) => {
+      onPatchPanorama(p => {
         const layout = p.categories[data.categoryId!]
         if (!layout?.hotspot) return p
         return {
@@ -246,7 +244,7 @@ export function AtlasCanvas({
     }
 
     if (data.kind === 'item-marker' && data.itemId) {
-      onPatchPanorama((p) => {
+      onPatchPanorama(p => {
         const layout = p.items[data.itemId!]
         if (!layout?.marker) return p
         return {
@@ -313,7 +311,7 @@ export function AtlasCanvas({
                 src={imageUrl}
                 alt="panorama"
                 draggable={false}
-                onLoad={(event) => {
+                onLoad={event => {
                   const image = event.currentTarget
                   setSourceSize({
                     width: image.naturalWidth || viewportW,
@@ -345,54 +343,56 @@ export function AtlasCanvas({
             data-testid="canvas-overlay-layer"
             style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
           >
-            {projection && Object.entries(project.panorama.items).map(([itemId, layout]) => (
-              <ItemOverlay
-                key={itemId}
-                itemId={itemId}
-                itemTitle={project.knowledge.items[itemId]?.title ?? itemId}
-                layout={layout}
-                projection={projection}
-                selected={selection?.kind === 'item' && selection.id === itemId}
-                activeHandle={activeHandle}
-                hidden={!isItemVisible(project, itemId, cameraViewport.zoom)}
-                onSelect={onSelect}
-                editing={editingItemId === itemId}
-                editingTitle={editingTitle}
-                onStartRename={() => {
-                  setEditingItemId(itemId)
-                  setEditingTitle(project.knowledge.items[itemId]?.title ?? '')
-                }}
-                onEditingTitleChange={setEditingTitle}
-                onCommitRename={() => {
-                  const trimmed = editingTitle.trim()
-                  if (trimmed) onRenameItem(itemId, trimmed)
-                  setEditingItemId(null)
-                }}
-                onCancelRename={() => {
-                  setEditingItemId(null)
-                  setEditingTitle('')
-                }}
-              />
-            ))}
-
-            {projection && allCategories.map(({ cat }) => {
-              const layout = project.panorama.categories[cat.id]
-              if (!layout?.hotspot) return null
-              return (
-                <HotspotOverlay
-                  key={cat.id}
-                  categoryId={cat.id}
-                  title={cat.title}
+            {projection &&
+              Object.entries(project.panorama.items).map(([itemId, layout]) => (
+                <ItemOverlay
+                  key={itemId}
+                  itemId={itemId}
+                  itemTitle={localized(project.knowledge.items[itemId]?.title, locale) || itemId}
                   layout={layout}
                   projection={projection}
-                  active={selection?.kind === 'category' && selection.id === cat.id}
-                  hasCallout={hasCalloutInCategory(project, cat.id)}
-                  hidden={!isHotspotVisible(project, cat.id, cameraViewport.zoom)}
-                  draggable={tool === 'select'}
+                  selected={selection?.kind === 'item' && selection.id === itemId}
+                  activeHandle={activeHandle}
+                  hidden={!isItemVisible(project, itemId, cameraViewport.zoom)}
                   onSelect={onSelect}
+                  editing={editingItemId === itemId}
+                  editingTitle={editingTitle}
+                  onStartRename={() => {
+                    setEditingItemId(itemId)
+                    setEditingTitle(localized(project.knowledge.items[itemId]?.title, locale))
+                  }}
+                  onEditingTitleChange={setEditingTitle}
+                  onCommitRename={() => {
+                    const trimmed = editingTitle.trim()
+                    if (trimmed) onRenameItem(itemId, trimmed)
+                    setEditingItemId(null)
+                  }}
+                  onCancelRename={() => {
+                    setEditingItemId(null)
+                    setEditingTitle('')
+                  }}
                 />
-              )
-            })}
+              ))}
+
+            {projection &&
+              allCategories.map(({ cat }) => {
+                const layout = project.panorama.categories[cat.id]
+                if (!layout?.hotspot) return null
+                return (
+                  <HotspotOverlay
+                    key={cat.id}
+                    categoryId={cat.id}
+                    title={localized(cat.title, locale)}
+                    layout={layout}
+                    projection={projection}
+                    active={selection?.kind === 'category' && selection.id === cat.id}
+                    hasCallout={hasCalloutInCategory(project, cat.id)}
+                    hidden={!isHotspotVisible(project, cat.id, cameraViewport.zoom)}
+                    draggable={tool === 'select'}
+                    onSelect={onSelect}
+                  />
+                )
+              })}
           </div>
 
           <AxisIndicator
@@ -413,27 +413,37 @@ export function AtlasCanvas({
         <ZoomButton
           icon={ZoomIn}
           label="放大"
-          onClick={() => cameraRef.current?.animateTo({
-            ...(cameraRef.current?.getViewport() ?? project.panorama.initialViewport),
-            zoom: clampNumber(
-              (cameraRef.current?.getViewport().zoom ?? 1) + 0.25,
-              project.panorama.cameraBounds.minZoom,
-              project.panorama.cameraBounds.maxZoom,
-            ),
-          }, 200)}
+          onClick={() =>
+            cameraRef.current?.animateTo(
+              {
+                ...(cameraRef.current?.getViewport() ?? project.panorama.initialViewport),
+                zoom: clampNumber(
+                  (cameraRef.current?.getViewport().zoom ?? 1) + 0.25,
+                  project.panorama.cameraBounds.minZoom,
+                  project.panorama.cameraBounds.maxZoom,
+                ),
+              },
+              200,
+            )
+          }
           testid="canvas-zoom-in"
         />
         <ZoomButton
           icon={ZoomOut}
           label="缩小"
-          onClick={() => cameraRef.current?.animateTo({
-            ...(cameraRef.current?.getViewport() ?? project.panorama.initialViewport),
-            zoom: clampNumber(
-              (cameraRef.current?.getViewport().zoom ?? 1) - 0.25,
-              project.panorama.cameraBounds.minZoom,
-              project.panorama.cameraBounds.maxZoom,
-            ),
-          }, 200)}
+          onClick={() =>
+            cameraRef.current?.animateTo(
+              {
+                ...(cameraRef.current?.getViewport() ?? project.panorama.initialViewport),
+                zoom: clampNumber(
+                  (cameraRef.current?.getViewport().zoom ?? 1) - 0.25,
+                  project.panorama.cameraBounds.minZoom,
+                  project.panorama.cameraBounds.maxZoom,
+                ),
+              },
+              200,
+            )
+          }
           testid="canvas-zoom-out"
         />
         <ZoomButton
@@ -497,7 +507,7 @@ function HotspotOverlay({
         title={`${title}${hasCallout ? ' · has callout' : ''}`}
         data-atlas-interactive="true"
         style={markerButtonStyle}
-        onClick={(event) => {
+        onClick={event => {
           event.preventDefault()
           event.stopPropagation()
           onSelect({ kind: 'category', id: categoryId })
@@ -510,7 +520,7 @@ function HotspotOverlay({
       <button
         type="button"
         data-atlas-interactive="true"
-        onClick={(event) => {
+        onClick={event => {
           event.preventDefault()
           event.stopPropagation()
           onSelect({ kind: 'category', id: categoryId })
@@ -531,9 +541,7 @@ function HotspotOverlay({
           pointerEvents: 'auto',
         }}
       >
-        <span style={annotationLabelStyle}>
-          {title}
-        </span>
+        <span style={annotationLabelStyle}>{title}</span>
       </button>
     </div>
   )
@@ -616,7 +624,7 @@ function ItemOverlay({
         ref={!layout.callout ? undefined : undefined}
         data-testid={`item-marker-${itemId}`}
         data-atlas-interactive="true"
-        onClick={(event) => {
+        onClick={event => {
           event.preventDefault()
           event.stopPropagation()
           onSelect({ kind: 'item', id: itemId })
@@ -700,17 +708,17 @@ function CalloutChip({
         <input
           autoFocus
           value={editingTitle}
-          onChange={(event) => onEditingTitleChange(event.target.value)}
+          onChange={event => onEditingTitleChange(event.target.value)}
           onBlur={onCommitRename}
-          onClick={(event) => {
+          onClick={event => {
             event.preventDefault()
             event.stopPropagation()
           }}
-          onDoubleClick={(event) => {
+          onDoubleClick={event => {
             event.preventDefault()
             event.stopPropagation()
           }}
-          onKeyDown={(event) => {
+          onKeyDown={event => {
             if (event.key === 'Enter') {
               event.preventDefault()
               onCommitRename()
@@ -743,21 +751,19 @@ function CalloutChip({
       type="button"
       data-testid={`callout-chip-${itemId}`}
       data-atlas-interactive="true"
-      onClick={(event) => {
+      onClick={event => {
         event.preventDefault()
         event.stopPropagation()
         onSelect({ kind: 'item', id: itemId })
       }}
-      onDoubleClick={(event) => {
+      onDoubleClick={event => {
         event.preventDefault()
         event.stopPropagation()
         onStartRename()
       }}
       style={sharedStyle}
     >
-      <span style={annotationLabelStyleEllipsis}>
-        {itemTitle}
-      </span>
+      <span style={annotationLabelStyleEllipsis}>{itemTitle}</span>
     </button>
   )
 }
@@ -974,25 +980,27 @@ function hasCalloutInCategory(project: GuideProject, categoryId: string): boolea
   const stages = project.knowledge.stages as unknown as Array<{
     categories: Array<{ id: string; itemIds: string[] }>
   }>
-  const category = stages.flatMap((stage) => stage.categories).find((entry) => entry.id === categoryId)
+  const category = stages.flatMap(stage => stage.categories).find(entry => entry.id === categoryId)
   if (!category) return false
-  return category.itemIds.some((itemId) => Boolean(project.panorama.items[itemId]?.callout))
+  return category.itemIds.some(itemId => Boolean(project.panorama.items[itemId]?.callout))
 }
 
 function isHotspotVisible(project: GuideProject, categoryId: string, zoom: number): boolean {
   const categoryLayout = project.panorama.categories[categoryId]
-  const hotspotMinZoom = categoryLayout?.hotspotMinZoom
-    ?? project.products.atlas.theme.hotspotMinZoom
-    ?? DEFAULT_HOTSPOT_MIN_ZOOM
+  const hotspotMinZoom =
+    categoryLayout?.hotspotMinZoom ??
+    project.products.atlas.theme.hotspotMinZoom ??
+    DEFAULT_HOTSPOT_MIN_ZOOM
   if (zoom < hotspotMinZoom) return false
   const category = findCategory(project, categoryId)
   if (!category) return true
-  return !category.itemIds.some((itemId) => {
+  return !category.itemIds.some(itemId => {
     const itemLayout = project.panorama.items[itemId]
     if (!itemLayout?.callout) return false
-    const calloutMinZoom = itemLayout.callout.minZoom
-      ?? project.products.atlas.theme.calloutMinZoom
-      ?? DEFAULT_CALLOUT_MIN_ZOOM
+    const calloutMinZoom =
+      itemLayout.callout.minZoom ??
+      project.products.atlas.theme.calloutMinZoom ??
+      DEFAULT_CALLOUT_MIN_ZOOM
     return zoom >= calloutMinZoom
   })
 }
@@ -1001,20 +1009,25 @@ function isItemVisible(project: GuideProject, itemId: string, zoom: number): boo
   const itemLayout = project.panorama.items[itemId]
   if (!itemLayout) return false
   if (itemLayout.callout) {
-    const calloutMinZoom = itemLayout.callout.minZoom
-      ?? project.products.atlas.theme.calloutMinZoom
-      ?? DEFAULT_CALLOUT_MIN_ZOOM
+    const calloutMinZoom =
+      itemLayout.callout.minZoom ??
+      project.products.atlas.theme.calloutMinZoom ??
+      DEFAULT_CALLOUT_MIN_ZOOM
     return zoom >= calloutMinZoom
   }
-  const markerMinZoom = itemLayout.markerMinZoom
-    ?? project.products.atlas.theme.itemMarkerMinZoom
-    ?? DEFAULT_ITEM_MARKER_MIN_ZOOM
+  const markerMinZoom =
+    itemLayout.markerMinZoom ??
+    project.products.atlas.theme.itemMarkerMinZoom ??
+    DEFAULT_ITEM_MARKER_MIN_ZOOM
   return zoom >= markerMinZoom
 }
 
-function findCategory(project: GuideProject, categoryId: string): { id: string; itemIds: string[] } | null {
+function findCategory(
+  project: GuideProject,
+  categoryId: string,
+): { id: string; itemIds: string[] } | null {
   const stages = project.knowledge.stages as unknown as Array<{
     categories: Array<{ id: string; itemIds: string[] }>
   }>
-  return stages.flatMap((stage) => stage.categories).find((entry) => entry.id === categoryId) ?? null
+  return stages.flatMap(stage => stage.categories).find(entry => entry.id === categoryId) ?? null
 }

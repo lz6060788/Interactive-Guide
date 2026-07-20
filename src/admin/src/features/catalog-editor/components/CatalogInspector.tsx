@@ -33,6 +33,7 @@ import {
   Text,
 } from '@chakra-ui/react'
 import type { CatalogSelection } from '../store'
+import { localized, updateLocalized } from '../../projects/localization'
 
 interface Props {
   project: GuideProject
@@ -44,6 +45,7 @@ interface Props {
   onSaveRequested: () => void
   hasUnsavedConfig: boolean
   isSaving: boolean
+  locale: string
 }
 
 export function CatalogInspector({
@@ -56,6 +58,7 @@ export function CatalogInspector({
   onSaveRequested,
   hasUnsavedConfig,
   isSaving,
+  locale,
 }: Props): JSX.Element {
   const mode = useMemo(() => {
     if (selection?.kind === 'category') return 'category'
@@ -83,6 +86,7 @@ export function CatalogInspector({
           hasUnsaved={hasUnsavedConfig}
           onSaveRequested={onSaveRequested}
           isSaving={isSaving}
+          locale={locale}
         />
       )}
       {mode === 'category' && selection?.kind === 'category' && (
@@ -92,6 +96,7 @@ export function CatalogInspector({
           activeStage={activeStage}
           onPatchKnowledge={onPatchKnowledge}
           onPatchPanorama={onPatchPanorama}
+          locale={locale}
         />
       )}
       {mode === 'item' && selection?.kind === 'item' && (
@@ -101,6 +106,7 @@ export function CatalogInspector({
           activeStage={activeStage}
           onPatchKnowledge={onPatchKnowledge}
           onPatchPanorama={onPatchPanorama}
+          locale={locale}
         />
       )}
     </Box>
@@ -115,6 +121,7 @@ interface ConfigInspectorProps {
   hasUnsaved: boolean
   onSaveRequested: () => void
   isSaving: boolean
+  locale: string
 }
 
 function ConfigInspector({
@@ -123,6 +130,7 @@ function ConfigInspector({
   hasUnsaved,
   onSaveRequested,
   isSaving,
+  locale,
 }: ConfigInspectorProps): JSX.Element {
   const cfg = project.products.catalog
   const subscribe = (mutator: (cfg: CatalogProductConfig) => CatalogProductConfig) => {
@@ -152,9 +160,11 @@ function ConfigInspector({
         <FieldGroup icon={FileText} title="说明">
           <TextFieldPlain
             label="顶部提示语"
-            value={cfg.hintText ?? ''}
+            value={localized(cfg.hintText, locale)}
             placeholder="例如：滑动浏览，点选进入"
-            onChange={v => subscribe(c => ({ ...c, hintText: v }))}
+            onChange={v =>
+              subscribe(c => ({ ...c, hintText: updateLocalized(c.hintText, locale, v) }))
+            }
           />
           <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
             出现在列表上方的提示文本
@@ -311,6 +321,7 @@ interface CategoryInspectorProps {
   activeStage: IndustryStage
   onPatchKnowledge: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
   onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void
+  locale: string
 }
 
 function CategoryInspector({
@@ -319,6 +330,7 @@ function CategoryInspector({
   activeStage,
   onPatchKnowledge,
   onPatchPanorama,
+  locale,
 }: CategoryInspectorProps): JSX.Element {
   const cat = activeStage.categories.find(c => c.id === categoryId)
   if (!cat) {
@@ -335,7 +347,7 @@ function CategoryInspector({
 
   return (
     <>
-      <SectionHeader eyebrow="Category" title={cat.title} />
+      <SectionHeader eyebrow="Category" title={localized(cat.title, locale)} />
       <Box px="4" pb="2">
         <Text fontFamily="mono" fontSize="11px" color="ink.faint">
           {cat.id}
@@ -345,7 +357,7 @@ function CategoryInspector({
         <FieldGroup icon={MapPin} title="分类信息">
           <TextFieldPlain
             label="标题"
-            value={cat.title}
+            value={localized(cat.title, locale)}
             onChange={t => {
               onPatchKnowledge(k => {
                 const stages = k.stages as unknown as IndustryStage[]
@@ -353,7 +365,9 @@ function CategoryInspector({
                   ...k,
                   stages: stages.map(s => ({
                     ...s,
-                    categories: s.categories.map(c => (c.id === cat.id ? { ...c, title: t } : c)),
+                    categories: s.categories.map(c =>
+                      c.id === cat.id ? { ...c, title: updateLocalized(c.title, locale, t) } : c,
+                    ),
                   })),
                 } as GuideProject['knowledge']
               })
@@ -401,7 +415,10 @@ function CategoryInspector({
                         ? [{ value: '', label: '（暂无场景，先去 Settings 创建）' }]
                         : [
                             { value: '', label: '请选择…' },
-                            ...project.scenes.map(s => ({ value: s.id, label: s.title || s.id })),
+                            ...project.scenes.map(s => ({
+                              value: s.id,
+                              label: localized(s.title, locale) || s.id,
+                            })),
                           ]
                     }
                     onChange={v =>
@@ -417,7 +434,10 @@ function CategoryInspector({
                       if (scene.views.length === 0) return [{ value: '', label: '（场景无视图）' }]
                       return [
                         { value: '', label: '请选择…' },
-                        ...scene.views.map(v => ({ value: v.id, label: v.title || v.id })),
+                        ...scene.views.map(v => ({
+                          value: v.id,
+                          label: localized(v.title, locale) || v.id,
+                        })),
                       ]
                     })()}
                     onChange={v =>
@@ -433,12 +453,51 @@ function CategoryInspector({
         </FieldGroup>
 
         <FieldGroup icon={Sliders} title="共享背景镜头">
-          <Text fontSize="11px" color="ink.faint">当前二级分类下的三级节点默认共用此背景画面。</Text>
+          <Text fontSize="11px" color="ink.faint">
+            当前二级分类下的三级节点默认共用此背景画面。
+          </Text>
           <HStack gap="2">
-            <Box flex="1"><NumberFieldPlain label="中心 x" value={project.panorama.categories[cat.id]?.viewport.centerX ?? 0.5} min={0} max={1} step={0.01} onChange={v => patchCategoryViewport(onPatchPanorama, cat.id, current => ({ ...current, centerX: v }))} /></Box>
-            <Box flex="1"><NumberFieldPlain label="中心 y" value={project.panorama.categories[cat.id]?.viewport.centerY ?? 0.5} min={0} max={1} step={0.01} onChange={v => patchCategoryViewport(onPatchPanorama, cat.id, current => ({ ...current, centerY: v }))} /></Box>
+            <Box flex="1">
+              <NumberFieldPlain
+                label="中心 x"
+                value={project.panorama.categories[cat.id]?.viewport.centerX ?? 0.5}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={v =>
+                  patchCategoryViewport(onPatchPanorama, cat.id, current => ({
+                    ...current,
+                    centerX: v,
+                  }))
+                }
+              />
+            </Box>
+            <Box flex="1">
+              <NumberFieldPlain
+                label="中心 y"
+                value={project.panorama.categories[cat.id]?.viewport.centerY ?? 0.5}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={v =>
+                  patchCategoryViewport(onPatchPanorama, cat.id, current => ({
+                    ...current,
+                    centerY: v,
+                  }))
+                }
+              />
+            </Box>
           </HStack>
-          <NumberFieldPlain label="放大倍数" value={project.panorama.categories[cat.id]?.viewport.zoom ?? 1} min={project.panorama.cameraBounds.minZoom} max={project.panorama.cameraBounds.maxZoom} step={0.1} onChange={v => patchCategoryViewport(onPatchPanorama, cat.id, current => ({ ...current, zoom: v }))} />
+          <NumberFieldPlain
+            label="放大倍数"
+            value={project.panorama.categories[cat.id]?.viewport.zoom ?? 1}
+            min={project.panorama.cameraBounds.minZoom}
+            max={project.panorama.cameraBounds.maxZoom}
+            step={0.1}
+            onChange={v =>
+              patchCategoryViewport(onPatchPanorama, cat.id, current => ({ ...current, zoom: v }))
+            }
+          />
         </FieldGroup>
 
         <FieldGroup icon={Tag} title="项目数">
@@ -459,6 +518,7 @@ interface ItemInspectorProps {
   activeStage: IndustryStage
   onPatchKnowledge: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
   onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void
+  locale: string
 }
 
 function ItemInspector({
@@ -467,6 +527,7 @@ function ItemInspector({
   activeStage,
   onPatchKnowledge,
   onPatchPanorama,
+  locale,
 }: ItemInspectorProps): JSX.Element {
   const item: IndustryItem | undefined = project.knowledge.items[itemId]
   const cat = activeStage.categories.find(c => c.id === item?.categoryId)
@@ -486,7 +547,7 @@ function ItemInspector({
 
   return (
     <>
-      <SectionHeader eyebrow="Item" title={item.title} />
+      <SectionHeader eyebrow="Item" title={localized(item.title, locale)} />
       <Box px="4" pb="2">
         <Text fontFamily="mono" fontSize="11px" color="ink.faint">
           {item.id}
@@ -496,24 +557,33 @@ function ItemInspector({
         <FieldGroup icon={MapPin} title="项目信息">
           <TextFieldPlain
             label="标题"
-            value={item.title}
+            value={localized(item.title, locale)}
             onChange={t => {
               onPatchKnowledge(k => ({
                 ...k,
-                items: { ...k.items, [itemId]: { ...item, title: t } },
+                items: {
+                  ...k.items,
+                  [itemId]: { ...item, title: updateLocalized(item.title, locale, t) },
+                },
               }))
             }}
           />
           <Text fontFamily="mono" fontSize="11px" color="ink.faint">
-            所属分类：{cat?.title ?? item.categoryId}
+            所属分类：{cat ? localized(cat.title, locale) : item.categoryId}
           </Text>
           <TextFieldPlain
             label="描述"
-            value={item.description}
+            value={localized(item.description, locale)}
             onChange={d => {
               onPatchKnowledge(k => ({
                 ...k,
-                items: { ...k.items, [itemId]: { ...item, description: d } },
+                items: {
+                  ...k.items,
+                  [itemId]: {
+                    ...item,
+                    description: updateLocalized(item.description, locale, d),
+                  },
+                },
               }))
             }}
           />
@@ -546,7 +616,12 @@ function ItemInspector({
                 min={0}
                 max={1}
                 step={0.01}
-                onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, marker: { x: v, y: current.marker.y } }))}
+                onChange={v =>
+                  patchItemLayout(onPatchPanorama, itemId, current => ({
+                    ...current,
+                    marker: { x: v, y: current.marker.y },
+                  }))
+                }
               />
             </Box>
             <Box flex="1">
@@ -556,38 +631,186 @@ function ItemInspector({
                 min={0}
                 max={1}
                 step={0.01}
-                onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, marker: { x: current.marker.x, y: v } }))}
+                onChange={v =>
+                  patchItemLayout(onPatchPanorama, itemId, current => ({
+                    ...current,
+                    marker: { x: current.marker.x, y: v },
+                  }))
+                }
               />
             </Box>
           </HStack>
           <HStack gap="2">
-            <Box flex="1"><NumberFieldPlain label="聚焦 x" value={layout?.focusRect?.x ?? 0.35} min={0} max={1} step={0.01} onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, focusRect: { ...(current.focusRect ?? defaultFocusRect()), x: v } }))} /></Box>
-            <Box flex="1"><NumberFieldPlain label="聚焦 y" value={layout?.focusRect?.y ?? 0.35} min={0} max={1} step={0.01} onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, focusRect: { ...(current.focusRect ?? defaultFocusRect()), y: v } }))} /></Box>
+            <Box flex="1">
+              <NumberFieldPlain
+                label="聚焦 x"
+                value={layout?.focusRect?.x ?? 0.35}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={v =>
+                  patchItemLayout(onPatchPanorama, itemId, current => ({
+                    ...current,
+                    focusRect: { ...(current.focusRect ?? defaultFocusRect()), x: v },
+                  }))
+                }
+              />
+            </Box>
+            <Box flex="1">
+              <NumberFieldPlain
+                label="聚焦 y"
+                value={layout?.focusRect?.y ?? 0.35}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={v =>
+                  patchItemLayout(onPatchPanorama, itemId, current => ({
+                    ...current,
+                    focusRect: { ...(current.focusRect ?? defaultFocusRect()), y: v },
+                  }))
+                }
+              />
+            </Box>
           </HStack>
           <HStack gap="2">
-            <Box flex="1"><NumberFieldPlain label="宽度" value={layout?.focusRect?.width ?? 0.2} min={0.03} max={1} step={0.01} onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, focusRect: { ...(current.focusRect ?? defaultFocusRect()), width: v } }))} /></Box>
-            <Box flex="1"><NumberFieldPlain label="高度" value={layout?.focusRect?.height ?? 0.2} min={0.03} max={1} step={0.01} onChange={v => patchItemLayout(onPatchPanorama, itemId, current => ({ ...current, focusRect: { ...(current.focusRect ?? defaultFocusRect()), height: v } }))} /></Box>
+            <Box flex="1">
+              <NumberFieldPlain
+                label="宽度"
+                value={layout?.focusRect?.width ?? 0.2}
+                min={0.03}
+                max={1}
+                step={0.01}
+                onChange={v =>
+                  patchItemLayout(onPatchPanorama, itemId, current => ({
+                    ...current,
+                    focusRect: { ...(current.focusRect ?? defaultFocusRect()), width: v },
+                  }))
+                }
+              />
+            </Box>
+            <Box flex="1">
+              <NumberFieldPlain
+                label="高度"
+                value={layout?.focusRect?.height ?? 0.2}
+                min={0.03}
+                max={1}
+                step={0.01}
+                onChange={v =>
+                  patchItemLayout(onPatchPanorama, itemId, current => ({
+                    ...current,
+                    focusRect: { ...(current.focusRect ?? defaultFocusRect()), height: v },
+                  }))
+                }
+              />
+            </Box>
           </HStack>
-          <ChakraToggleRow label="使用独立背景镜头" checked={Boolean(layout?.viewportOverride)} onToggle={() => {
-            onPatchPanorama(panorama => {
-              const current = panorama.items[itemId] ?? { marker: { x: 0.5, y: 0.5 }, focusRect: defaultFocusRect() }
-              if (current.viewportOverride) {
-                const { viewportOverride: _override, ...withoutOverride } = current
-                return { ...panorama, items: { ...panorama.items, [itemId]: withoutOverride } }
-              }
-              const categoryViewport = panorama.categories[item.categoryId]?.viewport ?? { centerX: 0.5, centerY: 0.5, zoom: 1 }
-              return { ...panorama, items: { ...panorama.items, [itemId]: { ...current, viewportOverride: categoryViewport } } }
-            })
-          }} />
-          {layout?.viewportOverride && <>
-            <HStack gap="2">
-              <Box flex="1"><NumberFieldPlain label="背景中心 x" value={layout.viewportOverride.centerX} min={0} max={1} step={0.01} onChange={v => patchItemViewport(onPatchPanorama, itemId, current => ({ ...current, centerX: v }))} /></Box>
-              <Box flex="1"><NumberFieldPlain label="背景中心 y" value={layout.viewportOverride.centerY} min={0} max={1} step={0.01} onChange={v => patchItemViewport(onPatchPanorama, itemId, current => ({ ...current, centerY: v }))} /></Box>
-            </HStack>
-            <NumberFieldPlain label="背景放大倍数" value={layout.viewportOverride.zoom} min={project.panorama.cameraBounds.minZoom} max={project.panorama.cameraBounds.maxZoom} step={0.1} onChange={v => patchItemViewport(onPatchPanorama, itemId, current => ({ ...current, zoom: v }))} />
-            <Button size="sm" variant="secondary" onClick={() => onPatchPanorama(panorama => ({ ...panorama, items: { ...panorama.items, [itemId]: { ...panorama.items[itemId], viewportOverride: undefined } } }))}>使用分类共享背景</Button>
-            <Button size="sm" variant="secondary" onClick={() => onPatchPanorama(panorama => ({ ...panorama, categories: { ...panorama.categories, [item.categoryId]: { ...panorama.categories[item.categoryId], viewport: layout.viewportOverride! } } }))}>设为分类共享背景</Button>
-          </>}
+          <ChakraToggleRow
+            label="使用独立背景镜头"
+            checked={Boolean(layout?.viewportOverride)}
+            onToggle={() => {
+              onPatchPanorama(panorama => {
+                const current = panorama.items[itemId] ?? {
+                  marker: { x: 0.5, y: 0.5 },
+                  focusRect: defaultFocusRect(),
+                }
+                if (current.viewportOverride) {
+                  const { viewportOverride: _override, ...withoutOverride } = current
+                  return { ...panorama, items: { ...panorama.items, [itemId]: withoutOverride } }
+                }
+                const categoryViewport = panorama.categories[item.categoryId]?.viewport ?? {
+                  centerX: 0.5,
+                  centerY: 0.5,
+                  zoom: 1,
+                }
+                return {
+                  ...panorama,
+                  items: {
+                    ...panorama.items,
+                    [itemId]: { ...current, viewportOverride: categoryViewport },
+                  },
+                }
+              })
+            }}
+          />
+          {layout?.viewportOverride && (
+            <>
+              <HStack gap="2">
+                <Box flex="1">
+                  <NumberFieldPlain
+                    label="背景中心 x"
+                    value={layout.viewportOverride.centerX}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    onChange={v =>
+                      patchItemViewport(onPatchPanorama, itemId, current => ({
+                        ...current,
+                        centerX: v,
+                      }))
+                    }
+                  />
+                </Box>
+                <Box flex="1">
+                  <NumberFieldPlain
+                    label="背景中心 y"
+                    value={layout.viewportOverride.centerY}
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    onChange={v =>
+                      patchItemViewport(onPatchPanorama, itemId, current => ({
+                        ...current,
+                        centerY: v,
+                      }))
+                    }
+                  />
+                </Box>
+              </HStack>
+              <NumberFieldPlain
+                label="背景放大倍数"
+                value={layout.viewportOverride.zoom}
+                min={project.panorama.cameraBounds.minZoom}
+                max={project.panorama.cameraBounds.maxZoom}
+                step={0.1}
+                onChange={v =>
+                  patchItemViewport(onPatchPanorama, itemId, current => ({ ...current, zoom: v }))
+                }
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() =>
+                  onPatchPanorama(panorama => ({
+                    ...panorama,
+                    items: {
+                      ...panorama.items,
+                      [itemId]: { ...panorama.items[itemId], viewportOverride: undefined },
+                    },
+                  }))
+                }
+              >
+                使用分类共享背景
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() =>
+                  onPatchPanorama(panorama => ({
+                    ...panorama,
+                    categories: {
+                      ...panorama.categories,
+                      [item.categoryId]: {
+                        ...panorama.categories[item.categoryId],
+                        viewport: layout.viewportOverride!,
+                      },
+                    },
+                  }))
+                }
+              >
+                设为分类共享背景
+              </Button>
+            </>
+          )}
         </FieldGroup>
       </Stack>
     </>
@@ -597,13 +820,17 @@ function ItemInspector({
 function patchItemLayout(
   onPatchPanorama: (mutator: (p: PanoramaModel) => PanoramaModel) => void,
   itemId: string,
-  mutator: (layout: NonNullable<PanoramaModel['items'][string]>) => NonNullable<PanoramaModel['items'][string]>,
+  mutator: (
+    layout: NonNullable<PanoramaModel['items'][string]>,
+  ) => NonNullable<PanoramaModel['items'][string]>,
 ): void {
   onPatchPanorama(panorama => ({
     ...panorama,
     items: {
       ...panorama.items,
-      [itemId]: mutator(panorama.items[itemId] ?? { marker: { x: 0.5, y: 0.5 }, focusRect: defaultFocusRect() }),
+      [itemId]: mutator(
+        panorama.items[itemId] ?? { marker: { x: 0.5, y: 0.5 }, focusRect: defaultFocusRect() },
+      ),
     },
   }))
 }
@@ -618,8 +845,16 @@ function patchCategoryViewport(
   mutator: (viewport: Viewport) => Viewport,
 ): void {
   onPatchPanorama(panorama => {
-    const current = panorama.categories[categoryId] ?? { viewport: { centerX: 0.5, centerY: 0.5, zoom: 1 } }
-    return { ...panorama, categories: { ...panorama.categories, [categoryId]: { ...current, viewport: mutator(current.viewport) } } }
+    const current = panorama.categories[categoryId] ?? {
+      viewport: { centerX: 0.5, centerY: 0.5, zoom: 1 },
+    }
+    return {
+      ...panorama,
+      categories: {
+        ...panorama.categories,
+        [categoryId]: { ...current, viewport: mutator(current.viewport) },
+      },
+    }
   })
 }
 
@@ -629,9 +864,15 @@ function patchItemViewport(
   mutator: (viewport: Viewport) => Viewport,
 ): void {
   onPatchPanorama(panorama => {
-    const current = panorama.items[itemId] ?? { marker: { x: 0.5, y: 0.5 }, focusRect: defaultFocusRect() }
+    const current = panorama.items[itemId] ?? {
+      marker: { x: 0.5, y: 0.5 },
+      focusRect: defaultFocusRect(),
+    }
     const viewport = current.viewportOverride ?? { centerX: 0.5, centerY: 0.5, zoom: 1 }
-    return { ...panorama, items: { ...panorama.items, [itemId]: { ...current, viewportOverride: mutator(viewport) } } }
+    return {
+      ...panorama,
+      items: { ...panorama.items, [itemId]: { ...current, viewportOverride: mutator(viewport) } },
+    }
   })
 }
 

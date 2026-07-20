@@ -29,10 +29,16 @@ export const PROJECT_DEFAULTS = {
   },
   products: {
     atlas: {
-      hintText: '拖动或缩放探索全景图',
+      hintText: {
+        'zh-CN': '拖动或缩放探索全景图',
+        'en-US': 'Drag or zoom to explore the panorama',
+      },
     },
     catalog: {
-      hintText: '点击或滑动文字查看简介',
+      hintText: {
+        'zh-CN': '点击或滑动文字查看简介',
+        'en-US': 'Tap or swipe through the list to view details',
+      },
       viewportAnimationMs: 360,
     },
   },

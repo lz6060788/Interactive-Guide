@@ -32,6 +32,8 @@ export interface SceneHostControllerOptions {
   product: 'atlas' | 'catalog'
   projectId: string
   sessionId: string
+  locale: string
+  supportedLocales: string[]
   baseHref: string
   getIframeWindow: () => Window | null
   onRequestBack: () => void
@@ -52,7 +54,7 @@ export class SceneHostController {
       this.postHostExit(this.activeScene)
     }
     const resolvedViewId = viewId ?? scene.views[0]?.id ?? ''
-    const resolvedView = scene.views.find((entry) => entry.id === resolvedViewId) ?? scene.views[0]
+    const resolvedView = scene.views.find(entry => entry.id === resolvedViewId) ?? scene.views[0]
     const nextScene: SceneHostActiveScene = {
       src: scene.entryUrl,
       sceneId: scene.sceneId,
@@ -80,16 +82,15 @@ export class SceneHostController {
     const activeScene = this.activeScene
     const sceneWindow = this.options.getIframeWindow()
     if (!activeScene || !sceneWindow) return
-    const targetOrigin = resolveSceneBridgeTargetOrigin(
-      activeScene.src,
-      this.options.baseHref,
-    )
+    const targetOrigin = resolveSceneBridgeTargetOrigin(activeScene.src, this.options.baseHref)
     if (!targetOrigin) return
     sceneWindow.postMessage(
       buildSceneBridgeEnvelope('event', 'interactive-guide-host', 'host:init', {
         activationId: activeScene.activationId,
         sessionId: this.options.sessionId,
         product: this.options.product,
+        locale: this.options.locale,
+        supportedLocales: this.options.supportedLocales,
         scene: {
           id: activeScene.sceneId,
           title: activeScene.sceneTitle,
@@ -110,10 +111,7 @@ export class SceneHostController {
     const activeScene = this.activeScene
     const sceneWindow = this.options.getIframeWindow()
     if (!activeScene || !sceneWindow) return
-    const targetOrigin = resolveSceneBridgeTargetOrigin(
-      activeScene.src,
-      this.options.baseHref,
-    )
+    const targetOrigin = resolveSceneBridgeTargetOrigin(activeScene.src, this.options.baseHref)
     if (!targetOrigin) return
     sceneWindow.postMessage(
       buildSceneBridgeEnvelope('event', 'interactive-guide-host', 'host:focus-item', payload),
@@ -136,7 +134,9 @@ export class SceneHostController {
         return
       }
       if (event.data.type === 'scene:request-route') {
-        const routeId = String((event.data.payload as { routeId?: string } | undefined)?.routeId ?? '')
+        const routeId = String(
+          (event.data.payload as { routeId?: string } | undefined)?.routeId ?? '',
+        )
         if (routeId) this.options.onRequestRoute(routeId)
       }
     }

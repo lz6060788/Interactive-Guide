@@ -8,16 +8,17 @@ export interface ProductShellFiles {
 export function buildProductShell(
   projectTitle: string,
   appJs: string,
+  locale: string = 'zh-CN',
 ): ProductShellFiles {
   return {
-    'index.html': buildShellIndexHtml(projectTitle),
+    'index.html': buildShellIndexHtml(projectTitle, locale),
     'app.js': appJs,
   }
 }
 
-function buildShellIndexHtml(projectTitle: string): string {
+function buildShellIndexHtml(projectTitle: string, locale: string): string {
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${escapeHtml(locale)}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -53,8 +54,5 @@ function buildShellIndexHtml(projectTitle: string): string {
 }
 
 function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
 }

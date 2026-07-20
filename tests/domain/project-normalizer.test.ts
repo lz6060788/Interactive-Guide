@@ -46,8 +46,8 @@ test('normalizeProject fills product hint texts and viewport animation from defa
   draft.panorama.assetId = 'asset-pano'
   draft.assets.byId['asset-pano'] = { id: 'asset-pano', kind: 'image', sourcePath: 'pano.png' }
   const normalized = normalizeProject(draft)
-  assert.equal(normalized.products.atlas.hintText, PROJECT_DEFAULTS.products.atlas.hintText)
-  assert.equal(normalized.products.catalog.hintText, PROJECT_DEFAULTS.products.catalog.hintText)
+  assert.deepEqual(normalized.products.atlas.hintText, PROJECT_DEFAULTS.products.atlas.hintText)
+  assert.deepEqual(normalized.products.catalog.hintText, PROJECT_DEFAULTS.products.catalog.hintText)
   assert.equal(
     normalized.products.catalog.interaction.viewportAnimationMs,
     PROJECT_DEFAULTS.products.catalog.viewportAnimationMs,
@@ -79,9 +79,10 @@ test('normalizeProject does not overwrite explicitly provided values', () => {
 test('createDraftProject returns a shape-valid project with revision 1', () => {
   const draft = createDraftProject({ id: 'p1', title: 'T', locale: 'en-US' })
   assert.equal(draft.id, 'p1')
-  assert.equal(draft.title, 'T')
-  assert.equal(draft.locale, 'en-US')
+  assert.deepEqual(draft.title, { 'en-US': 'T' })
+  assert.equal(draft.localization.defaultLocale, 'en-US')
+  assert.deepEqual(draft.localization.supportedLocales, ['en-US', 'zh-CN'])
   assert.equal(draft.metadata.revision, 1)
-  assert.equal(draft.metadata.schemaVersion, '2.0.0')
+  assert.equal(draft.metadata.schemaVersion, '3.0.0')
   assert.equal(draft.knowledge.stages.length, 3)
 })

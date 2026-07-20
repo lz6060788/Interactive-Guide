@@ -7,9 +7,18 @@ import { SceneOverlayHost } from './shared/scene-overlay-host.js'
 import { AtlasPageTracker } from '../../platform/analytics/atlas-page-tracker.js'
 import { F10HostAdapter } from '../../platform/f10/f10-host-adapter.js'
 import { ProductShareController } from './shared/product-sharing.js'
+import { resolveRuntimeLocale } from '../../domain/localization.js'
+import { resolveAtlasManifest } from '../../products/contracts/manifest-localization.js'
 
 export async function bootstrapAtlasProduct(app: HTMLElement, manifestUrl: string): Promise<void> {
-  const manifest = await loadManifest<AtlasManifest>(manifestUrl)
+  const sourceManifest = await loadManifest<AtlasManifest>(manifestUrl)
+  const locale = resolveRuntimeLocale(sourceManifest.localization, {
+    search: window.location.search,
+    navigatorLanguages: navigator.languages,
+  })
+  const manifest = resolveAtlasManifest(sourceManifest, locale)
+  document.documentElement.lang = locale
+  document.title = manifest.projectTitle
   const { shell, runtimeMount } = createShellFrame(app)
   const assetLoader = new AssetLoader()
   const tracker = manifest.integrations.analytics?.enabled
@@ -31,6 +40,8 @@ export async function bootstrapAtlasProduct(app: HTMLElement, manifestUrl: strin
     projectId: manifest.projectId,
     projectTitle: manifest.projectTitle,
     sessionId: createSessionId(manifest.projectId, manifest.product),
+    locale,
+    supportedLocales: manifest.localization.supportedLocales,
     onRouteRequest: routeId => runtime?.openRoute(routeId),
     onShare: () => sharing.share(),
     shareEnabled: sharing.enabled,

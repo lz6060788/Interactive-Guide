@@ -55,6 +55,7 @@ import {
   type ViewportForm,
 } from '../schema'
 import type { Selection } from '../store'
+import { localized, updateLocalized } from '../../projects/localization'
 
 type Mode = 'config' | 'category' | 'item'
 
@@ -73,6 +74,7 @@ interface Props {
   hasUnsavedNavigation: boolean
   onSaveRequested: () => void
   isSaving: boolean
+  locale: string
 }
 
 export function AtlasInspector({
@@ -88,6 +90,7 @@ export function AtlasInspector({
   hasUnsavedNavigation,
   onSaveRequested,
   isSaving,
+  locale,
 }: Props): JSX.Element {
   const mode: Mode = useMemo(() => {
     if (selection?.kind === 'category') return 'category'
@@ -115,6 +118,7 @@ export function AtlasInspector({
           hasUnsaved={hasUnsavedConfig}
           onSaveRequested={onSaveRequested}
           isSaving={isSaving}
+          locale={locale}
         />
       )}
       {mode === 'category' && selection?.kind === 'category' && (
@@ -127,6 +131,7 @@ export function AtlasInspector({
           hasUnsaved={hasUnsavedPanorama || hasUnsavedKnowledge || hasUnsavedNavigation}
           onSaveRequested={onSaveRequested}
           isSaving={isSaving}
+          locale={locale}
         />
       )}
       {mode === 'item' && selection?.kind === 'item' && (
@@ -138,6 +143,7 @@ export function AtlasInspector({
           hasUnsaved={hasUnsavedPanorama || hasUnsavedKnowledge}
           onSaveRequested={onSaveRequested}
           isSaving={isSaving}
+          locale={locale}
         />
       )}
     </Box>
@@ -152,6 +158,7 @@ interface AtlasConfigInspectorProps {
   hasUnsaved: boolean
   onSaveRequested: () => void
   isSaving: boolean
+  locale: string
 }
 
 function AtlasConfigInspector({
@@ -160,6 +167,7 @@ function AtlasConfigInspector({
   hasUnsaved,
   onSaveRequested,
   isSaving,
+  locale,
 }: AtlasConfigInspectorProps): JSX.Element {
   const cfg = project.products.atlas
   const subscribe = (mutator: (cfg: AtlasProductConfig) => AtlasProductConfig) => {
@@ -192,8 +200,13 @@ function AtlasConfigInspector({
               顶部提示语
             </Field.Label>
             <Input
-              value={cfg.hintText ?? ''}
-              onChange={e => subscribe(c => ({ ...c, hintText: e.target.value }))}
+              value={localized(cfg.hintText, locale)}
+              onChange={e =>
+                subscribe(c => ({
+                  ...c,
+                  hintText: updateLocalized(c.hintText, locale, e.target.value),
+                }))
+              }
               placeholder="例如：拖动平移，滚轮缩放"
               size="sm"
               bg="bg.raised"
@@ -398,6 +411,7 @@ interface CategoryInspectorProps {
   hasUnsaved: boolean
   onSaveRequested: () => void
   isSaving: boolean
+  locale: string
 }
 
 function CategoryInspector({
@@ -409,6 +423,7 @@ function CategoryInspector({
   hasUnsaved,
   onSaveRequested,
   isSaving,
+  locale,
 }: CategoryInspectorProps): JSX.Element {
   const category = project.knowledge.stages
     .flatMap(s => s.categories)
@@ -472,7 +487,7 @@ function CategoryInspector({
     <>
       <SectionHeader
         eyebrow="Category"
-        title={category.title}
+        title={localized(category.title, locale)}
         actions={
           hasUnsaved ? (
             <Button
@@ -497,6 +512,7 @@ function CategoryInspector({
           <ExperienceForm
             category={category}
             project={project}
+            locale={locale}
             onPatch={onPatchKnowledge}
             onPatchNavigation={onPatchNavigation}
           />
@@ -601,8 +617,8 @@ function CategoryInspector({
             </Box>
           </HStack>
           <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
-            zoom 是分类默认视口；点击 hotspot 聚焦首个三级节点时，使用该节点实际生效的
-            Callout 显示阈值。
+            zoom 是分类默认视口；点击 hotspot 聚焦首个三级节点时，使用该节点实际生效的 Callout
+            显示阈值。
           </Text>
         </FieldGroup>
       </Stack>
@@ -613,11 +629,13 @@ function CategoryInspector({
 function ExperienceForm({
   category,
   project,
+  locale,
   onPatch,
   onPatchNavigation,
 }: {
-  category: { id: string; title?: string; experience: CategoryExperienceBinding }
+  category: { id: string; experience: CategoryExperienceBinding }
   project: GuideProject
+  locale: string
   onPatch: (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => void
   onPatchNavigation: (
     mutator: (n: GuideProject['navigation']) => GuideProject['navigation'],
@@ -674,7 +692,10 @@ function ExperienceForm({
                 ? [{ value: '', label: '（暂无场景，先去 Settings 创建）' }]
                 : [
                     { value: '', label: '请选择…' },
-                    ...project.scenes.map(s => ({ value: s.id, label: s.title || s.id })),
+                    ...project.scenes.map(s => ({
+                      value: s.id,
+                      label: localized(s.title, locale) || s.id,
+                    })),
                   ]
             }
             onChange={v => {
@@ -694,7 +715,10 @@ function ExperienceForm({
               if (scene.views.length === 0) return [{ value: '', label: '（场景无视图）' }]
               return [
                 { value: '', label: '请选择…' },
-                ...scene.views.map(v => ({ value: v.id, label: v.title || v.id })),
+                ...scene.views.map(v => ({
+                  value: v.id,
+                  label: localized(v.title, locale) || v.id,
+                })),
               ]
             })()}
             onChange={v => {
@@ -859,6 +883,7 @@ interface ItemInspectorProps {
   hasUnsaved: boolean
   onSaveRequested: () => void
   isSaving: boolean
+  locale: string
 }
 
 function ItemInspector({
@@ -869,6 +894,7 @@ function ItemInspector({
   hasUnsaved,
   onSaveRequested,
   isSaving,
+  locale,
 }: ItemInspectorProps): JSX.Element {
   const item = project.knowledge.items[itemId]
   const layout: ItemSpatialLayout | undefined = project.panorama.items[itemId]
@@ -926,7 +952,7 @@ function ItemInspector({
     <>
       <SectionHeader
         eyebrow="Item"
-        title={item.title}
+        title={localized(item.title, locale)}
         actions={
           hasUnsaved ? (
             <Button
@@ -953,10 +979,15 @@ function ItemInspector({
               标题
             </Field.Label>
             <Input
-              value={item.title}
+              value={localized(item.title, locale)}
               size="sm"
               bg="bg.raised"
-              onChange={event => patchItem(current => ({ ...current, title: event.target.value }))}
+              onChange={event =>
+                patchItem(current => ({
+                  ...current,
+                  title: updateLocalized(current.title, locale, event.target.value),
+                }))
+              }
               data-testid="atlas-item-title"
             />
           </Field.Root>
@@ -965,10 +996,13 @@ function ItemInspector({
               内容说明
             </Field.Label>
             <textarea
-              value={item.description}
+              value={localized(item.description, locale)}
               rows={4}
               onChange={event =>
-                patchItem(current => ({ ...current, description: event.target.value }))
+                patchItem(current => ({
+                  ...current,
+                  description: updateLocalized(current.description, locale, event.target.value),
+                }))
               }
               data-testid="atlas-item-description"
               style={{

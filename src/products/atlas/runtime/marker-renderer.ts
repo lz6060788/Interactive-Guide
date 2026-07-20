@@ -1,4 +1,7 @@
-import type { AtlasCategoryEntry, AtlasItemEntry } from '../contract/atlas-manifest.js'
+import type {
+  ResolvedAtlasCategoryEntry as AtlasCategoryEntry,
+  ResolvedAtlasItemEntry as AtlasItemEntry,
+} from '../contract/atlas-manifest.js'
 import type { PanoramaProjection } from './panorama-projection.js'
 import { projectNormalizedPoint } from './panorama-projection.js'
 import {
@@ -47,7 +50,10 @@ export class MarkerRenderer {
     this.repositionAll()
   }
 
-  setZoomThresholds(opts: { hotspotMinZoom?: number | null; itemMarkerMinZoom?: number | null }): void {
+  setZoomThresholds(opts: {
+    hotspotMinZoom?: number | null
+    itemMarkerMinZoom?: number | null
+  }): void {
     this.hotspotMinZoom = opts.hotspotMinZoom ?? null
     this.itemMarkerMinZoom = opts.itemMarkerMinZoom ?? null
     this.recomputeVisibility()
@@ -103,7 +109,8 @@ export class MarkerRenderer {
     for (const [id, el] of this.categoryEls) {
       const cat = this.categories.get(id)
       const min = cat?.hotspotMinZoom ?? this.hotspotMinZoom
-      const visible = !this.suppressedCategoryIds.has(id) && (min === null || this.currentZoom >= min)
+      const visible =
+        !this.suppressedCategoryIds.has(id) && (min === null || this.currentZoom >= min)
       el.style.display = visible ? 'flex' : 'none'
     }
     for (const [id, el] of this.itemEls) {
@@ -166,7 +173,7 @@ export class MarkerRenderer {
     markerBtn.style.cursor = 'pointer'
     markerBtn.style.pointerEvents = 'auto'
     markerBtn.style.animation = this.variant === 'minimal' ? '' : ATLAS_MARKER_ANIMATION
-    markerBtn.addEventListener('click', (event) => {
+    markerBtn.addEventListener('click', event => {
       event.preventDefault()
       event.stopPropagation()
       this.onCategoryClick?.(cat.id)
@@ -185,7 +192,7 @@ export class MarkerRenderer {
     chipBtn.style.cursor = 'pointer'
     chipBtn.style.outline = 'none'
     chipBtn.style.border = 'none'
-    chipBtn.addEventListener('click', (event) => {
+    chipBtn.addEventListener('click', event => {
       event.preventDefault()
       event.stopPropagation()
       this.onCategoryClick?.(cat.id)

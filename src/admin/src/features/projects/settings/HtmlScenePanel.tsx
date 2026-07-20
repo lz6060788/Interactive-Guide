@@ -16,10 +16,7 @@ import type {
   HtmlSceneView,
   AssetDefinition,
 } from '@domain/project-types'
-import {
-  SCENE_PROTOCOL_CHANNEL,
-  SCENE_PROTOCOL_VERSION,
-} from '@domain/scene-protocol'
+import { SCENE_PROTOCOL_CHANNEL, SCENE_PROTOCOL_VERSION } from '@domain/scene-protocol'
 import {
   Alert,
   Badge,
@@ -33,16 +30,18 @@ import {
 } from '@chakra-ui/react'
 import { ImeSafeInput } from '../../../components/ImeSafeInput'
 import { assetBlobUrl, useDeleteAsset, useUpdateProjectScenes, useUploadAsset } from '../api'
+import { localized, updateLocalized } from '../localization'
 
 interface Props {
   projectId: string
   revision: number
   project: GuideProject
+  locale: string
 }
 
 const DEFAULT_ACTIVATION = 'scene.ready'
 
-export function HtmlScenePanel({ projectId, revision, project }: Props): JSX.Element {
+export function HtmlScenePanel({ projectId, revision, project, locale }: Props): JSX.Element {
   const scenes = project.scenes
   const [error, setError] = useState<string | null>(null)
 
@@ -63,13 +62,13 @@ export function HtmlScenePanel({ projectId, revision, project }: Props): JSX.Ele
       ...scenes,
       {
         id,
-        title: '新 HTML 场景',
+        title: { [locale]: '新 HTML 场景' },
         assetId: '',
         protocol: { channel: SCENE_PROTOCOL_CHANNEL, version: SCENE_PROTOCOL_VERSION },
         views: [
           {
             id: 'view-overview',
-            title: '概览',
+            title: { [locale]: '概览' },
             activationMessage: { type: DEFAULT_ACTIVATION },
             categoryIds: [],
             chrome: { textColor: '#FFFFFF' },
@@ -101,11 +100,15 @@ export function HtmlScenePanel({ projectId, revision, project }: Props): JSX.Ele
           </HStack>
           <Text fontSize="11.5px" color="ink.muted" lineHeight="1.6">
             Atlas 编辑器里每个分类（category）可以绑定到两种体验形式之一：
-            <Text as="span" fontWeight="600" color="ink">Panorama 全景</Text>
-            （默认，category 显示为全景图上的 hotspot），
-            或者
-            <Text as="span" fontWeight="600" color="ink">HTML 场景</Text>
-            （category 跳转到独立 HTML 页面）。HTML 场景以 zip 包的形式上传，由 runtime 通过 iframe 加载，通过 SceneBridge 协议通信。
+            <Text as="span" fontWeight="600" color="ink">
+              Panorama 全景
+            </Text>
+            （默认，category 显示为全景图上的 hotspot）， 或者
+            <Text as="span" fontWeight="600" color="ink">
+              HTML 场景
+            </Text>
+            （category 跳转到独立 HTML 页面）。HTML 场景以 zip 包的形式上传，由 runtime 通过 iframe
+            加载，通过 SceneBridge 协议通信。
           </Text>
           <ChakraBox
             as="pre"
@@ -121,7 +124,7 @@ export function HtmlScenePanel({ projectId, revision, project }: Props): JSX.Ele
             whiteSpace="pre"
             overflowX="auto"
           >
-{`[ 分类 A ] ─kind: panorama──> 全景图上的 hotspot
+            {`[ 分类 A ] ─kind: panorama──> 全景图上的 hotspot
                   ↓ 点 hotspot
                   全景图平移到该分类的视口
 
@@ -131,7 +134,8 @@ export function HtmlScenePanel({ projectId, revision, project }: Props): JSX.Ele
                   通过 postMessage(SCENE_PROTOCOL_CHANNEL) 通信`}
           </ChakraBox>
           <Text fontSize="11px" color="ink.faint">
-            何时用 HTML 场景：当分类需要展示 3D 模型、动画、可交互 UI（如设备点选、参数滑块），或者用 HTML/CSS 更自然的可视化（如时序图、人物关系图）时。
+            何时用 HTML 场景：当分类需要展示 3D 模型、动画、可交互
+            UI（如设备点选、参数滑块），或者用 HTML/CSS 更自然的可视化（如时序图、人物关系图）时。
           </Text>
         </Stack>
       </ChakraBox>
@@ -162,32 +166,31 @@ export function HtmlScenePanel({ projectId, revision, project }: Props): JSX.Ele
       )}
 
       {scenes.length === 0 ? (
-        <Text
-          fontSize="11px"
-          color="ink.faint"
-          fontStyle="italic"
-          py="3"
-          textAlign="center"
-        >
+        <Text fontSize="11px" color="ink.faint" fontStyle="italic" py="3" textAlign="center">
           尚未创建任何 HTML 场景。
         </Text>
       ) : (
         <Stack gap="2">
-          {scenes.map((scene) => (
+          {scenes.map(scene => (
             <SceneCard
               key={scene.id}
               scene={scene}
               projectId={projectId}
               revision={revision}
+              locale={locale}
               assets={project.assets.byId}
-              allCategories={project.knowledge.stages.flatMap((s) =>
-                s.categories.map((c) => ({ id: c.id, title: c.title, stageLabel: s.label })),
+              allCategories={project.knowledge.stages.flatMap(s =>
+                s.categories.map(c => ({
+                  id: c.id,
+                  title: localized(c.title, locale),
+                  stageLabel: localized(s.label, locale),
+                })),
               )}
-              onChange={async (next) => {
-                await persist(scenes.map((s) => (s.id === next.id ? next : s)))
+              onChange={async next => {
+                await persist(scenes.map(s => (s.id === next.id ? next : s)))
               }}
               onRemove={async () => {
-                await persist(scenes.filter((s) => s.id !== scene.id))
+                await persist(scenes.filter(s => s.id !== scene.id))
               }}
             />
           ))}
@@ -201,6 +204,7 @@ interface SceneCardProps {
   scene: HtmlScenePackage
   projectId: string
   revision: number
+  locale: string
   assets: Record<string, AssetDefinition>
   allCategories: Array<{ id: string; title: string; stageLabel: string }>
   onChange: (next: HtmlScenePackage) => Promise<void>
@@ -211,6 +215,7 @@ function SceneCard({
   scene,
   projectId,
   revision,
+  locale,
   assets,
   allCategories,
   onChange,
@@ -285,8 +290,10 @@ function SceneCard({
               场景标题
             </Text>
             <ImeSafeInput
-              value={scene.title}
-              onChange={(v) => void onChange({ ...scene, title: v })}
+              value={localized(scene.title, locale)}
+              onChange={v =>
+                void onChange({ ...scene, title: updateLocalized(scene.title, locale, v) })
+              }
               size="sm"
               bg="bg.raised"
             />
@@ -294,7 +301,7 @@ function SceneCard({
           <IconButton
             variant="ghost"
             size="sm"
-            aria-label={`删除场景 ${scene.title}`}
+            aria-label={`删除场景 ${localized(scene.title, locale)}`}
             data-interactive="true"
             onClick={() => void onRemove()}
             className="icon-btn"
@@ -304,21 +311,11 @@ function SceneCard({
           </IconButton>
         </HStack>
 
-        <Text
-          fontSize="11px"
-          color="ink.faint"
-          fontFamily="mono"
-        >
+        <Text fontSize="11px" color="ink.faint" fontFamily="mono">
           id: {scene.id} · protocol {scene.protocol.channel}@{scene.protocol.version}
         </Text>
 
-        <Stack
-          borderTopWidth="1px"
-          borderColor="border"
-          borderStyle="dashed"
-          pt="2.5"
-          gap="2"
-        >
+        <Stack borderTopWidth="1px" borderColor="border" borderStyle="dashed" pt="2.5" gap="2">
           <HStack align="center" gap="1.5">
             <Text fontSize="12px" fontWeight="600" color="ink">
               HTML 包
@@ -341,7 +338,7 @@ function SceneCard({
               accept=".zip,application/zip"
               size="xs"
               fontSize="11px"
-              onChange={(e) => {
+              onChange={e => {
                 const file = e.target.files?.[0]
                 if (file) void uploadBundle(file)
                 e.target.value = ''
@@ -384,31 +381,17 @@ function SceneCard({
             )}
           </HStack>
           {linkedAsset ? (
-            <Text
-              fontFamily="mono"
-              fontSize="11px"
-              color="ink.muted"
-            >
+            <Text fontFamily="mono" fontSize="11px" color="ink.muted">
               asset: {linkedAsset.id} · entry: {linkedAsset.entryPath ?? 'index.html'}
             </Text>
           ) : (
-            <Text
-              fontSize="11px"
-              color="ink.faint"
-              fontStyle="italic"
-            >
+            <Text fontSize="11px" color="ink.faint" fontStyle="italic">
               未上传。zip 内必须包含根目录 index.html。
             </Text>
           )}
         </Stack>
 
-        <Stack
-          borderTopWidth="1px"
-          borderColor="border"
-          borderStyle="dashed"
-          pt="2.5"
-          gap="2"
-        >
+        <Stack borderTopWidth="1px" borderColor="border" borderStyle="dashed" pt="2.5" gap="2">
           <HStack align="center" justify="space-between">
             <Text fontSize="12px" fontWeight="600" color="ink">
               视图（Views）
@@ -421,15 +404,15 @@ function SceneCard({
                   ...scene,
                   views: [
                     ...scene.views,
-                     {
-                       id: `view-${Date.now().toString(36)}`,
-                       title: '新视图',
-                       activationMessage: { type: DEFAULT_ACTIVATION },
-                       categoryIds: [],
-                       chrome: { textColor: '#FFFFFF' },
-                     },
-                   ],
-                 })
+                    {
+                      id: `view-${Date.now().toString(36)}`,
+                      title: { [locale]: '新视图' },
+                      activationMessage: { type: DEFAULT_ACTIVATION },
+                      categoryIds: [],
+                      chrome: { textColor: '#FFFFFF' },
+                    },
+                  ],
+                })
               }
               data-testid={`btn-add-view-${scene.id}`}
             >
@@ -444,7 +427,8 @@ function SceneCard({
               key={view.id}
               view={view}
               allCategories={allCategories}
-              onChange={(next) =>
+              locale={locale}
+              onChange={next =>
                 void onChange({
                   ...scene,
                   views: scene.views.map((v, i) => (i === vi ? next : v)),
@@ -467,16 +451,21 @@ function SceneCard({
 interface ViewEditorProps {
   view: HtmlSceneView
   allCategories: Array<{ id: string; title: string; stageLabel: string }>
+  locale: string
   onChange: (next: HtmlSceneView) => void
   onRemove: () => void
 }
 
-function ViewEditor({ view, allCategories, onChange, onRemove }: ViewEditorProps): JSX.Element {
+function ViewEditor({
+  view,
+  allCategories,
+  locale,
+  onChange,
+  onRemove,
+}: ViewEditorProps): JSX.Element {
   const toggleCategory = (catId: string) => {
     const has = view.categoryIds.includes(catId)
-    const next = has
-      ? view.categoryIds.filter((id) => id !== catId)
-      : [...view.categoryIds, catId]
+    const next = has ? view.categoryIds.filter(id => id !== catId) : [...view.categoryIds, catId]
     onChange({ ...view, categoryIds: next })
   }
   return (
@@ -491,8 +480,8 @@ function ViewEditor({ view, allCategories, onChange, onRemove }: ViewEditorProps
       <Stack gap="1.5">
         <HStack align="center" gap="1.5">
           <ImeSafeInput
-            value={view.title}
-            onChange={(v) => onChange({ ...view, title: v })}
+            value={localized(view.title, locale)}
+            onChange={v => onChange({ ...view, title: updateLocalized(view.title, locale, v) })}
             size="xs"
             fontSize="12px"
             flex="1"
@@ -500,7 +489,7 @@ function ViewEditor({ view, allCategories, onChange, onRemove }: ViewEditorProps
           />
           <ImeSafeInput
             value={view.id}
-            onChange={(v) => onChange({ ...view, id: v })}
+            onChange={v => onChange({ ...view, id: v })}
             size="xs"
             w="120px"
             fontSize="11px"
@@ -521,7 +510,7 @@ function ViewEditor({ view, allCategories, onChange, onRemove }: ViewEditorProps
         </HStack>
         <ImeSafeInput
           value={view.activationMessage.type}
-          onChange={(v) =>
+          onChange={v =>
             onChange({
               ...view,
               activationMessage: { ...view.activationMessage, type: v },
@@ -540,7 +529,7 @@ function ViewEditor({ view, allCategories, onChange, onRemove }: ViewEditorProps
           </Text>
           <ImeSafeInput
             value={view.chrome?.textColor ?? ''}
-            onChange={(v) =>
+            onChange={v =>
               onChange({
                 ...view,
                 chrome: {
@@ -567,7 +556,7 @@ function ViewEditor({ view, allCategories, onChange, onRemove }: ViewEditorProps
           />
         </HStack>
         <HStack flexWrap="wrap" gap="1" pt="1">
-          {allCategories.map((c) => {
+          {allCategories.map(c => {
             const active = view.categoryIds.includes(c.id)
             return (
               <button

@@ -22,9 +22,11 @@ function bootApp(): { app: express.Express; dir: string; cleanup: () => void } {
   const app = express()
   app.use(express.json({ limit: '20mb' }))
   app.use(createProjectsRouter(service))
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    res.status(500).json({ error: err.message, code: 'INTERNAL' })
-  })
+  app.use(
+    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      res.status(500).json({ error: err.message, code: 'INTERNAL' })
+    },
+  )
   return { app, dir, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) }
 }
 
@@ -55,7 +57,7 @@ test('POST /projects rejects invalid id format', async () => {
 test('GET /projects lists projects ordered by updatedAt desc', async () => {
   const { app, cleanup } = bootApp()
   await request(app).post('/projects').send({ id: 'p1', title: 'A' })
-  await new Promise((r) => setTimeout(r, 5))
+  await new Promise(r => setTimeout(r, 5))
   await request(app).post('/projects').send({ id: 'p2', title: 'B' })
   const res = await request(app).get('/projects')
   assert.equal(res.body.data[0].id, 'p2')
@@ -87,7 +89,7 @@ test('PATCH /projects/:id/metadata bumps revision on success', async () => {
     .patch('/projects/p1/metadata')
     .send({ title: 'Updated', expectedRevision: 1 })
   assert.equal(res.status, 200)
-  assert.equal(res.body.data.title, 'Updated')
+  assert.deepEqual(res.body.data.title, { 'zh-CN': 'Updated' })
   assert.equal(res.body.data.metadata.revision, 2)
   cleanup()
 })
@@ -108,9 +110,9 @@ test('PUT /projects/:id/knowledge replaces the knowledge tree', async () => {
   const rev = create.body.data.metadata.revision
   const knowledge = {
     stages: [
-      { key: 'upstream', label: 'Upstream', order: 1, categories: [] },
-      { key: 'midstream', label: 'Midstream', order: 2, categories: [] },
-      { key: 'downstream', label: 'Downstream', order: 3, categories: [] },
+      { key: 'upstream', label: { 'en-US': 'Upstream' }, order: 1, categories: [] },
+      { key: 'midstream', label: { 'en-US': 'Midstream' }, order: 2, categories: [] },
+      { key: 'downstream', label: { 'en-US': 'Downstream' }, order: 3, categories: [] },
     ],
     items: {},
   }

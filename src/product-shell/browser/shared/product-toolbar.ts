@@ -7,6 +7,7 @@ export interface ProductToolbarOptions {
   onBack?: () => void
   onShare?: () => void
   shareEnabled?: boolean
+  locale?: string
 }
 
 export class ProductToolbar {
@@ -38,6 +39,7 @@ export class ProductToolbar {
         void shareCurrentPage(this.options.projectTitle)
       },
       showShare: this.options.shareEnabled !== false,
+      locale: this.options.locale,
       testIds: {
         toolbar: 'product-shell-toolbar',
       },

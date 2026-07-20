@@ -2,12 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Compass } from 'lucide-react'
 import type { GuideProject, PanoramaModel } from '@domain/project-types'
 import { compileCatalog } from '@products/catalog/compiler/catalog-compiler'
-import {
-  CatalogScene,
-  type CatalogSceneSelection,
-} from '@products/catalog/runtime/catalog-scene'
+import { CatalogScene, type CatalogSceneSelection } from '@products/catalog/runtime/catalog-scene'
 import type { CatalogSelection } from '../store'
 import { createProjectAssetUrlResolver } from '../../projects/asset-url-resolver'
+import { resolveCatalogManifest } from '@products/contracts/manifest-localization'
 
 interface Props {
   project: GuideProject
@@ -17,6 +15,7 @@ interface Props {
   onSelect: (selection: CatalogSelection) => void
   onPatchPanorama: (mutator: (panorama: PanoramaModel) => PanoramaModel) => void
   mode: 'editor' | 'preview'
+  locale: string
 }
 
 export function CatalogEditorCanvas({
@@ -27,6 +26,7 @@ export function CatalogEditorCanvas({
   onSelect,
   onPatchPanorama,
   mode,
+  locale,
 }: Props): JSX.Element {
   const stageRef = useRef<HTMLDivElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -61,7 +61,8 @@ export function CatalogEditorCanvas({
     const resolver = createProjectAssetUrlResolver(project)
     const source = resolver(project.id, project.assets.byId[project.panorama.assetId].sourcePath)
     const image = new Image()
-    image.onload = () => setImageSize({ width: image.naturalWidth || 1, height: image.naturalHeight || 1 })
+    image.onload = () =>
+      setImageSize({ width: image.naturalWidth || 1, height: image.naturalHeight || 1 })
     image.src = source
   }, [blocked, project])
 
@@ -69,7 +70,8 @@ export function CatalogEditorCanvas({
     const host = hostRef.current
     if (blocked || !host) return
     const resolver = createProjectAssetUrlResolver(project)
-    const { manifest } = compileCatalog(project, resolver)
+    const { manifest: localizedManifest } = compileCatalog(project, resolver)
+    const manifest = resolveCatalogManifest(localizedManifest, locale)
     const initialSelection: Partial<CatalogSceneSelection> = {
       stageKey: selectedStage,
       ...(selection?.kind === 'item' ? { itemId: selection.id } : {}),
@@ -83,34 +85,62 @@ export function CatalogEditorCanvas({
       initialSelection,
       onSelectionChange: next => {
         callbacksRef.current.onSelectStage(next.stageKey)
-        callbacksRef.current.onSelect(next.itemId ? { kind: 'item', id: next.itemId } : next.categoryId ? { kind: 'category', id: next.categoryId } : null)
+        callbacksRef.current.onSelect(
+          next.itemId
+            ? { kind: 'item', id: next.itemId }
+            : next.categoryId
+              ? { kind: 'category', id: next.categoryId }
+              : null,
+        )
       },
       onAtlasLaunch: url => window.open(url, '_blank', 'noopener,noreferrer'),
-      ...(mode === 'editor' ? { editor: {
-        onMarkerChange: (itemId, marker) =>
-          callbacksRef.current.onPatchPanorama(panorama => ({
-            ...panorama,
-            items: {
-              ...panorama.items,
-              [itemId]: { ...panorama.items[itemId], marker },
+      ...(mode === 'editor'
+        ? {
+            editor: {
+              onMarkerChange: (itemId, marker) =>
+                callbacksRef.current.onPatchPanorama(panorama => ({
+                  ...panorama,
+                  items: {
+                    ...panorama.items,
+                    [itemId]: { ...panorama.items[itemId], marker },
+                  },
+                })),
+              onFocusRectChange: (itemId, focusRect) =>
+                callbacksRef.current.onPatchPanorama(panorama => ({
+                  ...panorama,
+                  items: {
+                    ...panorama.items,
+                    [itemId]: { ...panorama.items[itemId], focusRect },
+                  },
+                })),
+              onViewportChange: (target, viewport) =>
+                callbacksRef.current.onPatchPanorama(panorama => {
+                  if (target.kind === 'category') {
+                    return {
+                      ...panorama,
+                      categories: {
+                        ...panorama.categories,
+                        [target.categoryId]: {
+                          ...panorama.categories[target.categoryId],
+                          viewport,
+                        },
+                      },
+                    }
+                  }
+                  return {
+                    ...panorama,
+                    items: {
+                      ...panorama.items,
+                      [target.itemId]: {
+                        ...panorama.items[target.itemId],
+                        viewportOverride: viewport,
+                      },
+                    },
+                  }
+                }),
             },
-          })),
-        onFocusRectChange: (itemId, focusRect) =>
-          callbacksRef.current.onPatchPanorama(panorama => ({
-            ...panorama,
-            items: {
-              ...panorama.items,
-              [itemId]: { ...panorama.items[itemId], focusRect },
-            },
-          })),
-        onViewportChange: (target, viewport) =>
-          callbacksRef.current.onPatchPanorama(panorama => {
-            if (target.kind === 'category') {
-              return { ...panorama, categories: { ...panorama.categories, [target.categoryId]: { ...panorama.categories[target.categoryId], viewport } } }
-            }
-            return { ...panorama, items: { ...panorama.items, [target.itemId]: { ...panorama.items[target.itemId], viewportOverride: viewport } } }
-          }),
-      } } : {}),
+          }
+        : {}),
     })
     sceneRef.current = scene
     scene.mount()
@@ -118,7 +148,7 @@ export function CatalogEditorCanvas({
       if (sceneRef.current === scene) sceneRef.current = null
       scene.destroy()
     }
-  }, [project, blocked, imageSize, mode])
+  }, [project, blocked, imageSize, mode, locale])
 
   useEffect(() => {
     const scene = sceneRef.current
@@ -149,12 +179,36 @@ export function CatalogEditorCanvas({
     <div
       ref={stageRef}
       data-testid="catalog-editor-canvas"
-      style={{ height: '100%', minHeight: 0, background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+      style={{
+        height: '100%',
+        minHeight: 0,
+        background: '#0f172a',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
     >
-      <div style={{ width: logicalSize * scale, height: logicalSize * scale, position: 'relative', flex: '0 0 auto' }}>
+      <div
+        style={{
+          width: logicalSize * scale,
+          height: logicalSize * scale,
+          position: 'relative',
+          flex: '0 0 auto',
+        }}
+      >
         <div
           ref={hostRef}
-          style={{ width: logicalSize, height: logicalSize, position: 'absolute', left: 0, top: 0, transform: `scale(${scale})`, transformOrigin: 'top left', overflow: 'hidden' }}
+          style={{
+            width: logicalSize,
+            height: logicalSize,
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            transform: `scale(${scale})`,
+            transformOrigin: 'top left',
+            overflow: 'hidden',
+          }}
         />
       </div>
     </div>

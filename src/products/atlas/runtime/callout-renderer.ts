@@ -1,4 +1,4 @@
-import type { AtlasItemEntry } from '../contract/atlas-manifest.js'
+import type { ResolvedAtlasItemEntry as AtlasItemEntry } from '../contract/atlas-manifest.js'
 import type { PanoramaProjection } from './panorama-projection.js'
 import { projectNormalizedPoint } from './panorama-projection.js'
 import {
@@ -94,7 +94,7 @@ export class CalloutRenderer {
     chip.style.whiteSpace = 'nowrap'
     chip.style.overflow = 'hidden'
     chip.style.textOverflow = 'ellipsis'
-    chip.addEventListener('click', (event) => {
+    chip.addEventListener('click', event => {
       event.preventDefault()
       event.stopPropagation()
       this.onItemClick?.(item.id)
@@ -144,13 +144,16 @@ export class CalloutRenderer {
     const item = this.items.get(itemId)
     if (!root || !item) return
     const children = Array.from(root.children) as HTMLElement[]
-    const marker = children.find((child) => child.tagName.toLowerCase() === 'span')
-    const chip = children.find((child) => child.tagName.toLowerCase() === 'button')
+    const marker = children.find(child => child.tagName.toLowerCase() === 'span')
+    const chip = children.find(child => child.tagName.toLowerCase() === 'button')
     const active = itemId === this.activeItemId
     root.dataset.active = active ? 'true' : 'false'
     if (marker) marker.innerHTML = getAtlasMarkerSvg(active)
     if (chip) {
-      Object.assign(chip.style, getAtlasChipStyle(active, ATLAS_ITEM_CHIP_MIN_WIDTH_PX, ATLAS_ITEM_CHIP_MAX_WIDTH_PX))
+      Object.assign(
+        chip.style,
+        getAtlasChipStyle(active, ATLAS_ITEM_CHIP_MIN_WIDTH_PX, ATLAS_ITEM_CHIP_MAX_WIDTH_PX),
+      )
     }
   }
 }

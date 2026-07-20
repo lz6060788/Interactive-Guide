@@ -1,4 +1,4 @@
-import { HOST_INFO_SHEET_DEFAULT_SECTIONS, HOST_INFO_SHEET_TITLE } from './host-info-sheet.js'
+import type { HostInfoSheetSection } from './host-info-sheet.js'
 import {
   HOST_BACK_ICON_SVG,
   HOST_INFO_ICON_SVG,
@@ -13,6 +13,7 @@ import {
   HOST_TOOLBAR_TOP_GRADIENT,
   HOST_TOOLBAR_TOP_OFFSET_PX,
 } from './host-toolbar-tokens.js'
+import { runtimeMessages } from './runtime-messages.js'
 
 export interface HostToolbarDomTestIds {
   toolbar?: string
@@ -34,6 +35,7 @@ export interface HostToolbarDomOptions {
   showGradient?: boolean
   testIds?: HostToolbarDomTestIds
   zIndexBase?: number
+  locale?: string
 }
 
 export class HostToolbarDomController {
@@ -51,6 +53,7 @@ export class HostToolbarDomController {
   mount(): void {
     if (this.toolbarEl) return
     const zIndexBase = this.options.zIndexBase ?? 20
+    const messages = runtimeMessages(this.options.locale ?? 'zh-CN')
     const safeAreaTop = `var(${HOST_TOOLBAR_SAFE_AREA_TOP_CSS_VARIABLE}, 0px)`
     const toolbarControlTop = `calc(${safeAreaTop} + ${HOST_TOOLBAR_TOP_OFFSET_PX}px)`
     const gradient = document.createElement('div')
@@ -80,7 +83,7 @@ export class HostToolbarDomController {
     toolbar.style.zIndex = String(zIndexBase)
 
     const backButton = createIconButton(
-      '返回',
+      messages.back,
       HOST_BACK_ICON_SVG,
       this.options.textColor,
       this.options.onBack,
@@ -118,7 +121,7 @@ export class HostToolbarDomController {
     title.style.pointerEvents = 'none'
 
     const infoButton = createIconButton(
-      '提示信息',
+      messages.information,
       HOST_INFO_ICON_SVG,
       this.options.textColor,
       () => this.toggleInfo(),
@@ -128,7 +131,7 @@ export class HostToolbarDomController {
     infoButton.style.height = '24px'
 
     const shareButton = createIconButton(
-      '分享',
+      messages.share,
       HOST_SHARE_ICON_SVG,
       this.options.textColor,
       this.options.onShare,
@@ -151,6 +154,11 @@ export class HostToolbarDomController {
       () => this.closeInfo(),
       this.options.testIds,
       zIndexBase,
+      messages.sheetTitle,
+      [
+        { heading: messages.sourceHeading, body: messages.sourceBody },
+        { heading: messages.disclaimerHeading, body: messages.disclaimerBody },
+      ],
     )
 
     this.options.root.appendChild(gradient)
@@ -244,6 +252,8 @@ function createInfoSheet(
   onClose: () => void,
   testIds: HostToolbarDomTestIds | undefined,
   zIndexBase: number,
+  sheetTitle: string,
+  sections: HostInfoSheetSection[],
 ): { backdrop: HTMLElement; sheet: HTMLElement } {
   const backdrop = document.createElement('div')
   if (testIds?.infoBackdrop) backdrop.dataset.testid = testIds.infoBackdrop
@@ -290,7 +300,7 @@ function createInfoSheet(
   header.style.minHeight = '28px'
 
   const title = document.createElement('div')
-  title.textContent = HOST_INFO_SHEET_TITLE
+  title.textContent = sheetTitle
   title.style.fontWeight = '600'
   title.style.fontSize = '16px'
   title.style.lineHeight = '22px'
@@ -325,7 +335,7 @@ function createInfoSheet(
   content.style.minHeight = '0'
   content.style.paddingRight = '2px'
 
-  for (const section of HOST_INFO_SHEET_DEFAULT_SECTIONS) {
+  for (const section of sections) {
     const sectionEl = document.createElement('section')
     const headingEl = document.createElement('div')
     headingEl.textContent = section.heading

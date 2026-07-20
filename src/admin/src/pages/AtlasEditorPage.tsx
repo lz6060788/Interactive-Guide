@@ -15,16 +15,10 @@
  *   └────────────────────────────────────────────────────┘
  */
 import { useNavigate, useParams } from 'react-router-dom'
-import {
-  Box,
-  Button,
-  EmptyState,
-  Flex,
-  HStack,
-  Text,
-} from '@chakra-ui/react'
+import { Box, Button, EmptyState, Flex, HStack, Text } from '@chakra-ui/react'
 import { Compass, Settings as SettingsIcon } from 'lucide-react'
 import { useProject } from '../features/projects/api'
+import { readLocalizedText } from '@domain/localization'
 import { AtlasEditor } from '../features/atlas-editor/components/AtlasEditor'
 import { useAtlasEditorStore } from '../features/atlas-editor/store'
 import { ApiError } from '../lib/api-client'
@@ -34,7 +28,7 @@ export function AtlasEditorPage(): JSX.Element {
   const navigate = useNavigate()
   const { projectId = '' } = useParams<{ projectId: string }>()
   const projectQuery = useProject(projectId)
-  const isDirty = useAtlasEditorStore((s) => s.dirty)
+  const isDirty = useAtlasEditorStore(s => s.dirty)
 
   if (projectQuery.isLoading) {
     return (
@@ -81,14 +75,17 @@ export function AtlasEditorPage(): JSX.Element {
   const stageCount = project.knowledge.stages.length
   const catCount = project.knowledge.stages.reduce((acc, s) => acc + s.categories.length, 0)
   const itemCount = Object.keys(project.knowledge.items).length
-  const hotspotCount = Object.values(project.panorama.categories).filter((c) => c?.hotspot).length
+  const hotspotCount = Object.values(project.panorama.categories).filter(c => c?.hotspot).length
 
   return (
     <Flex direction="column" h="100vh">
       <PageHeader
         crumbs={[
           { label: 'Projects', to: '/' },
-          { label: project.title, to: `/projects/${project.id}/atlas-editor` },
+          {
+            label: readLocalizedText(project.title, project.localization.defaultLocale),
+            to: `/projects/${project.id}/atlas-editor`,
+          },
           { label: 'Atlas Editor' },
         ]}
         actions={

@@ -6,22 +6,14 @@
  */
 import { useEffect, useState } from 'react'
 import { Save, RotateCcw } from 'lucide-react'
-import {
-  Alert,
-  Box,
-  Button,
-  Field,
-  HStack,
-  Input,
-  Stack,
-  Text,
-} from '@chakra-ui/react'
+import { Alert, Button, Field, HStack, Input, Stack, Text } from '@chakra-ui/react'
 import { useUpdateProjectMetadata } from '../api'
 
 interface Props {
   projectId: string
   revision: number
   initial: { title: string; version: string; locale: string }
+  titleLocale: string
 }
 
 interface Draft {
@@ -32,7 +24,7 @@ interface Draft {
 
 const LOCALE_SUGGESTIONS = ['zh-CN', 'en-US', 'ja-JP', 'zh-TW']
 
-export function MetadataForm({ projectId, revision, initial }: Props): JSX.Element {
+export function MetadataForm({ projectId, revision, initial, titleLocale }: Props): JSX.Element {
   const [draft, setDraft] = useState<Draft>(initial)
   const [savedSnapshot, setSavedSnapshot] = useState<Draft>(initial)
   const [error, setError] = useState<string | null>(null)
@@ -66,6 +58,7 @@ export function MetadataForm({ projectId, revision, initial }: Props): JSX.Eleme
     try {
       await update.mutateAsync({
         title: draft.title.trim(),
+        titleLocale,
         version: draft.version.trim(),
         locale: draft.locale.trim(),
         expectedRevision: revision,
@@ -93,7 +86,7 @@ export function MetadataForm({ projectId, revision, initial }: Props): JSX.Eleme
         </Field.Label>
         <Input
           value={draft.title}
-          onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+          onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
           size="sm"
           bg="bg.raised"
         />
@@ -108,7 +101,7 @@ export function MetadataForm({ projectId, revision, initial }: Props): JSX.Eleme
         </Field.Label>
         <Input
           value={draft.version}
-          onChange={(e) => setDraft((d) => ({ ...d, version: e.target.value }))}
+          onChange={e => setDraft(d => ({ ...d, version: e.target.value }))}
           size="sm"
           bg="bg.raised"
           fontFamily="mono"
@@ -125,13 +118,13 @@ export function MetadataForm({ projectId, revision, initial }: Props): JSX.Eleme
         <Input
           list="locale-suggestions"
           value={draft.locale}
-          onChange={(e) => setDraft((d) => ({ ...d, locale: e.target.value }))}
+          onChange={e => setDraft(d => ({ ...d, locale: e.target.value }))}
           size="sm"
           bg="bg.raised"
           fontFamily="mono"
         />
         <datalist id="locale-suggestions">
-          {LOCALE_SUGGESTIONS.map((l) => (
+          {LOCALE_SUGGESTIONS.map(l => (
             <option key={l} value={l} />
           ))}
         </datalist>
@@ -147,20 +140,9 @@ export function MetadataForm({ projectId, revision, initial }: Props): JSX.Eleme
         </Alert.Root>
       )}
 
-      <HStack
-        align="center"
-        gap="2"
-        pt="1"
-        borderTopWidth="1px"
-        borderColor="border"
-      >
+      <HStack align="center" gap="2" pt="1" borderTopWidth="1px" borderColor="border">
         {dirty && (
-          <Text
-            fontFamily="mono"
-            fontSize="11px"
-            color="state.warn"
-            data-testid="metadata-dirty"
-          >
+          <Text fontFamily="mono" fontSize="11px" color="state.warn" data-testid="metadata-dirty">
             有未保存的修改
           </Text>
         )}

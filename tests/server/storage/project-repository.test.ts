@@ -65,7 +65,7 @@ test('ProjectRepository persists projects to disk and reloads on next instantiat
   // create a new instance reading from same dir
   const repo2 = new ProjectRepository({ dataDir: dir })
   const reloaded = repo2.get('p1')
-  assert.equal(reloaded.title, 'T')
+  assert.deepEqual(reloaded.title, { 'zh-CN': 'T' })
   assert.equal(reloaded.metadata.revision, 1)
   cleanup()
 })
@@ -90,7 +90,7 @@ test('ProjectRepository.list orders by updatedAt descending', async () => {
   const b = createDraftProject({ id: 'b', title: 'B' })
   b.panorama.assetId = 'asset-pano'
   repo.save(a, { expectedRevision: 0 })
-  await new Promise((r) => setTimeout(r, 5))
+  await new Promise(r => setTimeout(r, 5))
   repo.save(b, { expectedRevision: 0 })
   const list = repo.list()
   assert.equal(list[0].id, 'b')

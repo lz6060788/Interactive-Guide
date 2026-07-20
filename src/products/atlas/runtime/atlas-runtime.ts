@@ -31,10 +31,10 @@
  *     routechange
  */
 import type {
-  AtlasCategoryEntry,
-  AtlasHtmlSceneManifest,
-  AtlasItemEntry,
-  AtlasManifest,
+  ResolvedAtlasCategoryEntry as AtlasCategoryEntry,
+  ResolvedAtlasHtmlSceneManifest as AtlasHtmlSceneManifest,
+  ResolvedAtlasItemEntry as AtlasItemEntry,
+  ResolvedAtlasManifest as AtlasManifest,
 } from '../contract/atlas-manifest.js'
 import type { Viewport } from '../../../domain/project-types.js'
 import { Camera } from './camera.js'
@@ -522,6 +522,7 @@ export class AtlasRuntime {
           infoSheet: 'atlas-runtime-info-sheet',
         },
         zIndexBase: 30,
+        locale: this.manifest.locale,
       })
       this.toolbar.mount()
     }

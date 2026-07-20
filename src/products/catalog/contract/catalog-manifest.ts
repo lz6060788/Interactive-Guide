@@ -11,7 +11,8 @@ import type {
   ExperienceNavigation,
   ExperienceRoute,
   ProductChromeConfig,
-  SchemaVersion,
+  LocalizedText,
+  LocalizationConfig,
   Viewport,
 } from '../../../domain/project-types.js'
 import type { RuntimeIntegrations } from '../../contracts/runtime-integrations.js'
@@ -24,34 +25,34 @@ export interface CatalogAssetRef {
   size?: number
 }
 
-export interface CatalogHtmlSceneManifest {
+export interface CatalogHtmlSceneManifest<TText = LocalizedText> {
   sceneId: string
-  title: string
+  title: TText
   entryUrl: string
   views: Array<{
     id: string
-    title: string
+    title: TText
     activationMessage: { type: string; payload?: Record<string, unknown> }
     chrome?: { textColor?: string }
   }>
   protocol: { channel: 'interactive-guide:scene-bridge'; version: '1.0.0' }
 }
 
-export interface CatalogCategoryEntry {
+export interface CatalogCategoryEntry<TText = LocalizedText> {
   id: string
-  title: string
+  title: TText
   order: number
-  description?: string
+  description?: TText
   itemIds: string[]
   experience: { kind: 'panorama' } | { kind: 'html-scene'; sceneId: string; viewId: string }
   viewport: Viewport
 }
 
-export interface CatalogItemEntry {
+export interface CatalogItemEntry<TText = LocalizedText> {
   id: string
   categoryId: string
-  title: string
-  description: string
+  title: TText
+  description: TText
   order: number
   marker: { x: number; y: number }
   /** Optional item-level camera; otherwise inherits category.viewport. */
@@ -66,30 +67,31 @@ export interface CatalogItemEntry {
   }
 }
 
-export interface CatalogStageEntry {
+export interface CatalogStageEntry<TText = LocalizedText> {
   key: 'upstream' | 'midstream' | 'downstream'
-  label: string
+  label: TText
   order: 1 | 2 | 3
-  categories: CatalogCategoryEntry[]
+  categories: CatalogCategoryEntry<TText>[]
 }
 
-export interface CatalogManifest {
-  schemaVersion: SchemaVersion
+export interface CatalogManifest<TText = LocalizedText> {
+  schemaVersion: '2.0.0'
   product: 'catalog'
   projectId: string
-  projectTitle: string
+  projectTitle: TText
   projectVersion: string
-  locale: string
+  localization: LocalizationConfig
+  locale?: string
   generatedAt: string
   /** Catalog needs the panorama for focus overlay rendering. */
   panorama: CatalogAssetRef
-  stages: CatalogStageEntry[]
-  items: CatalogItemEntry[]
-  scenes: CatalogHtmlSceneManifest[]
+  stages: CatalogStageEntry<TText>[]
+  items: CatalogItemEntry<TText>[]
+  scenes: CatalogHtmlSceneManifest<TText>[]
   routes: ExperienceRoute[]
   config: {
     viewport: { width: number; height: number }
-    hintText?: string
+    hintText?: TText
     /** Complete URL of the separately released Atlas bundle. */
     atlasLaunchUrl?: string
     interaction: {
@@ -107,7 +109,13 @@ export interface CatalogManifest {
       maskOpacity?: number
     }
   }
-  integrations: RuntimeIntegrations
+  integrations: RuntimeIntegrations<TText>
 }
+
+export type ResolvedCatalogManifest = CatalogManifest<string> & { locale: string }
+export type ResolvedCatalogCategoryEntry = CatalogCategoryEntry<string>
+export type ResolvedCatalogItemEntry = CatalogItemEntry<string>
+export type ResolvedCatalogStageEntry = CatalogStageEntry<string>
+export type ResolvedCatalogHtmlSceneManifest = CatalogHtmlSceneManifest<string>
 
 export type { AssetDefinition, ExperienceNavigation }

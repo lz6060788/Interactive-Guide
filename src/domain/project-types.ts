@@ -17,8 +17,16 @@ import type { ExperienceNavigationSchema, ExperienceNavigation } from './experie
 
 // ─── Primitives ──────────────────────────────────────────────
 
-export type SchemaVersion = '2.0.0'
+export type SchemaVersion = '3.0.0'
 export type ReleaseSchemaVersion = '1.0.0'
+
+export type LocaleCode = string
+export type LocalizedText = Partial<Record<LocaleCode, string>>
+
+export interface LocalizationConfig {
+  defaultLocale: LocaleCode
+  supportedLocales: LocaleCode[]
+}
 
 export interface NormalizedPoint {
   x: number
@@ -118,23 +126,23 @@ export type CategoryExperienceBinding =
 export interface IndustryItem {
   id: string
   categoryId: string
-  title: string
-  description: string
+  title: LocalizedText
+  description: LocalizedText
   order: number
 }
 
 export interface IndustryCategory {
   id: string
-  title: string
+  title: LocalizedText
   order: number
-  description?: string
+  description?: LocalizedText
   itemIds: string[]
   experience: CategoryExperienceBinding
 }
 
 export interface IndustryStage {
   key: IndustryStageKey
-  label: string
+  label: LocalizedText
   order: 1 | 2 | 3
   categories: IndustryCategory[]
 }
@@ -157,7 +165,7 @@ export interface SceneChromeConfig {
 
 export interface HtmlSceneView {
   id: string
-  title: string
+  title: LocalizedText
   activationMessage: {
     type: string
     payload?: Record<string, unknown>
@@ -169,7 +177,7 @@ export interface HtmlSceneView {
 
 export interface HtmlScenePackage {
   id: string
-  title: string
+  title: LocalizedText
   assetId: string
   protocol: SceneProtocol
   views: HtmlSceneView[]
@@ -232,7 +240,7 @@ export interface AtlasProductConfig {
     resetCameraEnabled: boolean
   }
   categoryIds: string[]
-  hintText?: string
+  hintText?: LocalizedText
 }
 
 export interface CatalogProductConfig {
@@ -246,7 +254,7 @@ export interface CatalogProductConfig {
     viewportAnimationMs: number
   }
   stageOrder: [IndustryStageKey, IndustryStageKey, IndustryStageKey]
-  hintText?: string
+  hintText?: LocalizedText
   /** Complete URL of the separately released Atlas bundle, opened from Catalog through F10. */
   atlasLaunchUrl?: string
 }
@@ -264,8 +272,8 @@ export interface AnalyticsConfig {
 
 export interface ShareConfig {
   enabled: boolean
-  title?: string
-  description?: string
+  title?: LocalizedText
+  description?: LocalizedText
   imageAssetId?: string
 }
 
@@ -286,9 +294,9 @@ export interface ProjectMetadata {
 export interface GuideProject {
   schemaVersion: SchemaVersion
   id: string
-  title: string
+  title: LocalizedText
   version: string
-  locale: string
+  localization: LocalizationConfig
 
   knowledge: IndustryChain
   assets: AssetRegistry

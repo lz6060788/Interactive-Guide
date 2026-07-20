@@ -18,19 +18,8 @@ import type {
   CatalogProductConfig,
   PanoramaModel,
 } from '@domain/project-types'
-import {
-  Alert,
-  Box,
-  Flex,
-  Grid,
-  Text,
-} from '@chakra-ui/react'
-import {
-  useProject,
-  useUpdateCatalogConfig,
-  useUpdateKnowledge,
-  useUpdatePanorama,
-} from '../api'
+import { Alert, Box, Flex, Grid, Text } from '@chakra-ui/react'
+import { useProject, useUpdateCatalogConfig, useUpdateKnowledge, useUpdatePanorama } from '../api'
 import { useCatalogEditorStore } from '../store'
 import { CatalogCanvas } from './CatalogCanvas'
 import { CatalogInspector } from './CatalogInspector'
@@ -40,6 +29,12 @@ import { CatalogToolbar } from './CatalogToolbar'
 import { ApiError } from '../../../lib/api-client'
 import { useGlobalShortcuts } from '../../../hooks/useGlobalShortcuts'
 import { useProductExport } from '../../product-export/useProductExport'
+import { ContentLocaleSwitcher } from '../../projects/ContentLocaleSwitcher'
+import {
+  effectiveContentLocale,
+  updateLocalized,
+  useContentLocaleStore,
+} from '../../projects/localization'
 
 interface Props {
   projectId: string
@@ -56,6 +51,8 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
   const updateKnowledge = useUpdateKnowledge(projectId)
   const updateCatalogConfig = useUpdateCatalogConfig(projectId)
   const updatePanorama = useUpdatePanorama(projectId)
+  const requestedLocale = useContentLocaleStore(state => state.locale)
+  const setRequestedLocale = useContentLocaleStore(state => state.setLocale)
 
   const [draft, setDraft] = useState<GuideProject | null>(null)
   const [pendingConfig, setPendingConfig] = useState<boolean>(false)
@@ -77,12 +74,12 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
     }
   }, [projectId, projectQuery.data])
 
-  const selection = useCatalogEditorStore((s) => s.selection)
-  const setSelection = useCatalogEditorStore((s) => s.setSelection)
-  const selectedStage = useCatalogEditorStore((s) => s.selectedStage)
-  const setSelectedStage = useCatalogEditorStore((s) => s.setSelectedStage)
-  const setDirty = useCatalogEditorStore((s) => s.setDirty)
-  const reset = useCatalogEditorStore((s) => s.reset)
+  const selection = useCatalogEditorStore(s => s.selection)
+  const setSelection = useCatalogEditorStore(s => s.setSelection)
+  const selectedStage = useCatalogEditorStore(s => s.selectedStage)
+  const setSelectedStage = useCatalogEditorStore(s => s.setSelectedStage)
+  const setDirty = useCatalogEditorStore(s => s.setDirty)
+  const reset = useCatalogEditorStore(s => s.reset)
 
   useEffect(() => {
     reset()
@@ -90,7 +87,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
 
   const handlePatchCatalogConfig = useCallback(
     (mutator: (cfg: CatalogProductConfig) => CatalogProductConfig) => {
-      setDraft((prev) =>
+      setDraft(prev =>
         prev
           ? { ...prev, products: { ...prev.products, catalog: mutator(prev.products.catalog) } }
           : prev,
@@ -103,7 +100,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
 
   const handlePatchKnowledge = useCallback(
     (mutator: (k: GuideProject['knowledge']) => GuideProject['knowledge']) => {
-      setDraft((prev) => (prev ? { ...prev, knowledge: mutator(prev.knowledge) } : prev))
+      setDraft(prev => (prev ? { ...prev, knowledge: mutator(prev.knowledge) } : prev))
       setPendingKnowledge(true)
       setDirty(true)
     },
@@ -215,16 +212,20 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
   }
 
   const stagesArr = draft.knowledge.stages as unknown as IndustryStage[]
-  const activeStage = stagesArr.find((s) => s.key === selectedStage) ?? stagesArr[0]
-  const isSaving = updateCatalogConfig.isPending || updateKnowledge.isPending || updatePanorama.isPending
+  const activeStage = stagesArr.find(s => s.key === selectedStage) ?? stagesArr[0]
+  const isSaving =
+    updateCatalogConfig.isPending || updateKnowledge.isPending || updatePanorama.isPending
   const operationError = saveError ?? productExport.error
+  const contentLocale = effectiveContentLocale(draft, requestedLocale)
 
   /** Keep the authoring selection aligned with the runtime: a stage or category
    * always opens on its first available tertiary item. */
   const selectCategory = (categoryId: string) => {
     const category = stagesArr.flatMap(stage => stage.categories).find(c => c.id === categoryId)
     const firstItemId = category?.itemIds.find(id => Boolean(draft.knowledge.items[id]))
-    setSelection(firstItemId ? { kind: 'item', id: firstItemId } : { kind: 'category', id: categoryId })
+    setSelection(
+      firstItemId ? { kind: 'item', id: firstItemId } : { kind: 'category', id: categoryId },
+    )
   }
   const selectStage = (stageKey: IndustryStage['key']) => {
     setSelectedStage(stageKey)
@@ -235,6 +236,11 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
 
   return (
     <Flex direction="column" h="100%" bg="bg">
+      <ContentLocaleSwitcher
+        locale={contentLocale}
+        supportedLocales={draft.localization.supportedLocales}
+        onChange={setRequestedLocale}
+      />
       <CatalogToolbar
         onSave={() => void handleSave().catch(() => undefined)}
         onPreview={() => void productExport.generatePreview()}
@@ -269,57 +275,62 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
           activeStage={activeStage}
           selection={selection}
           onSelectStage={selectStage}
-          onSelect={(next) => {
+          onSelect={next => {
             if (next?.kind === 'category') selectCategory(next.id)
             else setSelection(next)
           }}
           onAddCategory={() => {
-            handlePatchKnowledge((k) => {
+            handlePatchKnowledge(k => {
               const id = nextId('cat')
               const newCat: IndustryCategory = {
                 id,
-                title: '新分类',
+                title: { [contentLocale]: contentLocale === 'en-US' ? 'New category' : '新分类' },
                 order: activeStage.categories.length + 1,
                 itemIds: [],
                 experience: { kind: 'panorama' },
               }
               return {
                 ...k,
-                stages: stagesArr.map((s) =>
-                  s.key === activeStage.key
-                    ? { ...s, categories: [...s.categories, newCat] }
-                    : s,
+                stages: stagesArr.map(s =>
+                  s.key === activeStage.key ? { ...s, categories: [...s.categories, newCat] } : s,
                 ),
               } as GuideProject['knowledge']
             })
           }}
           onRenameCategory={(categoryId, title) => {
-            handlePatchKnowledge((k) => ({
-              ...k,
-              stages: stagesArr.map((s) => ({
-                ...s,
-                categories: s.categories.map((c) =>
-                  c.id === categoryId ? { ...c, title } : c,
-                ),
-              })),
-            }) as GuideProject['knowledge'])
+            handlePatchKnowledge(
+              k =>
+                ({
+                  ...k,
+                  stages: stagesArr.map(s => ({
+                    ...s,
+                    categories: s.categories.map(c =>
+                      c.id === categoryId
+                        ? { ...c, title: updateLocalized(c.title, contentLocale, title) }
+                        : c,
+                    ),
+                  })),
+                }) as GuideProject['knowledge'],
+            )
           }}
-          onDeleteCategory={(categoryId) => {
-            const itemIds = stagesArr
-              .flatMap(stage => stage.categories)
-              .find(category => category.id === categoryId)?.itemIds ?? []
-            handlePatchKnowledge((k) => ({
-              ...k,
-              stages: stagesArr.map((s) => ({
-                ...s,
-                categories: s.categories.filter((c) => c.id !== categoryId),
-              })),
-              items: Object.fromEntries(
-                Object.entries(k.items).filter(
-                  ([, item]) => item.categoryId !== categoryId,
-                ),
-              ),
-            }) as GuideProject['knowledge'])
+          onDeleteCategory={categoryId => {
+            const itemIds =
+              stagesArr
+                .flatMap(stage => stage.categories)
+                .find(category => category.id === categoryId)?.itemIds ?? []
+            handlePatchKnowledge(
+              k =>
+                ({
+                  ...k,
+                  stages: stagesArr.map(s => ({
+                    ...s,
+                    categories: s.categories.filter(c => c.id !== categoryId),
+                  })),
+                  items: Object.fromEntries(
+                    Object.entries(k.items).filter(([, item]) => item.categoryId !== categoryId),
+                  ),
+                }) as GuideProject['knowledge'],
+            )
             handlePatchPanorama(panorama => {
               const { [categoryId]: _category, ...categories } = panorama.categories
               const items = Object.fromEntries(
@@ -331,23 +342,23 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
               setSelection(null)
             }
           }}
-          onAddItem={(categoryId) => {
+          onAddItem={categoryId => {
             const id = nextId('item')
-            handlePatchKnowledge((k) => {
-              const cat = stagesArr.flatMap((s) => s.categories).find((c) => c.id === categoryId)
+            handlePatchKnowledge(k => {
+              const cat = stagesArr.flatMap(s => s.categories).find(c => c.id === categoryId)
               const item: IndustryItem = {
                 id,
                 categoryId,
-                title: '新项目',
-                description: '',
+                title: { [contentLocale]: contentLocale === 'en-US' ? 'New item' : '新项目' },
+                description: { [contentLocale]: '' },
                 order: (cat?.itemIds.length ?? 0) + 1,
               }
               return {
                 ...k,
                 items: { ...k.items, [id]: item },
-                stages: stagesArr.map((s) => ({
+                stages: stagesArr.map(s => ({
                   ...s,
-                  categories: s.categories.map((c) =>
+                  categories: s.categories.map(c =>
                     c.id === categoryId ? { ...c, itemIds: [...c.itemIds, id] } : c,
                   ),
                 })),
@@ -365,19 +376,19 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
             }))
             setSelection({ kind: 'item', id })
           }}
-          onDeleteItem={(itemId) => {
-            handlePatchKnowledge((k) => {
+          onDeleteItem={itemId => {
+            handlePatchKnowledge(k => {
               const item = k.items[itemId]
               if (!item) return k
               const { [itemId]: _r, ...rest } = k.items
               return {
                 ...k,
                 items: rest,
-                stages: stagesArr.map((s) => ({
+                stages: stagesArr.map(s => ({
                   ...s,
-                  categories: s.categories.map((c) =>
+                  categories: s.categories.map(c =>
                     c.id === item.categoryId
-                      ? { ...c, itemIds: c.itemIds.filter((i) => i !== itemId) }
+                      ? { ...c, itemIds: c.itemIds.filter(i => i !== itemId) }
                       : c,
                   ),
                 })),
@@ -391,12 +402,37 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
               setSelection(null)
             }
           }}
+          locale={contentLocale}
         />
 
         <Box bg="bg.sunken" overflow="hidden" minW="0" position="relative">
-          <Box position="absolute" top="3" right="3" zIndex="3" display="flex" gap="1" bg="rgba(15,23,42,.84)" p="1" borderRadius="md">
-            <button type="button" onClick={() => setCanvasMode('editor')} data-testid="catalog-canvas-mode-editor" style={canvasModeButtonStyle(canvasMode === 'editor')}>编辑</button>
-            <button type="button" onClick={() => setCanvasMode('preview')} data-testid="catalog-canvas-mode-preview" style={canvasModeButtonStyle(canvasMode === 'preview')}>运行时预览</button>
+          <Box
+            position="absolute"
+            top="3"
+            right="3"
+            zIndex="3"
+            display="flex"
+            gap="1"
+            bg="rgba(15,23,42,.84)"
+            p="1"
+            borderRadius="md"
+          >
+            <button
+              type="button"
+              onClick={() => setCanvasMode('editor')}
+              data-testid="catalog-canvas-mode-editor"
+              style={canvasModeButtonStyle(canvasMode === 'editor')}
+            >
+              编辑
+            </button>
+            <button
+              type="button"
+              onClick={() => setCanvasMode('preview')}
+              data-testid="catalog-canvas-mode-preview"
+              style={canvasModeButtonStyle(canvasMode === 'preview')}
+            >
+              运行时预览
+            </button>
           </Box>
           {canvasMode === 'editor' ? (
             <CatalogAuthoringCanvas
@@ -405,6 +441,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
               selection={selection}
               onSelect={setSelection}
               onPatchPanorama={handlePatchPanorama}
+              locale={contentLocale}
             />
           ) : (
             <CatalogEditorCanvas
@@ -415,6 +452,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
               onSelect={setSelection}
               onPatchPanorama={handlePatchPanorama}
               mode="preview"
+              locale={contentLocale}
             />
           )}
         </Box>
@@ -429,6 +467,7 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
           onSaveRequested={() => void handleSave().catch(() => undefined)}
           hasUnsavedConfig={pendingConfig}
           isSaving={isSaving}
+          locale={contentLocale}
         />
       </Grid>
     </Flex>
@@ -436,5 +475,13 @@ export function CatalogEditor({ projectId }: Props): JSX.Element {
 }
 
 function canvasModeButtonStyle(active: boolean): React.CSSProperties {
-  return { border: '0', borderRadius: 4, padding: '5px 8px', fontSize: 12, cursor: 'pointer', color: active ? '#0f172a' : '#cbd5e1', background: active ? '#f8fafc' : 'transparent' }
+  return {
+    border: '0',
+    borderRadius: 4,
+    padding: '5px 8px',
+    fontSize: 12,
+    cursor: 'pointer',
+    color: active ? '#0f172a' : '#cbd5e1',
+    background: active ? '#f8fafc' : 'transparent',
+  }
 }

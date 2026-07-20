@@ -38,6 +38,14 @@ const STAGE_LABEL_FIXED: Record<'upstream' | 'midstream' | 'downstream', string>
   downstream: '下游',
 }
 
+const STAGE_LABELS_BY_LOCALE: Record<
+  string,
+  Record<'upstream' | 'midstream' | 'downstream', string>
+> = {
+  'zh-CN': STAGE_LABEL_FIXED,
+  'en-US': { upstream: 'Upstream', midstream: 'Midstream', downstream: 'Downstream' },
+}
+
 /** Run all draft-level checks. Allows draft-only state (e.g. missing spatial calibration). */
 export function validateDraftProject(project: GuideProject): ValidationResult {
   const issues: ValidationIssue[] = []
@@ -49,6 +57,7 @@ export function validateDraftProject(project: GuideProject): ValidationResult {
   checkSceneReferences(project, issues)
   checkRouteReferences(project, issues)
   checkSpatialRanges(project, issues)
+  checkTranslations(project, issues, [project.localization.defaultLocale])
   return { ok: issues.length === 0, issues }
 }
 
@@ -66,6 +75,7 @@ export function validateReleaseProject(project: GuideProject): ValidationResult 
   checkPanoramaAssetBound(project, issues)
   checkCalibrationCompleteness(project, issues)
   checkAtlasCategoryCoverage(project, issues)
+  checkTranslations(project, issues, project.localization.supportedLocales)
   return { ok: issues.length === 0, issues }
 }
 
@@ -124,14 +134,78 @@ function checkStages(
         message: `stage[${index}].key must be "${STAGE_ORDER[index]}" but was "${stage.key}"`,
       })
     }
-    if (!opts.allowCustomLabel && stage.label !== STAGE_LABEL_FIXED[stage.key]) {
-      issues.push({
-        code: 'STAGE_LABEL_FIXED',
-        path: `knowledge.stages[${index}].label`,
-        message: `release stage[${index}].label must be "${STAGE_LABEL_FIXED[stage.key]}"`,
-      })
+    if (!opts.allowCustomLabel) {
+      for (const locale of project.localization.supportedLocales) {
+        const expected = STAGE_LABELS_BY_LOCALE[locale]?.[stage.key]
+        if (expected && stage.label[locale] !== expected) {
+          issues.push({
+            code: 'STAGE_LABEL_FIXED',
+            path: `knowledge.stages[${index}].label.${locale}`,
+            message: `release stage[${index}].label.${locale} must be "${expected}"`,
+          })
+        }
+      }
     }
   })
+}
+
+function checkTranslations(
+  project: GuideProject,
+  issues: ValidationIssue[],
+  locales: readonly string[],
+): void {
+  const fields: Array<{ path: string; value: Partial<Record<string, string>> | undefined }> = [
+    { path: 'title', value: project.title },
+  ]
+  project.knowledge.stages.forEach((stage, stageIndex) => {
+    fields.push({ path: `knowledge.stages[${stageIndex}].label`, value: stage.label })
+    stage.categories.forEach(category => {
+      fields.push({ path: `knowledge.categories.${category.id}.title`, value: category.title })
+      if (category.description) {
+        fields.push({
+          path: `knowledge.categories.${category.id}.description`,
+          value: category.description,
+        })
+      }
+    })
+  })
+  for (const item of Object.values(project.knowledge.items)) {
+    fields.push({ path: `knowledge.items.${item.id}.title`, value: item.title })
+    fields.push({ path: `knowledge.items.${item.id}.description`, value: item.description })
+  }
+  for (const scene of project.scenes) {
+    fields.push({ path: `scenes.${scene.id}.title`, value: scene.title })
+    for (const view of scene.views) {
+      fields.push({ path: `scenes.${scene.id}.views.${view.id}.title`, value: view.title })
+    }
+  }
+  if (project.products.atlas.hintText) {
+    fields.push({ path: 'products.atlas.hintText', value: project.products.atlas.hintText })
+  }
+  if (project.products.catalog.hintText) {
+    fields.push({ path: 'products.catalog.hintText', value: project.products.catalog.hintText })
+  }
+  if (project.integrations.share?.title) {
+    fields.push({ path: 'integrations.share.title', value: project.integrations.share.title })
+  }
+  if (project.integrations.share?.description) {
+    fields.push({
+      path: 'integrations.share.description',
+      value: project.integrations.share.description,
+    })
+  }
+
+  for (const field of fields) {
+    for (const locale of locales) {
+      if (!field.value?.[locale]?.trim()) {
+        issues.push({
+          code: 'TRANSLATION_MISSING',
+          path: `${field.path}.${locale}`,
+          message: `${field.path} requires a non-blank "${locale}" translation`,
+        })
+      }
+    }
+  }
 }
 
 function checkUniqueIds(project: GuideProject, issues: ValidationIssue[]): void {
@@ -199,10 +273,10 @@ function checkUniqueIds(project: GuideProject, issues: ValidationIssue[]): void 
     if (declaredInCategory.has(id)) continue // already counted via category.itemIds
     checkCrossCollection(id, 'knowledge.items')
   }
-  for (const sceneId of project.scenes.map((s) => s.id)) {
+  for (const sceneId of project.scenes.map(s => s.id)) {
     checkCrossCollection(sceneId, 'scenes')
   }
-  for (const routeId of project.navigation.routes.map((r) => r.id)) {
+  for (const routeId of project.navigation.routes.map(r => r.id)) {
     checkCrossCollection(routeId, 'navigation.routes')
   }
 }
@@ -251,7 +325,7 @@ function checkItemCategoryOwnership(project: GuideProject, issues: ValidationIss
 }
 
 function checkOrdering(project: GuideProject, issues: ValidationIssue[]): void {
-  project.knowledge.stages.forEach((stage) => {
+  project.knowledge.stages.forEach(stage => {
     stage.categories.forEach((category, index) => {
       if (category.order !== index) {
         issues.push({
@@ -265,7 +339,7 @@ function checkOrdering(project: GuideProject, issues: ValidationIssue[]): void {
   for (const stage of project.knowledge.stages) {
     for (const category of stage.categories) {
       const items = category.itemIds
-        .map((id) => project.knowledge.items[id])
+        .map(id => project.knowledge.items[id])
         .filter((x): x is IndustryItem => Boolean(x))
       items.forEach((item, index) => {
         if (item.order !== index) {
@@ -328,7 +402,7 @@ function checkAssetReferences(project: GuideProject, issues: ValidationIssue[]):
 }
 
 function checkSceneReferences(project: GuideProject, issues: ValidationIssue[]): void {
-  const sceneIds = new Set(project.scenes.map((s) => s.id))
+  const sceneIds = new Set(project.scenes.map(s => s.id))
   const viewIds = new Map<string, Set<string>>()
   for (const scene of project.scenes) {
     const set = new Set<string>()
@@ -397,7 +471,7 @@ function checkRouteLocation(
     }
   }
   if (location.kind === 'scene') {
-    const scene = project.scenes.find((s) => s.id === location.sceneId)
+    const scene = project.scenes.find(s => s.id === location.sceneId)
     if (!scene) {
       issues.push({
         code: 'ROUTE_SCENE_MISSING',
@@ -407,7 +481,7 @@ function checkRouteLocation(
       return
     }
     if (location.viewId) {
-      const view = scene.views.find((v) => v.id === location.viewId)
+      const view = scene.views.find(v => v.id === location.viewId)
       if (!view) {
         issues.push({
           code: 'ROUTE_SCENE_VIEW_MISSING',

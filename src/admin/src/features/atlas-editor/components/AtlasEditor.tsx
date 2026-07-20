@@ -38,6 +38,12 @@ import { AtlasInspector } from './AtlasInspector'
 import { ApiError } from '../../../lib/api-client'
 import { useGlobalShortcuts } from '../../../hooks/useGlobalShortcuts'
 import { useProductExport } from '../../product-export/useProductExport'
+import { ContentLocaleSwitcher } from '../../projects/ContentLocaleSwitcher'
+import {
+  effectiveContentLocale,
+  updateLocalized,
+  useContentLocaleStore,
+} from '../../projects/localization'
 
 let _idCounter = 0
 function nextId(prefix: string): string {
@@ -57,6 +63,8 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
   const updateNavigation = useUpdateNavigation(projectId)
 
   const serverProject = projectQuery.data
+  const requestedLocale = useContentLocaleStore(state => state.locale)
+  const setRequestedLocale = useContentLocaleStore(state => state.setLocale)
 
   const [draft, setDraft] = useState<GuideProject | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -80,12 +88,12 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
     }
   }, [projectId, serverProject])
 
-  const tool = useAtlasEditorStore((s) => s.tool)
-  const setTool = useAtlasEditorStore((s) => s.setTool)
-  const selection = useAtlasEditorStore((s) => s.selection)
-  const setSelection = useAtlasEditorStore((s) => s.setSelection)
-  const reset = useAtlasEditorStore((s) => s.reset)
-  const setDirty = useAtlasEditorStore((s) => s.setDirty)
+  const tool = useAtlasEditorStore(s => s.tool)
+  const setTool = useAtlasEditorStore(s => s.setTool)
+  const selection = useAtlasEditorStore(s => s.selection)
+  const setSelection = useAtlasEditorStore(s => s.setSelection)
+  const reset = useAtlasEditorStore(s => s.reset)
+  const setDirty = useAtlasEditorStore(s => s.setDirty)
 
   useEffect(() => {
     reset()
@@ -93,7 +101,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
 
   const handlePatchPanorama = useCallback(
     (mutator: (p: PanoramaModel) => PanoramaModel) => {
-      setDraft((prev) => (prev ? { ...prev, panorama: mutator(prev.panorama) } : prev))
+      setDraft(prev => (prev ? { ...prev, panorama: mutator(prev.panorama) } : prev))
       setPendingPanorama(true)
       setDirty(true)
     },
@@ -102,8 +110,10 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
 
   const handlePatchAtlasConfig = useCallback(
     (mutator: (cfg: AtlasProductConfig) => AtlasProductConfig) => {
-      setDraft((prev) =>
-        prev ? { ...prev, products: { ...prev.products, atlas: mutator(prev.products.atlas) } } : prev,
+      setDraft(prev =>
+        prev
+          ? { ...prev, products: { ...prev.products, atlas: mutator(prev.products.atlas) } }
+          : prev,
       )
       setPendingConfig(true)
       setDirty(true)
@@ -113,7 +123,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
 
   const handlePatchKnowledge = useCallback(
     (mutator: (k: IndustryChain) => IndustryChain) => {
-      setDraft((prev) => (prev ? { ...prev, knowledge: mutator(prev.knowledge) } : prev))
+      setDraft(prev => (prev ? { ...prev, knowledge: mutator(prev.knowledge) } : prev))
       setPendingKnowledge(true)
       setDirty(true)
     },
@@ -122,7 +132,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
 
   const handlePatchNavigation = useCallback(
     (mutator: (n: GuideProject['navigation']) => GuideProject['navigation']) => {
-      setDraft((prev) => (prev ? { ...prev, navigation: mutator(prev.navigation) } : prev))
+      setDraft(prev => (prev ? { ...prev, navigation: mutator(prev.navigation) } : prev))
       setPendingNavigation(true)
       setDirty(true)
     },
@@ -132,8 +142,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
   const handleSave = async (): Promise<GuideProject> => {
     if (!draft) throw new Error('项目尚未加载完成')
     setSaveError(null)
-    const hadChanges =
-      pendingKnowledge || pendingPanorama || pendingNavigation || pendingConfig
+    const hadChanges = pendingKnowledge || pendingPanorama || pendingNavigation || pendingConfig
     try {
       let current = draft
       if (pendingKnowledge) {
@@ -213,9 +222,9 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
 
   const handleAddCategory = (stageKey: IndustryStage['key']) => {
     const id = nextId('cat')
-    handlePatchKnowledge((k) => ({
+    handlePatchKnowledge(k => ({
       ...k,
-      stages: mapStages(k.stages, (s) =>
+      stages: mapStages(k.stages, s =>
         s.key === stageKey
           ? {
               ...s,
@@ -223,7 +232,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
                 ...s.categories,
                 {
                   id,
-                  title: '新分类',
+                  title: { [contentLocale]: contentLocale === 'en-US' ? 'New category' : '新分类' },
                   order: s.categories.length + 1,
                   itemIds: [],
                   experience: { kind: 'panorama' },
@@ -237,34 +246,34 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
   }
 
   const handleRenameCategory = (categoryId: string, title: string) => {
-    handlePatchKnowledge((k) => ({
+    handlePatchKnowledge(k => ({
       ...k,
-      stages: mapStages(k.stages, (s) => ({
+      stages: mapStages(k.stages, s => ({
         ...s,
-        categories: s.categories.map((c) =>
-          c.id === categoryId ? { ...c, title } : c,
+        categories: s.categories.map(c =>
+          c.id === categoryId ? { ...c, title: updateLocalized(c.title, contentLocale, title) } : c,
         ),
       })),
     }))
   }
 
   const handleDeleteCategory = (categoryId: string) => {
-    handlePatchKnowledge((k) => ({
+    handlePatchKnowledge(k => ({
       ...k,
-      stages: mapStages(k.stages, (s) => ({
+      stages: mapStages(k.stages, s => ({
         ...s,
-        categories: s.categories.filter((c) => c.id !== categoryId),
+        categories: s.categories.filter(c => c.id !== categoryId),
       })),
       items: Object.fromEntries(
         Object.entries(k.items).filter(([, item]) => item.categoryId !== categoryId),
       ),
     }))
-    handlePatchPanorama((p) => {
+    handlePatchPanorama(p => {
       const { [categoryId]: _removed, ...rest } = p.categories
       return { ...p, categories: rest }
     })
-    handlePatchNavigation((n) => ({
-      routes: n.routes.filter((route) => {
+    handlePatchNavigation(n => ({
+      routes: n.routes.filter(route => {
         if (route.from.kind === 'panorama' && route.from.categoryId === categoryId) return false
         if (route.from.kind === 'panorama' && route.from.itemId) {
           const item = draft?.knowledge.items[route.from.itemId]
@@ -280,27 +289,27 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
 
   const handleAddItem = (categoryId: string) => {
     const id = nextId('item')
-    handlePatchKnowledge((k) => {
-      const cat = k.stages.flatMap((s) => s.categories).find((c) => c.id === categoryId)
+    handlePatchKnowledge(k => {
+      const cat = k.stages.flatMap(s => s.categories).find(c => c.id === categoryId)
       const item = {
         id,
         categoryId,
-        title: '新项目',
-        description: '',
+        title: { [contentLocale]: contentLocale === 'en-US' ? 'New item' : '新项目' },
+        description: { [contentLocale]: '' },
         order: (cat?.itemIds.length ?? 0) + 1,
       }
       return {
         ...k,
         items: { ...k.items, [id]: item },
-        stages: mapStages(k.stages, (s) => ({
+        stages: mapStages(k.stages, s => ({
           ...s,
-          categories: s.categories.map((c) =>
+          categories: s.categories.map(c =>
             c.id === categoryId ? { ...c, itemIds: [...c.itemIds, id] } : c,
           ),
         })),
       }
     })
-    handlePatchPanorama((p) => ({
+    handlePatchPanorama(p => ({
       ...p,
       items: {
         ...p.items,
@@ -314,30 +323,28 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
   }
 
   const handleDeleteItem = (itemId: string) => {
-    handlePatchKnowledge((k) => {
+    handlePatchKnowledge(k => {
       const item = k.items[itemId]
       if (!item) return k
       const { [itemId]: _removed, ...rest } = k.items
       return {
         ...k,
         items: rest,
-        stages: mapStages(k.stages, (s) => ({
+        stages: mapStages(k.stages, s => ({
           ...s,
-          categories: s.categories.map((c) =>
-            c.id === item.categoryId
-              ? { ...c, itemIds: c.itemIds.filter((i) => i !== itemId) }
-              : c,
+          categories: s.categories.map(c =>
+            c.id === item.categoryId ? { ...c, itemIds: c.itemIds.filter(i => i !== itemId) } : c,
           ),
         })),
       }
     })
-    handlePatchPanorama((p) => {
+    handlePatchPanorama(p => {
       const { [itemId]: _removed, ...rest } = p.items
       return { ...p, items: rest }
     })
-    handlePatchNavigation((n) => ({
+    handlePatchNavigation(n => ({
       routes: n.routes.filter(
-        (route) => !(route.from.kind === 'panorama' && route.from.itemId === itemId),
+        route => !(route.from.kind === 'panorama' && route.from.itemId === itemId),
       ),
     }))
     if (selection?.kind === 'item' && selection.id === itemId) {
@@ -346,12 +353,15 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
   }
 
   const handleRenameItem = (itemId: string, title: string) => {
-    handlePatchKnowledge((k) => ({
+    handlePatchKnowledge(k => ({
       ...k,
       items: {
         ...k.items,
         [itemId]: k.items[itemId]
-          ? { ...k.items[itemId], title }
+          ? {
+              ...k.items[itemId],
+              title: updateLocalized(k.items[itemId].title, contentLocale, title),
+            }
           : k.items[itemId],
       },
     }))
@@ -397,23 +407,30 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
     updateKnowledge.isPending ||
     updateNavigation.isPending
   const operationError = saveError ?? productExport.error
+  const contentLocale = effectiveContentLocale(draft, requestedLocale)
 
   return (
     <Grid templateColumns="260px 1fr 320px" h="100%" bg="bg">
-        <StructurePanel
-          project={draft}
-          selection={selection}
-          onSelect={setSelection}
-          onAddCategory={handleAddCategory}
-          onRenameCategory={handleRenameCategory}
-          onDeleteCategory={handleDeleteCategory}
-          onAddItem={handleAddItem}
-          onRenameItem={handleRenameItem}
-          onDeleteItem={handleDeleteItem}
-          isSaving={isSaving}
-        />
+      <StructurePanel
+        project={draft}
+        selection={selection}
+        onSelect={setSelection}
+        onAddCategory={handleAddCategory}
+        onRenameCategory={handleRenameCategory}
+        onDeleteCategory={handleDeleteCategory}
+        onAddItem={handleAddItem}
+        onRenameItem={handleRenameItem}
+        onDeleteItem={handleDeleteItem}
+        isSaving={isSaving}
+        locale={contentLocale}
+      />
 
       <Flex direction="column" minW="0" overflow="hidden">
+        <ContentLocaleSwitcher
+          locale={contentLocale}
+          supportedLocales={draft.localization.supportedLocales}
+          onChange={setRequestedLocale}
+        />
         <AtlasToolbar
           tool={tool}
           onToolChange={setTool}
@@ -451,9 +468,10 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
             onSelect={setSelection}
             onPatchPanorama={handlePatchPanorama}
             onRenameItem={handleRenameItem}
+            locale={contentLocale}
           />
           <Box borderLeftWidth="1px" borderColor="border" bg="bg.sunken" overflow="hidden">
-            <AtlasPreview project={draft} />
+            <AtlasPreview project={draft} locale={contentLocale} />
           </Box>
         </Grid>
       </Flex>
@@ -471,6 +489,7 @@ export function AtlasEditor({ projectId }: Props): JSX.Element {
         hasUnsavedNavigation={pendingNavigation}
         onSaveRequested={() => void handleSave().catch(() => undefined)}
         isSaving={isSaving}
+        locale={contentLocale}
       />
     </Grid>
   )

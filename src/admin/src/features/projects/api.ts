@@ -34,6 +34,7 @@ export interface CreateInput {
 
 export interface UpdateMetadataInput {
   title?: string
+  titleLocale?: string
   version?: string
   locale?: string
   expectedRevision: number

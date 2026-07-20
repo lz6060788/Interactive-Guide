@@ -7,15 +7,7 @@
  * collapsible list with the categories and their items nested.
  */
 import { useEffect, useState } from 'react'
-import {
-  ChevronDown,
-  ChevronRight,
-  Circle,
-  CircleDot,
-  Inbox,
-  Plus,
-  Trash2,
-} from 'lucide-react'
+import { ChevronDown, ChevronRight, Circle, CircleDot, Inbox, Plus, Trash2 } from 'lucide-react'
 import type {
   GuideProject,
   IndustryStage,
@@ -24,6 +16,7 @@ import type {
 } from '@domain/project-types'
 import type { CatalogSelection } from '../store'
 import { EmptyState } from '@chakra-ui/react'
+import { localized } from '../../projects/localization'
 
 interface Props {
   project: GuideProject
@@ -36,6 +29,7 @@ interface Props {
   onDeleteCategory: (categoryId: string) => void
   onAddItem: (categoryId: string) => void
   onDeleteItem: (itemId: string) => void
+  locale: string
 }
 
 export function CatalogCanvas({
@@ -49,9 +43,12 @@ export function CatalogCanvas({
   onDeleteCategory,
   onAddItem,
   onDeleteItem,
+  locale,
 }: Props): JSX.Element {
   const items = project.knowledge.items
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(activeStage.categories.map((c) => c.id)))
+  const [expanded, setExpanded] = useState<Set<string>>(
+    new Set(activeStage.categories.map(c => c.id)),
+  )
 
   useEffect(() => {
     setExpanded(current => {
@@ -62,7 +59,7 @@ export function CatalogCanvas({
   }, [activeStage])
 
   const toggle = (id: string) =>
-    setExpanded((s) => {
+    setExpanded(s => {
       const next = new Set(s)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -114,7 +111,7 @@ export function CatalogCanvas({
                 onClick={() => onSelectStage(stage.key)}
                 style={stageButtonStyle(active)}
               >
-                {stage.label}
+                {localized(stage.label, locale)}
               </button>
             )
           })}
@@ -129,12 +126,9 @@ export function CatalogCanvas({
           }}
         >
           <h2 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--ig-colors-ink)' }}>
-            {activeStage.label}
+            {localized(activeStage.label, locale)}
           </h2>
-          <span
-            className="mono"
-            style={{ fontSize: 10, color: 'var(--ig-colors-ink-faint)' }}
-          >
+          <span className="mono" style={{ fontSize: 10, color: 'var(--ig-colors-ink-faint)' }}>
             {activeStage.categories.length} cats ·{' '}
             {activeStage.categories.reduce((acc, c) => acc + c.itemIds.length, 0)} items
           </span>
@@ -152,7 +146,7 @@ export function CatalogCanvas({
             <EmptyState.Indicator>
               <Inbox size={36} strokeWidth={1.25} color="ink.faint" />
             </EmptyState.Indicator>
-            <EmptyState.Title>{`${activeStage.label} 暂无分类`}</EmptyState.Title>
+            <EmptyState.Title>{`${localized(activeStage.label, locale)} 暂无分类`}</EmptyState.Title>
             <EmptyState.Description>点击下方按钮添加第一个分类。</EmptyState.Description>
             <button
               type="button"
@@ -166,9 +160,8 @@ export function CatalogCanvas({
           </EmptyState.Root>
         ) : (
           <>
-            {activeStage.categories.map((cat) => {
-              const isSelected =
-                selection?.kind === 'category' && selection.id === cat.id
+            {activeStage.categories.map(cat => {
+              const isSelected = selection?.kind === 'category' && selection.id === cat.id
               const catExpanded = expanded.has(cat.id)
               return (
                 <CategoryBlock
@@ -179,12 +172,13 @@ export function CatalogCanvas({
                   expanded={catExpanded}
                   onToggle={() => toggle(cat.id)}
                   onSelect={() => onSelect({ kind: 'category', id: cat.id })}
-                  onRename={(t) => onRenameCategory(cat.id, t)}
+                  onRename={t => onRenameCategory(cat.id, t)}
                   onDelete={() => onDeleteCategory(cat.id)}
                   onAddItem={() => onAddItem(cat.id)}
-                  onDeleteItem={(itemId) => onDeleteItem(itemId)}
-                  onSelectItem={(itemId) => onSelect({ kind: 'item', id: itemId })}
+                  onDeleteItem={itemId => onDeleteItem(itemId)}
+                  onSelectItem={itemId => onSelect({ kind: 'item', id: itemId })}
                   selection={selection}
+                  locale={locale}
                 />
               )
             })}
@@ -217,6 +211,7 @@ interface CategoryBlockProps {
   onDeleteItem: (itemId: string) => void
   onSelectItem: (itemId: string) => void
   selection: CatalogSelection
+  locale: string
 }
 
 function CategoryBlock({
@@ -232,12 +227,14 @@ function CategoryBlock({
   onDeleteItem,
   onSelectItem,
   selection,
+  locale,
 }: CategoryBlockProps): JSX.Element {
+  const title = localized(cat.title, locale)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(cat.title)
+  const [draft, setDraft] = useState(title)
   const commit = () => {
     const t = draft.trim()
-    if (t && t !== cat.title) onRename(t)
+    if (t && t !== title) onRename(t)
     setEditing(false)
   }
   return (
@@ -272,15 +269,17 @@ function CategoryBlock({
         </button>
         <CircleDot
           size={11}
-          style={{ color: cat.itemIds.length > 0 ? 'var(--ig-colors-brand)' : 'var(--ig-colors-ink-faint)' }}
+          style={{
+            color: cat.itemIds.length > 0 ? 'var(--ig-colors-brand)' : 'var(--ig-colors-ink-faint)',
+          }}
         />
         {editing ? (
           <input
             autoFocus
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={e => setDraft(e.target.value)}
             onBlur={commit}
-            onKeyDown={(e) => {
+            onKeyDown={e => {
               if (e.key === 'Enter') commit()
               if (e.key === 'Escape') setEditing(false)
             }}
@@ -300,10 +299,10 @@ function CategoryBlock({
           <button
             type="button"
             onClick={onSelect}
-            onDoubleClick={(e) => {
+            onDoubleClick={e => {
               e.stopPropagation()
               setEditing(true)
-              setDraft(cat.title)
+              setDraft(title)
             }}
             data-interactive="true"
             style={{
@@ -319,14 +318,14 @@ function CategoryBlock({
               borderRadius: 3,
               transition: 'background 150ms',
             }}
-            onMouseEnter={(e) => {
+            onMouseEnter={e => {
               e.currentTarget.style.background = 'var(--ig-colors-paper-sunken)'
             }}
-            onMouseLeave={(e) => {
+            onMouseLeave={e => {
               e.currentTarget.style.background = 'transparent'
             }}
           >
-            {cat.title}
+            {title}
           </button>
         )}
         <span
@@ -356,7 +355,7 @@ function CategoryBlock({
             padding: '4px 8px 6px',
           }}
         >
-          {cat.itemIds.map((itemId) => {
+          {cat.itemIds.map(itemId => {
             const item = items[itemId]
             if (!item) return null
             const selected = selection?.kind === 'item' && selection.id === item.id
@@ -381,11 +380,11 @@ function CategoryBlock({
               >
                 <Circle size={9} style={{ color: 'var(--ig-colors-ink-faint)' }} />
                 <span style={{ fontSize: 12, color: 'var(--ig-colors-ink)' }}>
-                  {item.title}
+                  {localized(item.title, locale)}
                 </span>
                 <button
                   type="button"
-                  onClick={(e) => {
+                  onClick={e => {
                     e.stopPropagation()
                     onDeleteItem(itemId)
                   }}

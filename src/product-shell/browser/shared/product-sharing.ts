@@ -9,7 +9,7 @@ import {
 
 export interface ProductShareControllerOptions {
   projectTitle: string
-  config?: RuntimeShareConfig
+  config?: RuntimeShareConfig<string>
   tracker?: AtlasPageTracker
   currentHref?: () => string
   resolveAssetUrl?: (url: string) => string

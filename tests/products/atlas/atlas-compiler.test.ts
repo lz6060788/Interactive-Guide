@@ -58,7 +58,10 @@ test('compileAtlas projects project fields into the manifest', () => {
   assert.equal(manifest.panorama.url, './assets/images/asset-pano/image.jpg')
   assert.equal(manifest.categories.length, 1)
   assert.equal(manifest.categories[0].id, 'cat-up')
-  assert.equal(manifest.categories[0].stageLabel, '上游')
+  assert.deepEqual(manifest.categories[0].stageLabel, {
+    'zh-CN': '上游',
+    'en-US': 'Upstream',
+  })
   assert.equal(manifest.categories[0].hotspot?.x, 0.5)
   assert.equal('activationZoom' in manifest.categories[0], false)
   assert.equal(manifest.items.length, 1)

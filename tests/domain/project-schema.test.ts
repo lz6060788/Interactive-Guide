@@ -6,10 +6,10 @@ import { createDraftProject } from '../../src/domain/project-normalizer.js'
 
 const base = () => createDraftProject({ id: 'p1', title: 'Test', locale: 'zh-CN' })
 
-test('SchemaVersionSchema accepts only "2.0.0"', () => {
-  assert.equal(SchemaVersionSchema.safeParse('2.0.0').success, true)
+test('SchemaVersionSchema accepts only "3.0.0"', () => {
+  assert.equal(SchemaVersionSchema.safeParse('3.0.0').success, true)
   assert.equal(SchemaVersionSchema.safeParse('1.0.0').success, false)
-  assert.equal(SchemaVersionSchema.safeParse('2.1.0').success, false)
+  assert.equal(SchemaVersionSchema.safeParse('2.0.0').success, false)
 })
 
 test('GuideProjectSchema accepts a fresh draft project with assetId filled in', () => {
@@ -51,9 +51,9 @@ test('GuideProjectSchema rejects projects with wrong stage key order', () => {
   const draft = base()
   // @ts-expect-error mutate stages
   draft.knowledge.stages = [
-    { key: 'midstream', label: '中游', order: 1, categories: [] },
-    { key: 'upstream', label: '上游', order: 2, categories: [] },
-    { key: 'downstream', label: '下游', order: 3, categories: [] },
+    { key: 'midstream', label: { 'zh-CN': '中游' }, order: 1, categories: [] },
+    { key: 'upstream', label: { 'zh-CN': '上游' }, order: 2, categories: [] },
+    { key: 'downstream', label: { 'zh-CN': '下游' }, order: 3, categories: [] },
   ]
   const r = GuideProjectSchema.safeParse(draft)
   assert.equal(r.success, false)

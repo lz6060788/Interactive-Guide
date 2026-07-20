@@ -3,11 +3,8 @@
  * scene bundle is opened. Catalog does not own the scene window; the
  * host (admin or runtime shell) provides openScene().
  */
-import type {
-  CatalogEvent,
-  CatalogListener,
-} from './catalog-runtime.js'
-import type { CatalogHtmlSceneManifest } from '../contract/catalog-manifest.js'
+import type { CatalogEvent, CatalogListener } from './catalog-runtime.js'
+import type { ResolvedCatalogHtmlSceneManifest as CatalogHtmlSceneManifest } from '../contract/catalog-manifest.js'
 
 export class SceneLauncher {
   private readonly openScene: (scene: CatalogHtmlSceneManifest, viewId?: string) => void

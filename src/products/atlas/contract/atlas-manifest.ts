@@ -13,7 +13,8 @@ import type {
   ExperienceNavigation,
   ExperienceRoute,
   ProductChromeConfig,
-  SchemaVersion,
+  LocalizedText,
+  LocalizationConfig,
   Viewport,
 } from '../../../domain/project-types.js'
 import type { RuntimeIntegrations } from '../../contracts/runtime-integrations.js'
@@ -31,14 +32,14 @@ export interface AtlasAssetRef {
   size?: number
 }
 
-export interface AtlasHtmlSceneManifest {
+export interface AtlasHtmlSceneManifest<TText = LocalizedText> {
   sceneId: string
-  title: string
+  title: TText
   /** Package-relative URL of the entry HTML file. */
   entryUrl: string
   views: Array<{
     id: string
-    title: string
+    title: TText
     activationMessage: { type: string; payload?: Record<string, unknown> }
     chrome?: { textColor?: string }
   }>
@@ -46,12 +47,12 @@ export interface AtlasHtmlSceneManifest {
   protocol: { channel: 'interactive-guide:scene-bridge'; version: '1.0.0' }
 }
 
-export interface AtlasCategoryEntry {
+export interface AtlasCategoryEntry<TText = LocalizedText> {
   id: string
-  title: string
-  stageLabel?: string
+  title: TText
+  stageLabel?: TText
   order: number
-  description?: string
+  description?: TText
   itemIds: string[]
   experience: { kind: 'panorama' } | { kind: 'html-scene'; sceneId: string; viewId: string }
   viewport: Viewport
@@ -61,11 +62,11 @@ export interface AtlasCategoryEntry {
   hotspotMinZoom?: number
 }
 
-export interface AtlasItemEntry {
+export interface AtlasItemEntry<TText = LocalizedText> {
   id: string
   categoryId: string
-  title: string
-  description: string
+  title: TText
+  description: TText
   order: number
   marker: { x: number; y: number }
   /** Hide this item marker when camera zoom falls below this value. */
@@ -85,26 +86,27 @@ export interface AtlasRouteTransitionAsset {
   onFailure: 'abort-navigation' | 'cut'
 }
 
-export interface AtlasManifest {
-  schemaVersion: SchemaVersion
+export interface AtlasManifest<TText = LocalizedText> {
+  schemaVersion: '2.0.0'
   product: 'atlas'
   projectId: string
-  projectTitle: string
+  projectTitle: TText
   projectVersion: string
-  locale: string
+  localization: LocalizationConfig
+  locale?: string
   generatedAt: string
   panorama: AtlasAssetRef & {
     initialViewport: Viewport
     cameraBounds: { minZoom: number; maxZoom: number }
   }
-  categories: AtlasCategoryEntry[]
-  items: AtlasItemEntry[]
-  scenes: AtlasHtmlSceneManifest[]
+  categories: AtlasCategoryEntry<TText>[]
+  items: AtlasItemEntry<TText>[]
+  scenes: AtlasHtmlSceneManifest<TText>[]
   routes: ExperienceRoute[]
   routeTransitions?: Record<string, AtlasRouteTransitionAsset>
   config: {
     viewport: { width: number; height: number }
-    hintText?: string
+    hintText?: TText
     interaction: {
       wheelZoom: boolean
       dragPan: boolean
@@ -123,7 +125,12 @@ export interface AtlasManifest {
       itemMarkerMinZoom?: number
     }
   }
-  integrations: RuntimeIntegrations
+  integrations: RuntimeIntegrations<TText>
 }
+
+export type ResolvedAtlasManifest = AtlasManifest<string> & { locale: string }
+export type ResolvedAtlasCategoryEntry = AtlasCategoryEntry<string>
+export type ResolvedAtlasItemEntry = AtlasItemEntry<string>
+export type ResolvedAtlasHtmlSceneManifest = AtlasHtmlSceneManifest<string>
 
 export type { AssetDefinition, ExperienceNavigation }

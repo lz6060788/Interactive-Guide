@@ -15,10 +15,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import type {
-  GuideProject,
-  ProjectMetadata,
-} from '../../domain/project-types.js'
+import type { GuideProject } from '../../domain/project-types.js'
+import { migrateGuideProject } from '../../domain/project-migration.js'
+import { readLocalizedText } from '../../domain/localization.js'
 
 export interface ListEntry {
   id: string
@@ -90,7 +89,7 @@ export class ProjectRepository {
       const filePath = path.join(this.projectsRoot, projectId, 'project.json')
       try {
         const stat = fs.statSync(filePath)
-        const project = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as GuideProject
+        const project = migrateGuideProject(JSON.parse(fs.readFileSync(filePath, 'utf-8')))
         this.projects.set(projectId, project)
         this.loadedAt.set(projectId, stat.mtimeMs)
       } catch (err) {
@@ -101,7 +100,7 @@ export class ProjectRepository {
 
   list(): ListEntry[] {
     return Array.from(this.projects.values())
-      .map((p) => toListEntry(p))
+      .map(p => toListEntry(p))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }
 
@@ -148,7 +147,7 @@ export class ProjectRepository {
         revision: nextRevision,
         updatedAt: now,
         createdAt: existing?.metadata.createdAt ?? project.metadata.createdAt ?? now,
-        schemaVersion: '2.0.0',
+        schemaVersion: '3.0.0',
       },
     }
     this.writeToDisk(next)
@@ -177,7 +176,7 @@ export class ProjectRepository {
     const last = this.loadedAt.get(projectId) ?? 0
     if (stat.mtimeMs <= last) return
     try {
-      const project = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as GuideProject
+      const project = migrateGuideProject(JSON.parse(fs.readFileSync(filePath, 'utf-8')))
       this.projects.set(projectId, project)
       this.loadedAt.set(projectId, stat.mtimeMs)
     } catch (err) {
@@ -196,11 +195,12 @@ export class ProjectRepository {
 }
 
 function toListEntry(project: GuideProject): ListEntry {
+  const locale = project.localization.defaultLocale
   return {
     id: project.id,
-    title: project.title,
+    title: readLocalizedText(project.title, locale),
     version: project.version,
-    locale: project.locale,
+    locale,
     revision: project.metadata.revision,
     updatedAt: project.metadata.updatedAt,
     createdAt: project.metadata.createdAt,

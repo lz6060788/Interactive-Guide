@@ -29,6 +29,12 @@ import { DangerZone } from '../features/projects/settings/DangerZone'
 import { AnalyticsPanel } from '../features/projects/settings/AnalyticsPanel'
 import { SharePanel } from '../features/projects/settings/SharePanel'
 import { PageHeader, StatusFooter, TableSkeleton } from '../components/PageHeader'
+import { ContentLocaleSwitcher } from '../features/projects/ContentLocaleSwitcher'
+import {
+  effectiveContentLocale,
+  localized,
+  useContentLocaleStore,
+} from '../features/projects/localization'
 
 export function ProjectSettingsPage(): JSX.Element {
   const navigate = useNavigate()
@@ -90,17 +96,26 @@ export function ProjectSettingsPage(): JSX.Element {
 
   const project = projectQuery.data
   const m = project.metadata
+  const selectedLocale = useContentLocaleStore(state => state.locale)
+  const setSelectedLocale = useContentLocaleStore(state => state.setLocale)
+  const contentLocale = effectiveContentLocale(project, selectedLocale)
+  const projectTitle = localized(project.title, contentLocale)
 
   return (
     <Flex direction="column" h="100vh">
       <PageHeader
         crumbs={[
           { label: 'Projects', to: '/' },
-          { label: project.title, to: `/projects/${project.id}/atlas-editor` },
+          { label: projectTitle, to: `/projects/${project.id}/atlas-editor` },
           { label: 'Settings' },
         ]}
         actions={
           <HStack gap="2">
+            <ContentLocaleSwitcher
+              locale={contentLocale}
+              supportedLocales={project.localization.supportedLocales}
+              onChange={setSelectedLocale}
+            />
             <Button variant="secondary" size="sm" asChild>
               <RouterLink to={`/projects/${project.id}/atlas-editor`}>Atlas Editor</RouterLink>
             </Button>
@@ -117,7 +132,7 @@ export function ProjectSettingsPage(): JSX.Element {
               <Box>
                 <Text className="eyebrow">Project · {project.id}</Text>
                 <Heading as="h1" size="lg" fontWeight="600" color="ink" mt="1">
-                  {project.title}
+                  {projectTitle}
                 </Heading>
               </Box>
               <Stack
@@ -138,10 +153,11 @@ export function ProjectSettingsPage(): JSX.Element {
               <MetadataForm
                 projectId={project.id}
                 revision={m.revision}
+                titleLocale={contentLocale}
                 initial={{
-                  title: project.title,
+                  title: projectTitle,
                   version: project.version,
-                  locale: project.locale,
+                  locale: project.localization.defaultLocale,
                 }}
               />
             </SettingsCard>
@@ -156,7 +172,12 @@ export function ProjectSettingsPage(): JSX.Element {
             </SettingsCard>
 
             <SettingsCard eyebrow="03" title="HTML 场景">
-              <HtmlScenePanel projectId={project.id} revision={m.revision} project={project} />
+              <HtmlScenePanel
+                projectId={project.id}
+                revision={m.revision}
+                project={project}
+                locale={contentLocale}
+              />
             </SettingsCard>
 
             <SettingsCard eyebrow="04" title="埋点">
@@ -170,7 +191,8 @@ export function ProjectSettingsPage(): JSX.Element {
             <SettingsCard eyebrow="05" title="分享">
               <SharePanel
                 projectId={project.id}
-                projectTitle={project.title}
+                projectTitle={projectTitle}
+                locale={contentLocale}
                 revision={m.revision}
                 initial={project.integrations}
                 assets={project.assets.byId}
@@ -178,7 +200,7 @@ export function ProjectSettingsPage(): JSX.Element {
             </SettingsCard>
 
             <SettingsCard eyebrow="06" title="生命周期">
-              <DangerZone projectId={project.id} projectTitle={project.title} />
+              <DangerZone projectId={project.id} projectTitle={projectTitle} />
             </SettingsCard>
           </Stack>
         </Container>

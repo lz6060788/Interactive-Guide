@@ -8,14 +8,7 @@
  * Clicking a row selects it; the canvas and inspector both react.
  */
 import { useState } from 'react'
-import {
-  ChevronDown,
-  ChevronRight,
-  Plus,
-  Trash2,
-  Circle,
-  CircleDot,
-} from 'lucide-react'
+import { ChevronDown, ChevronRight, Plus, Trash2, Circle, CircleDot } from 'lucide-react'
 import type {
   GuideProject,
   IndustryStage,
@@ -24,16 +17,9 @@ import type {
   CategorySpatialLayout,
   ItemSpatialLayout,
 } from '@domain/project-types'
-import {
-  Badge,
-  Box,
-  Button,
-  HStack,
-  Input,
-  Stack,
-  Text,
-} from '@chakra-ui/react'
+import { Badge, Box, Button, HStack, Input, Text } from '@chakra-ui/react'
 import type { Selection } from '../store'
+import { localized } from '../../projects/localization'
 
 interface Props {
   project: GuideProject
@@ -46,6 +32,7 @@ interface Props {
   onRenameItem: (itemId: string, title: string) => void
   onDeleteItem: (itemId: string) => void
   isSaving: boolean
+  locale: string
 }
 
 export function StructurePanel({
@@ -59,6 +46,7 @@ export function StructurePanel({
   onRenameItem,
   onDeleteItem,
   isSaving,
+  locale,
 }: Props): JSX.Element {
   const stages = project.knowledge.stages
   const items = project.knowledge.items
@@ -77,30 +65,19 @@ export function StructurePanel({
       display="flex"
       flexDirection="column"
     >
-      <Box
-        px="4"
-        pt="3.5"
-        pb="2.5"
-        borderBottomWidth="1px"
-        borderColor="border"
-        flexShrink="0"
-      >
+      <Box px="4" pt="3.5" pb="2.5" borderBottomWidth="1px" borderColor="border" flexShrink="0">
         <Text className="eyebrow">Structure</Text>
         <HStack align="baseline" justify="space-between" mt="0.5">
           <Text fontSize="14px" fontWeight="600" color="ink" m="0">
             项目结构
           </Text>
-          <Text
-            className="mono"
-            fontSize="10px"
-            color="ink.faint"
-          >
+          <Text className="mono" fontSize="10px" color="ink.faint">
             {countCategories(stages)} cats · {Object.keys(items).length} items
           </Text>
         </HStack>
       </Box>
       <Box flex="1" overflow="auto" px="2" pt="1" pb="4">
-        {stages.map((stage) => (
+        {stages.map(stage => (
           <StageSection
             key={stage.key}
             stage={stage}
@@ -116,6 +93,7 @@ export function StructurePanel({
             onRenameItem={onRenameItem}
             onDeleteItem={onDeleteItem}
             isSaving={isSaving}
+            locale={locale}
           />
         ))}
       </Box>
@@ -137,6 +115,7 @@ interface StageSectionProps {
   onRenameItem: (itemId: string, title: string) => void
   onDeleteItem: (itemId: string) => void
   isSaving: boolean
+  locale: string
 }
 
 function StageSection({
@@ -153,12 +132,13 @@ function StageSection({
   onRenameItem,
   onDeleteItem,
   isSaving,
+  locale,
 }: StageSectionProps): JSX.Element {
   const [expanded, setExpanded] = useState(true)
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set())
 
   const toggleCat = (id: string) =>
-    setExpandedCats((s) => {
+    setExpandedCats(s => {
       const next = new Set(s)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -169,7 +149,7 @@ function StageSection({
     <Box mb="2">
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => setExpanded(v => !v)}
         data-interactive="true"
         className="icon-btn"
         style={{
@@ -189,7 +169,7 @@ function StageSection({
         }}
       >
         {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        <span>{stage.label}</span>
+        <span>{localized(stage.label, locale)}</span>
         <span
           className="mono"
           style={{
@@ -203,11 +183,11 @@ function StageSection({
       </button>
       {expanded && (
         <>
-          {stage.categories.map((cat) => {
+          {stage.categories.map(cat => {
             const layout = catLayouts[cat.id]
             const isSelected = selection?.kind === 'category' && selection.id === cat.id
             const catExpanded = expandedCats.has(cat.id)
-            const catItems = cat.itemIds.map((id) => items[id]).filter(Boolean)
+            const catItems = cat.itemIds.map(id => items[id]).filter(Boolean)
             return (
               <Box key={cat.id} mb="0.5">
                 <CategoryRow
@@ -218,9 +198,10 @@ function StageSection({
                   hasHtmlScene={cat.experience.kind === 'html-scene'}
                   onToggle={() => toggleCat(cat.id)}
                   onSelect={() => onSelect({ kind: 'category', id: cat.id })}
-                  onRename={(t) => onRenameCategory(cat.id, t)}
+                  onRename={t => onRenameCategory(cat.id, t)}
                   onDelete={() => onDeleteCategory(cat.id)}
                   isSaving={isSaving}
+                  locale={locale}
                 />
                 {catExpanded && (
                   <Box
@@ -231,10 +212,9 @@ function StageSection({
                     ml="3.5"
                     mt="0.5"
                   >
-                    {catItems.map((item) => {
+                    {catItems.map(item => {
                       const itemLayout = itemLayouts[item.id]
-                      const itemSelected =
-                        selection?.kind === 'item' && selection.id === item.id
+                      const itemSelected = selection?.kind === 'item' && selection.id === item.id
                       return (
                         <ItemRow
                           key={item.id}
@@ -243,8 +223,9 @@ function StageSection({
                           hasMarker={Boolean(itemLayout?.marker)}
                           hasFocusRect={Boolean(itemLayout?.focusRect)}
                           onSelect={() => onSelect({ kind: 'item', id: item.id })}
-                          onRename={(title) => onRenameItem(item.id, title)}
+                          onRename={title => onRenameItem(item.id, title)}
                           onDelete={() => onDeleteItem(item.id)}
+                          locale={locale}
                         />
                       )
                     })}
@@ -310,6 +291,7 @@ function CategoryRow({
   onRename,
   onDelete,
   isSaving,
+  locale,
 }: {
   cat: IndustryCategory
   isSelected: boolean
@@ -321,13 +303,15 @@ function CategoryRow({
   onRename: (t: string) => void
   onDelete: () => void
   isSaving: boolean
+  locale: string
 }): JSX.Element {
+  const title = localized(cat.title, locale)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(cat.title)
+  const [draft, setDraft] = useState(title)
 
   const commit = () => {
     const trimmed = draft.trim()
-    if (trimmed && trimmed !== cat.title) onRename(trimmed)
+    if (trimmed && trimmed !== title) onRename(trimmed)
     setEditing(false)
   }
 
@@ -376,10 +360,10 @@ function CategoryRow({
       <button
         type="button"
         onClick={onSelect}
-        onDoubleClick={(e) => {
+        onDoubleClick={e => {
           e.stopPropagation()
           setEditing(true)
-          setDraft(cat.title)
+          setDraft(title)
         }}
         data-interactive="true"
         style={{
@@ -399,9 +383,9 @@ function CategoryRow({
           <Input
             autoFocus
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={e => setDraft(e.target.value)}
             onBlur={commit}
-            onKeyDown={(e) => {
+            onKeyDown={e => {
               if (e.key === 'Enter') commit()
               if (e.key === 'Escape') setEditing(false)
             }}
@@ -413,16 +397,14 @@ function CategoryRow({
             bg="bg.overlay"
           />
         ) : (
-          cat.title
+          title
         )}
       </button>
       <Badge
         title={kindHint}
         variant="subtle"
         size="xs"
-        colorPalette={
-          hasHtmlScene ? 'green' : hasHotspot ? 'brand' : 'gray'
-        }
+        colorPalette={hasHtmlScene ? 'green' : hasHotspot ? 'brand' : 'gray'}
         fontFamily="mono"
         fontSize="9px"
         px="1.5"
@@ -460,6 +442,7 @@ function ItemRow({
   onSelect,
   onRename,
   onDelete,
+  locale,
 }: {
   item: IndustryItem
   selected: boolean
@@ -468,13 +451,15 @@ function ItemRow({
   onSelect: () => void
   onRename: (title: string) => void
   onDelete: () => void
+  locale: string
 }): JSX.Element {
+  const title = localized(item.title, locale)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(item.title)
+  const [draft, setDraft] = useState(title)
 
   const commit = () => {
     const trimmed = draft.trim()
-    if (trimmed && trimmed !== item.title) onRename(trimmed)
+    if (trimmed && trimmed !== title) onRename(trimmed)
     setEditing(false)
   }
 
@@ -496,18 +481,15 @@ function ItemRow({
       borderColor="transparent"
       my="0.5"
     >
-      <CircleDot
-        size={9}
-        color={hasMarker ? 'brand' : 'ink.faint'}
-      />
+      <CircleDot size={9} color={hasMarker ? 'brand' : 'ink.faint'} />
       <Box flex="1" minW="0">
         {editing ? (
           <Input
             autoFocus
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={e => setDraft(e.target.value)}
             onBlur={commit}
-            onKeyDown={(e) => {
+            onKeyDown={e => {
               if (e.key === 'Enter') commit()
               if (e.key === 'Escape') setEditing(false)
             }}
@@ -517,19 +499,19 @@ function ItemRow({
             borderColor="brand"
             borderRadius="xs"
             bg="bg.overlay"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           />
         ) : (
           <Text
             fontSize="12px"
             color="ink"
-            onDoubleClick={(e) => {
+            onDoubleClick={e => {
               e.stopPropagation()
               setEditing(true)
-              setDraft(item.title)
+              setDraft(title)
             }}
           >
-            {item.title}
+            {title}
           </Text>
         )}
       </Box>
@@ -549,7 +531,7 @@ function ItemRow({
       )}
       <button
         type="button"
-        onClick={(e) => {
+        onClick={e => {
           e.stopPropagation()
           onDelete()
         }}
