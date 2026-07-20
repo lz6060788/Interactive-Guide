@@ -1,0 +1,1288 @@
+{
+  "schemaVersion": "3.0.0",
+  "id": "memory-chip-industry-chain",
+  "title": {
+    "zh-CN": "存储芯片产业链",
+    "en-US": "Memory Chip Industry Chain"
+  },
+  "version": "0.1.0",
+  "localization": {
+    "defaultLocale": "zh-CN",
+    "supportedLocales": [
+      "zh-CN",
+      "en-US"
+    ]
+  },
+  "knowledge": {
+    "stages": [
+      {
+        "key": "upstream",
+        "label": {
+          "zh-CN": "上游",
+          "en-US": "Upstream"
+        },
+        "order": 1,
+        "categories": [
+          {
+            "id": "category-upstream-wafer-materials",
+            "title": {
+              "zh-CN": "晶圆制造材料",
+              "en-US": "Wafer Fabrication Materials"
+            },
+            "order": 0,
+            "itemIds": [
+              "item-semiconductor-wafers",
+              "item-photoresist-chemicals",
+              "item-electronic-specialty-gases",
+              "item-targets-precursors",
+              "item-cmp-materials"
+            ],
+            "experience": {
+              "kind": "panorama"
+            }
+          },
+          {
+            "id": "category-upstream-front-end-equipment",
+            "title": {
+              "zh-CN": "前道制造设备",
+              "en-US": "Front-End Manufacturing Equipment"
+            },
+            "order": 1,
+            "itemIds": [
+              "item-lithography-equipment",
+              "item-etch-equipment",
+              "item-thin-film-deposition-equipment",
+              "item-cleaning-cmp-equipment",
+              "item-metrology-inspection-equipment"
+            ],
+            "experience": {
+              "kind": "panorama"
+            }
+          },
+          {
+            "id": "category-upstream-packaging-test",
+            "title": {
+              "zh-CN": "封测设备与材料",
+              "en-US": "Packaging and Testing Equipment & Materials"
+            },
+            "order": 2,
+            "itemIds": [
+              "item-packaging-equipment",
+              "item-test-equipment",
+              "item-packaging-substrate-lead-materials"
+            ],
+            "experience": {
+              "kind": "panorama"
+            }
+          }
+        ]
+      },
+      {
+        "key": "midstream",
+        "label": {
+          "zh-CN": "中游",
+          "en-US": "Midstream"
+        },
+        "order": 2,
+        "categories": [
+          {
+            "id": "category-midstream-wafer-manufacturing",
+            "title": {
+              "zh-CN": "晶圆制造",
+              "en-US": "Wafer Manufacturing"
+            },
+            "order": 0,
+            "itemIds": [
+              "item-memory-wafer-manufacturing"
+            ],
+            "experience": {
+              "kind": "panorama"
+            }
+          },
+          {
+            "id": "category-midstream-memory-products",
+            "title": {
+              "zh-CN": "存储芯片产品",
+              "en-US": "Memory Chip Products"
+            },
+            "order": 1,
+            "itemIds": [
+              "item-dram",
+              "item-3d-nand-flash",
+              "item-nor-flash",
+              "item-eeprom"
+            ],
+            "experience": {
+              "kind": "panorama"
+            }
+          },
+          {
+            "id": "category-midstream-advanced-packaging",
+            "title": {
+              "zh-CN": "先进封装",
+              "en-US": "Advanced Packaging"
+            },
+            "order": 2,
+            "itemIds": [
+              "item-hbm-stacked-packaging",
+              "item-tsv-microbump-interconnect",
+              "item-silicon-interposer"
+            ],
+            "experience": {
+              "kind": "panorama"
+            }
+          },
+          {
+            "id": "category-midstream-memory-modules",
+            "title": {
+              "zh-CN": "模组与存储产品",
+              "en-US": "Memory Modules and Storage Products"
+            },
+            "order": 3,
+            "itemIds": [
+              "item-memory-module",
+              "item-ssd"
+            ],
+            "experience": {
+              "kind": "panorama"
+            }
+          }
+        ]
+      },
+      {
+        "key": "downstream",
+        "label": {
+          "zh-CN": "下游",
+          "en-US": "Downstream"
+        },
+        "order": 3,
+        "categories": [
+          {
+            "id": "category-downstream-compute-servers",
+            "title": {
+              "zh-CN": "算力与服务器",
+              "en-US": "Computing Infrastructure and Servers"
+            },
+            "order": 0,
+            "itemIds": [
+              "item-ai-server",
+              "item-data-center-storage"
+            ],
+            "experience": {
+              "kind": "panorama"
+            }
+          },
+          {
+            "id": "category-downstream-terminal-electronics",
+            "title": {
+              "zh-CN": "终端电子",
+              "en-US": "End-Device Electronics"
+            },
+            "order": 1,
+            "itemIds": [
+              "item-smartphone-ai-pc",
+              "item-automotive-industrial-control"
+            ],
+            "experience": {
+              "kind": "panorama"
+            }
+          }
+        ]
+      }
+    ],
+    "items": {
+      "item-semiconductor-wafers": {
+        "id": "item-semiconductor-wafers",
+        "categoryId": "category-upstream-wafer-materials",
+        "title": {
+          "zh-CN": "半导体硅片",
+          "en-US": "Semiconductor Wafers"
+        },
+        "description": {
+          "zh-CN": "存储晶圆制造的基础衬底，尺寸、洁净度和晶体缺陷水平会影响良率和成本。",
+          "en-US": "The base substrate for memory wafer fabrication; wafer size, cleanliness, and crystal defect levels directly affect yield and cost."
+        },
+        "order": 0
+      },
+      "item-photoresist-chemicals": {
+        "id": "item-photoresist-chemicals",
+        "categoryId": "category-upstream-wafer-materials",
+        "title": {
+          "zh-CN": "光刻胶与配套试剂",
+          "en-US": "Photoresists and Ancillary Chemicals"
+        },
+        "description": {
+          "zh-CN": "光刻图形转移所需的关键化学材料，分辨率、稳定性和配套显影清洗能力决定图形精度。",
+          "en-US": "Critical chemicals used in lithographic pattern transfer; resolution, stability, and compatible developing and cleaning processes determine pattern fidelity."
+        },
+        "order": 1
+      },
+      "item-electronic-specialty-gases": {
+        "id": "item-electronic-specialty-gases",
+        "categoryId": "category-upstream-wafer-materials",
+        "title": {
+          "zh-CN": "电子特气",
+          "en-US": "Electronic Specialty Gases"
+        },
+        "description": {
+          "zh-CN": "刻蚀、沉积和清洗中使用的高纯气体，纯度和供气稳定性直接关系到存储器多层结构的一致性。",
+          "en-US": "High-purity gases used in etching, deposition, and cleaning; gas purity and supply stability directly affect the consistency of multilayer memory structures."
+        },
+        "order": 2
+      },
+      "item-targets-precursors": {
+        "id": "item-targets-precursors",
+        "categoryId": "category-upstream-wafer-materials",
+        "title": {
+          "zh-CN": "靶材与前驱体",
+          "en-US": "Sputtering Targets and Precursors"
+        },
+        "description": {
+          "zh-CN": "形成金属互连、阻挡层和介质薄膜的重要材料，影响存储单元连接可靠性和薄膜质量。",
+          "en-US": "Key materials for forming metal interconnects, barrier layers, and dielectric films, affecting memory-cell connection reliability and film quality."
+        },
+        "order": 3
+      },
+      "item-cmp-materials": {
+        "id": "item-cmp-materials",
+        "categoryId": "category-upstream-wafer-materials",
+        "title": {
+          "zh-CN": "CMP抛光材料",
+          "en-US": "CMP Polishing Materials"
+        },
+        "description": {
+          "zh-CN": "化学机械平坦化所需耗材，决定多层堆叠结构表面平整度，是先进存储良率的重要支撑。",
+          "en-US": "Consumables for chemical mechanical planarization that determine surface flatness in multilayer stacks and support yields in advanced memory production."
+        },
+        "order": 4
+      },
+      "item-lithography-equipment": {
+        "id": "item-lithography-equipment",
+        "categoryId": "category-upstream-front-end-equipment",
+        "title": {
+          "zh-CN": "光刻设备",
+          "en-US": "Lithography Equipment"
+        },
+        "description": {
+          "zh-CN": "把电路图形投射到晶圆上的核心设备，决定存储芯片线宽、套刻精度和先进制程推进节奏。",
+          "en-US": "Core equipment that projects circuit patterns onto wafers, determining memory-chip feature size, overlay accuracy, and the pace of process-node advancement."
+        },
+        "order": 0
+      },
+      "item-etch-equipment": {
+        "id": "item-etch-equipment",
+        "categoryId": "category-upstream-front-end-equipment",
+        "title": {
+          "zh-CN": "刻蚀设备",
+          "en-US": "Etching Equipment"
+        },
+        "description": {
+          "zh-CN": "在晶圆上精确去除材料形成沟槽、孔洞和存储单元结构，3D NAND 层数提升会显著增加刻蚀难度。",
+          "en-US": "Precisely removes wafer material to form trenches, holes, and memory-cell structures; higher 3D NAND layer counts significantly increase etching complexity."
+        },
+        "order": 1
+      },
+      "item-thin-film-deposition-equipment": {
+        "id": "item-thin-film-deposition-equipment",
+        "categoryId": "category-upstream-front-end-equipment",
+        "title": {
+          "zh-CN": "薄膜沉积设备",
+          "en-US": "Thin-Film Deposition Equipment"
+        },
+        "description": {
+          "zh-CN": "在晶圆表面沉积介质、金属或阻挡层薄膜，薄膜均匀性决定多层存储结构的电学表现。",
+          "en-US": "Deposits dielectric, metal, or barrier films on wafer surfaces; film uniformity determines the electrical performance of multilayer memory structures."
+        },
+        "order": 2
+      },
+      "item-cleaning-cmp-equipment": {
+        "id": "item-cleaning-cmp-equipment",
+        "categoryId": "category-upstream-front-end-equipment",
+        "title": {
+          "zh-CN": "清洗与CMP设备",
+          "en-US": "Cleaning and CMP Equipment"
+        },
+        "description": {
+          "zh-CN": "在关键工序间去除颗粒、残留物并平坦化晶圆表面，是存储芯片提高良率的基础设备。",
+          "en-US": "Removes particles and residues between critical process steps and planarizes wafer surfaces, providing essential support for higher memory-chip yields."
+        },
+        "order": 3
+      },
+      "item-metrology-inspection-equipment": {
+        "id": "item-metrology-inspection-equipment",
+        "categoryId": "category-upstream-front-end-equipment",
+        "title": {
+          "zh-CN": "量检测设备",
+          "en-US": "Metrology and Inspection Equipment"
+        },
+        "description": {
+          "zh-CN": "在制造过程中检查缺陷、膜厚和关键尺寸，帮助晶圆厂及时纠偏并稳定良率。",
+          "en-US": "Inspects defects, film thickness, and critical dimensions during fabrication, enabling fabs to correct process drift and stabilize yields."
+        },
+        "order": 4
+      },
+      "item-packaging-equipment": {
+        "id": "item-packaging-equipment",
+        "categoryId": "category-upstream-packaging-test",
+        "title": {
+          "zh-CN": "封装设备",
+          "en-US": "Packaging Equipment"
+        },
+        "description": {
+          "zh-CN": "后道封装中固晶、键合、塑封、切割减薄和先进封装互连所需设备；HBM、2.5D/3D封装和Chiplet提升封装复杂度，带动高精度贴装、混合键合、切割减薄等设备需求。",
+          "en-US": "Equipment for die attach, bonding, molding, dicing, thinning, and advanced interconnects. HBM, 2.5D/3D packaging, and chiplets increase complexity and demand for high-precision placement, hybrid bonding, dicing, and thinning tools."
+        },
+        "order": 0
+      },
+      "item-test-equipment": {
+        "id": "item-test-equipment",
+        "categoryId": "category-upstream-packaging-test",
+        "title": {
+          "zh-CN": "测试设备",
+          "en-US": "Test Equipment"
+        },
+        "description": {
+          "zh-CN": "对晶圆、裸片和封装后的存储器进行速度、容量和可靠性筛选，是出货质量控制的关键环节。",
+          "en-US": "Screens wafers, bare dies, and packaged memory for speed, capacity, and reliability, serving as a critical gate for shipment quality."
+        },
+        "order": 1
+      },
+      "item-packaging-substrate-lead-materials": {
+        "id": "item-packaging-substrate-lead-materials",
+        "categoryId": "category-upstream-packaging-test",
+        "title": {
+          "zh-CN": "封装基板与引线材料",
+          "en-US": "Packaging Substrates and Interconnect Materials"
+        },
+        "description": {
+          "zh-CN": "承载芯片电连接和机械支撑的基础材料，先进存储封装对基板层数、线宽和热稳定性要求更高。",
+          "en-US": "Foundational materials for chip electrical connections and mechanical support; advanced memory packaging demands more substrate layers, finer lines, and greater thermal stability."
+        },
+        "order": 2
+      },
+      "item-memory-wafer-manufacturing": {
+        "id": "item-memory-wafer-manufacturing",
+        "categoryId": "category-midstream-wafer-manufacturing",
+        "title": {
+          "zh-CN": "存储晶圆制造",
+          "en-US": "Memory Wafer Manufacturing"
+        },
+        "description": {
+          "zh-CN": "把材料、设备和工艺整合成 DRAM、NAND 等晶圆，是存储芯片产能、良率和成本的核心环节。",
+          "en-US": "Integrates materials, equipment, and processes to produce DRAM, NAND, and other memory wafers, forming the core of industry capacity, yield, and cost."
+        },
+        "order": 0
+      },
+      "item-dram": {
+        "id": "item-dram",
+        "categoryId": "category-midstream-memory-products",
+        "title": {
+          "zh-CN": "DRAM",
+          "en-US": "DRAM"
+        },
+        "description": {
+          "zh-CN": "动态随机存取存储器承担运行数据的临时存放，价格周期、制程和产能利用率对行业景气影响很大。",
+          "en-US": "Dynamic random-access memory temporarily stores active data; pricing cycles, process technology, and capacity utilization strongly influence industry conditions."
+        },
+        "order": 0
+      },
+      "item-3d-nand-flash": {
+        "id": "item-3d-nand-flash",
+        "categoryId": "category-midstream-memory-products",
+        "title": {
+          "zh-CN": "3D NAND Flash",
+          "en-US": "3D NAND Flash"
+        },
+        "description": {
+          "zh-CN": "通过垂直堆叠提升容量密度的非易失存储，层数、良率和成本决定 SSD 与终端存储竞争力。",
+          "en-US": "Non-volatile memory that increases density through vertical stacking; layer count, yield, and cost determine the competitiveness of SSDs and device storage."
+        },
+        "order": 1
+      },
+      "item-nor-flash": {
+        "id": "item-nor-flash",
+        "categoryId": "category-midstream-memory-products",
+        "title": {
+          "zh-CN": "NOR Flash",
+          "en-US": "NOR Flash"
+        },
+        "description": {
+          "zh-CN": "适合代码存储和快速随机读取的闪存，常用于启动程序、物联网和汽车电子等场景。",
+          "en-US": "Flash memory suited to code storage and fast random reads, commonly used for boot code, IoT devices, and automotive electronics."
+        },
+        "order": 2
+      },
+      "item-eeprom": {
+        "id": "item-eeprom",
+        "categoryId": "category-midstream-memory-products",
+        "title": {
+          "zh-CN": "EEPROM",
+          "en-US": "EEPROM"
+        },
+        "description": {
+          "zh-CN": "可电擦写的小容量非易失存储器，适合保存配置、身份识别和校准参数等小数据。",
+          "en-US": "Electrically erasable, low-capacity non-volatile memory suited to storing configuration, identification, and calibration data."
+        },
+        "order": 3
+      },
+      "item-hbm-stacked-packaging": {
+        "id": "item-hbm-stacked-packaging",
+        "categoryId": "category-midstream-advanced-packaging",
+        "title": {
+          "zh-CN": "HBM堆叠封装",
+          "en-US": "HBM Stacked Packaging"
+        },
+        "description": {
+          "zh-CN": "把多层 DRAM 通过垂直互连堆叠在一起，为 AI 加速器提供高带宽、低延迟的近端内存。",
+          "en-US": "Stacks multiple DRAM dies through vertical interconnects to provide AI accelerators with high-bandwidth, low-latency local memory."
+        },
+        "order": 0
+      },
+      "item-tsv-microbump-interconnect": {
+        "id": "item-tsv-microbump-interconnect",
+        "categoryId": "category-midstream-advanced-packaging",
+        "title": {
+          "zh-CN": "TSV与微凸块互连",
+          "en-US": "TSV and Micro-Bump Interconnects"
+        },
+        "description": {
+          "zh-CN": "穿硅通孔和微凸块把多层裸片垂直连接，是 HBM 带宽、功耗和封装良率的关键结构。",
+          "en-US": "Through-silicon vias and micro-bumps vertically connect multiple dies and are critical to HBM bandwidth, power consumption, and packaging yield."
+        },
+        "order": 1
+      },
+      "item-silicon-interposer": {
+        "id": "item-silicon-interposer",
+        "categoryId": "category-midstream-advanced-packaging",
+        "title": {
+          "zh-CN": "硅中介层",
+          "en-US": "Silicon Interposers"
+        },
+        "description": {
+          "zh-CN": "在 HBM 与 GPU 等芯片之间承担高密度布线和信号转接，是 2.5D 封装的重要连接平台。",
+          "en-US": "Provides high-density routing and signal redistribution between HBM and processors such as GPUs, serving as a key interconnect platform for 2.5D packaging."
+        },
+        "order": 2
+      },
+      "item-memory-module": {
+        "id": "item-memory-module",
+        "categoryId": "category-midstream-memory-modules",
+        "title": {
+          "zh-CN": "内存模组",
+          "en-US": "Memory Modules"
+        },
+        "description": {
+          "zh-CN": "把 DRAM 颗粒、PCB 和电源管理等组合成可插拔内存条，是 PC 与服务器扩容的主要形态。",
+          "en-US": "Combines DRAM chips, a PCB, and power-management components into pluggable modules, the primary form of memory expansion for PCs and servers."
+        },
+        "order": 0
+      },
+      "item-ssd": {
+        "id": "item-ssd",
+        "categoryId": "category-midstream-memory-modules",
+        "title": {
+          "zh-CN": "固态硬盘SSD",
+          "en-US": "Solid-State Drives (SSDs)"
+        },
+        "description": {
+          "zh-CN": "由 NAND 颗粒、主控和固件组成的高速存储产品，容量、寿命和单位成本决定终端体验。",
+          "en-US": "High-speed storage products built from NAND flash, controllers, and firmware; capacity, endurance, and cost per unit determine the end-user experience."
+        },
+        "order": 1
+      },
+      "item-ai-server": {
+        "id": "item-ai-server",
+        "categoryId": "category-downstream-compute-servers",
+        "title": {
+          "zh-CN": "AI服务器",
+          "en-US": "AI Servers"
+        },
+        "description": {
+          "zh-CN": "大模型训练和推理的硬件载体，对 HBM、DDR 和 SSD 的带宽、容量和可靠性提出更高要求。",
+          "en-US": "Hardware platforms for training and running large AI models, imposing higher bandwidth, capacity, and reliability requirements on HBM, DDR, and SSDs."
+        },
+        "order": 0
+      },
+      "item-data-center-storage": {
+        "id": "item-data-center-storage",
+        "categoryId": "category-downstream-compute-servers",
+        "title": {
+          "zh-CN": "数据中心存储",
+          "en-US": "Data Center Storage"
+        },
+        "description": {
+          "zh-CN": "面向云计算和企业数据的集中存储系统，推动企业级 SSD、服务器内存和高可靠存储方案升级。",
+          "en-US": "Centralized storage systems for cloud computing and enterprise data that drive upgrades in enterprise SSDs, server memory, and high-reliability storage solutions."
+        },
+        "order": 1
+      },
+      "item-smartphone-ai-pc": {
+        "id": "item-smartphone-ai-pc",
+        "categoryId": "category-downstream-terminal-electronics",
+        "title": {
+          "zh-CN": "智能手机与AI PC",
+          "en-US": "Smartphones and AI PCs"
+        },
+        "description": {
+          "zh-CN": "消费终端同时使用运行内存和闪存，AI 功能、影像和本地模型会提升容量和速度需求。",
+          "en-US": "Consumer devices use both working memory and flash storage; AI features, imaging, and on-device models increase capacity and performance requirements."
+        },
+        "order": 0
+      },
+      "item-automotive-industrial-control": {
+        "id": "item-automotive-industrial-control",
+        "categoryId": "category-downstream-terminal-electronics",
+        "title": {
+          "zh-CN": "汽车电子与工业控制",
+          "en-US": "Automotive Electronics and Industrial Control"
+        },
+        "description": {
+          "zh-CN": "车规和工业场景要求存储芯片长期稳定、耐温和可追溯，带动 NOR、EEPROM 和嵌入式存储需求。",
+          "en-US": "Automotive and industrial applications require long-term stability, temperature tolerance, and traceability, driving demand for NOR flash, EEPROM, and embedded storage."
+        },
+        "order": 1
+      }
+    }
+  },
+  "assets": {
+    "byId": {
+      "asset-panorama": {
+        "id": "asset-panorama",
+        "kind": "image",
+        "sourcePath": "images/asset-panorama/image.png",
+        "mimeType": "image/png",
+        "width": 8192,
+        "height": 4096,
+        "sha256": "8a50999fa534b32b951270faa2467f3c2f5a171e3df349f35eed7a637dd4dc4a",
+        "size": 2532580
+      }
+    }
+  },
+  "panorama": {
+    "assetId": "asset-panorama",
+    "coordinateSpace": "normalized",
+    "cameraBounds": {
+      "minZoom": 1,
+      "maxZoom": 4
+    },
+    "initialViewport": {
+      "centerX": 0.5,
+      "centerY": 0.5,
+      "zoom": 1
+    },
+    "categories": {
+      "category-upstream-wafer-materials": {
+        "viewport": {
+          "centerX": 0.018008934891463935,
+          "centerY": 0.5173413211193836,
+          "zoom": 1.7667985894653404
+        },
+        "hotspot": {
+          "x": 0.080088,
+          "y": 0.570175
+        }
+      },
+      "category-upstream-front-end-equipment": {
+        "viewport": {
+          "centerX": 0.2766575348562176,
+          "centerY": 0.2775576592881945,
+          "zoom": 1.8994088658882164
+        },
+        "hotspot": {
+          "x": 0.214482,
+          "y": 0.346491
+        }
+      },
+      "category-upstream-packaging-test": {
+        "viewport": {
+          "centerX": 0.30246092128804297,
+          "centerY": 0.778299789940751,
+          "zoom": 2.956350638423202
+        },
+        "hotspot": {
+          "x": 0.223807,
+          "y": 0.764254
+        }
+      },
+      "category-midstream-wafer-manufacturing": {
+        "viewport": {
+          "centerX": 0.555129,
+          "centerY": 0.307018,
+          "zoom": 3.6
+        },
+        "hotspot": {
+          "x": 0.555129,
+          "y": 0.307018
+        }
+      },
+      "category-midstream-memory-products": {
+        "viewport": {
+          "centerX": 0.648382,
+          "centerY": 0.48136,
+          "zoom": 3.6
+        },
+        "hotspot": {
+          "x": 0.6474857289458926,
+          "y": 0.5094127549214882
+        }
+      },
+      "category-midstream-advanced-packaging": {
+        "viewport": {
+          "centerX": 0.5778583368303154,
+          "centerY": 0.6283611115742678,
+          "zoom": 2.017245918965293
+        },
+        "hotspot": {
+          "x": 0.526056,
+          "y": 0.656798
+        }
+      },
+      "category-midstream-memory-modules": {
+        "viewport": {
+          "centerX": 0.525507,
+          "centerY": 0.830044,
+          "zoom": 3.6
+        },
+        "hotspot": {
+          "x": 0.525507,
+          "y": 0.830044
+        }
+      },
+      "category-downstream-compute-servers": {
+        "viewport": {
+          "centerX": 0.8665035154167251,
+          "centerY": 0.2674376198907068,
+          "zoom": 1.9823331901102716
+        },
+        "hotspot": {
+          "x": 0.851892,
+          "y": 0.26864
+        }
+      },
+      "category-downstream-terminal-electronics": {
+        "viewport": {
+          "centerX": 0.783873,
+          "centerY": 0.676535,
+          "zoom": 3.6
+        },
+        "hotspot": {
+          "x": 0.783873,
+          "y": 0.676535
+        }
+      }
+    },
+    "items": {
+      "item-semiconductor-wafers": {
+        "marker": {
+          "x": 0.058325,
+          "y": 0.577199
+        },
+        "focusRect": {
+          "x": 0.0053691275167785275,
+          "y": 0.5104651100041948,
+          "width": 0.09114089863412334,
+          "height": 0.15494412620595643
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-photoresist-chemicals": {
+        "marker": {
+          "x": 0.039752,
+          "y": 0.506189
+        },
+        "focusRect": {
+          "x": 0.005369127516778521,
+          "y": 0.4090301086933724,
+          "width": 0.05176728319001678,
+          "height": 0.18715889130662755
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-electronic-specialty-gases": {
+        "marker": {
+          "x": 0.061909,
+          "y": 0.388274
+        },
+        "focusRect": {
+          "x": 0.024161073825503344,
+          "y": 0.30543272745385897,
+          "width": 0.07055931142512585,
+          "height": 0.2515884215079699
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-targets-precursors": {
+        "marker": {
+          "x": 0.047898,
+          "y": 0.730293
+        },
+        "focusRect": {
+          "x": 0.008053650311975663,
+          "y": 0.6492416550964764,
+          "width": 0.07592835701552014,
+          "height": 0.1388365798028524
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-cmp-materials": {
+        "marker": {
+          "x": 0.135549,
+          "y": 0.523779
+        },
+        "focusRect": {
+          "x": 0.08013507513632549,
+          "y": 0.4391481275167786,
+          "width": 0.08487693018561243,
+          "height": 0.1585234899328859
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-lithography-equipment": {
+        "marker": {
+          "x": 0.178886,
+          "y": 0.303583
+        },
+        "focusRect": {
+          "x": 0.15121259461514264,
+          "y": 0.23863903764681207,
+          "width": 0.058031374528104,
+          "height": 0.2032662738569631
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-etch-equipment": {
+        "marker": {
+          "x": 0.23493,
+          "y": 0.357655
+        },
+        "focusRect": {
+          "x": 0.2036771489618288,
+          "y": 0.30523889261744974,
+          "width": 0.05624161073825504,
+          "height": 0.1209395973154363
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-thin-film-deposition-equipment": {
+        "marker": {
+          "x": 0.256435,
+          "y": 0.251466
+        },
+        "focusRect": {
+          "x": 0.23055127647860738,
+          "y": 0.17399393689702172,
+          "width": 0.04639815567323824,
+          "height": 0.16389278130243293
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-cleaning-cmp-equipment": {
+        "marker": {
+          "x": 0.294558,
+          "y": 0.162215
+        },
+        "focusRect": {
+          "x": 0.27314860402684565,
+          "y": 0.0865327006868708,
+          "width": 0.04460855573615766,
+          "height": 0.19431761876048656
+        },
+        "viewportOverride": {
+          "centerX": 0.33661277847251364,
+          "centerY": 0.2614501948114746,
+          "zoom": 1.9124107252527922
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-metrology-inspection-equipment": {
+        "marker": {
+          "x": 0.32167574658012993,
+          "y": 0.09185943844233843
+        },
+        "focusRect": {
+          "x": 0.30369084964869963,
+          "y": 0.02393737383336815,
+          "width": 0.03834446439807049,
+          "height": 0.17932890002359486
+        },
+        "viewportOverride": {
+          "centerX": 0.3495881563169976,
+          "centerY": 0.1800184001648722,
+          "zoom": 2.723345930337945
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-packaging-equipment": {
+        "marker": {
+          "x": 0.170414,
+          "y": 0.811726
+        },
+        "focusRect": {
+          "x": 0.1445303584049916,
+          "y": 0.7288848913066275,
+          "width": 0.06876954763527687,
+          "height": 0.17105150875629221
+        },
+        "viewportOverride": {
+          "centerX": 0.22762867776204798,
+          "centerY": 0.8004475472784423,
+          "zoom": 2.5197305022135685
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-test-equipment": {
+        "marker": {
+          "x": 0.27957,
+          "y": 0.75114
+        },
+        "focusRect": {
+          "x": 0.24921203085675334,
+          "y": 0.6951445288905201,
+          "width": 0.05355704697986574,
+          "height": 0.1119909422189595
+        },
+        "viewportOverride": {
+          "centerX": 0.31734067492739515,
+          "centerY": 0.734681111921636,
+          "zoom": 2.23271283758308
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-packaging-substrate-lead-materials": {
+        "marker": {
+          "x": 0.256109,
+          "y": 0.858632
+        },
+        "focusRect": {
+          "x": 0.22664591275167784,
+          "y": 0.8169541476510067,
+          "width": 0.054451846948406074,
+          "height": 0.07440721345427864
+        },
+        "viewportOverride": {
+          "centerX": 0.30246092128804297,
+          "centerY": 0.778299789940751,
+          "zoom": 2.956350638423202
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-memory-wafer-manufacturing": {
+        "marker": {
+          "x": 0.5529535543466864,
+          "y": 0.3112355999370806
+        },
+        "focusRect": {
+          "x": 0.5172264576866611,
+          "y": 0.24987116516359065,
+          "width": 0.06519018390834733,
+          "height": 0.12809832476929525
+        },
+        "viewportOverride": {
+          "centerX": 0.5717455006554112,
+          "centerY": 0.2951283812395134,
+          "zoom": 3.6
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-dram": {
+        "marker": {
+          "x": 0.475073,
+          "y": 0.506189
+        },
+        "focusRect": {
+          "x": 0.45366360402684563,
+          "y": 0.42871701882340607,
+          "width": 0.04550335570469796,
+          "height": 0.14599547110947986
+        },
+        "viewportOverride": {
+          "centerX": 0.5019186375838927,
+          "centerY": 0.4990301086933724,
+          "zoom": 3.6
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-3d-nand-flash": {
+        "marker": {
+          "x": 0.546432,
+          "y": 0.50684
+        },
+        "focusRect": {
+          "x": 0.5196534765100671,
+          "y": 0.4490547651006711,
+          "width": 0.054451846948406074,
+          "height": 0.10841174234479861
+        },
+        "viewportOverride": {
+          "centerX": 0.5589599368970218,
+          "centerY": 0.4871530898699662,
+          "zoom": 3.6
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-nor-flash": {
+        "marker": {
+          "x": 0.617139,
+          "y": 0.506189
+        },
+        "focusRect": {
+          "x": 0.5903604765100671,
+          "y": 0.44124503764681205,
+          "width": 0.0356599006396813,
+          "height": 0.1066218147021813
+        },
+        "viewportOverride": {
+          "centerX": 0.6381650194278408,
+          "centerY": 0.48919299879113065,
+          "zoom": 3.2074949643062967
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-eeprom": {
+        "marker": {
+          "x": 0.6705040725146814,
+          "y": 0.505702236210151
+        },
+        "focusRect": {
+          "x": 0.6419357852348995,
+          "y": 0.42644065509647655,
+          "width": 0.05892617449664431,
+          "height": 0.13704681601300323
+        },
+        "viewportOverride": {
+          "centerX": 0.6991393919620386,
+          "centerY": 0.48780525372273487,
+          "zoom": 3.6
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-hbm-stacked-packaging": {
+        "marker": {
+          "x": 0.535679,
+          "y": 0.677524
+        },
+        "focusRect": {
+          "x": 0.5097953584049917,
+          "y": 0.6197386012479027,
+          "width": 0.050872483221476444,
+          "height": 0.0994632511010905
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-tsv-microbump-interconnect": {
+        "marker": {
+          "x": 0.475399,
+          "y": 0.605212
+        },
+        "focusRect": {
+          "x": 0.46114841340708895,
+          "y": 0.5581651839869965,
+          "width": 0.03923942821937923,
+          "height": 0.11736023358850661
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-silicon-interposer": {
+        "marker": {
+          "x": 0.609645,
+          "y": 0.631922
+        },
+        "focusRect": {
+          "x": 0.5810767127202182,
+          "y": 0.5705574013737417,
+          "width": 0.049082883284395945,
+          "height": 0.13167785234899337
+        },
+        "viewportOverride": {
+          "centerX": 0.6190216751010786,
+          "centerY": 0.619412456477791,
+          "zoom": 2.017245918965293
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-memory-module": {
+        "marker": {
+          "x": 0.4402136362730705,
+          "y": 0.8358381086933722
+        },
+        "focusRect": {
+          "x": 0.3946431664744128,
+          "y": 0.7762634377097314,
+          "width": 0.08219236642722313,
+          "height": 0.10125268718540298
+        },
+        "viewportOverride": {
+          "centerX": 0.4736395885081679,
+          "centerY": 0.8047801691980099,
+          "zoom": 2.881409393687623
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-ssd": {
+        "marker": {
+          "x": 0.610297,
+          "y": 0.842997
+        },
+        "focusRect": {
+          "x": 0.5674110939597315,
+          "y": 0.763735255033557,
+          "width": 0.09203582149224002,
+          "height": 0.12272936110528526
+        },
+        "viewportOverride": {
+          "centerX": 0.6432451106872785,
+          "centerY": 0.8057361799991845,
+          "zoom": 2.8384946143344085
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-ai-server": {
+        "marker": {
+          "x": 0.7534752287471671,
+          "y": 0.21740014362142618
+        },
+        "focusRect": {
+          "x": 0.7239420813001147,
+          "y": 0.13262957317009222,
+          "width": 0.06071585636010904,
+          "height": 0.17463079055683728
+        },
+        "viewportOverride": {
+          "centerX": 0.8358201123483848,
+          "centerY": 0.2674376198907068,
+          "zoom": 1.9823331901102716
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-data-center-storage": {
+        "marker": {
+          "x": 0.851092,
+          "y": 0.251466
+        },
+        "focusRect": {
+          "x": 0.8135753034028942,
+          "y": 0.161466,
+          "width": 0.06250545629718965,
+          "height": 0.22832214765100672
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-smartphone-ai-pc": {
+        "marker": {
+          "x": 0.785272,
+          "y": 0.824756
+        },
+        "focusRect": {
+          "x": 0.6931690644138004,
+          "y": 0.5844205933829697,
+          "width": 0.1385682872797819,
+          "height": 0.3267560428901006
+        },
+        "viewportOverride": {
+          "centerX": 0.8233498964989399,
+          "centerY": 0.6859601128850905,
+          "zoom": 1.8122835784079447
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      },
+      "item-automotive-industrial-control": {
+        "marker": {
+          "x": 0.9032738711723993,
+          "y": 0.6725357611682046
+        },
+        "focusRect": {
+          "x": 0.861431712720218,
+          "y": 0.6093809071937912,
+          "width": 0.06966442953020138,
+          "height": 0.1298882524119131
+        },
+        "viewportOverride": {
+          "centerX": 0.9199068887683659,
+          "centerY": 0.6440792085816618,
+          "zoom": 2.8949525061115784
+        },
+        "callout": {
+          "markerPosition": "top",
+          "markerGapPx": 6
+        }
+      }
+    }
+  },
+  "scenes": [],
+  "navigation": {
+    "routes": []
+  },
+  "products": {
+    "atlas": {
+      "enabled": true,
+      "viewport": {
+        "width": 375,
+        "height": 808
+      },
+      "theme": {
+        "hotspotVariant": "default",
+        "calloutVariant": "classic",
+        "calloutMinZoom": 1.7
+      },
+      "chrome": {
+        "showToolbar": true,
+        "showZoomIndicator": true,
+        "showHints": true
+      },
+      "interaction": {
+        "wheelZoom": true,
+        "dragPan": true,
+        "pinchZoom": true,
+        "resetCameraEnabled": true
+      },
+      "categoryIds": [
+        "category-upstream-wafer-materials",
+        "category-upstream-front-end-equipment",
+        "category-upstream-packaging-test",
+        "category-midstream-wafer-manufacturing",
+        "category-midstream-memory-products",
+        "category-midstream-advanced-packaging",
+        "category-midstream-memory-modules",
+        "category-downstream-compute-servers",
+        "category-downstream-terminal-electronics"
+      ],
+      "hintText": {
+        "zh-CN": "拖动或缩放探索全景图",
+        "en-US": "Drag or zoom to explore the panorama"
+      }
+    },
+    "catalog": {
+      "enabled": true,
+      "viewport": {
+        "width": 375,
+        "height": 808
+      },
+      "theme": {
+        "listDensity": "comfortable",
+        "focusVariant": "rect"
+      },
+      "chrome": {},
+      "interaction": {
+        "listActivation": "center-nearest",
+        "markerActivation": true,
+        "viewportAnimationMs": 360
+      },
+      "stageOrder": [
+        "upstream",
+        "midstream",
+        "downstream"
+      ],
+      "hintText": {
+        "zh-CN": "点击或滑动文字查看简介",
+        "en-US": "Tap or swipe through the text to view details"
+      },
+      "atlasLaunchUrl": "http://o.thsi.cn/datav.narrative-vision/interactive-guide/memory-chip-industry-chain-atlas/0.1.0/index.html"
+    }
+  },
+  "integrations": {
+    "analytics": {
+      "enabled": true,
+      "provider": "weblog",
+      "appKey": "ce19ea099b",
+      "pageType": "visindustry",
+      "name": "存储芯片产业链",
+      "defaultSource": "industry"
+    },
+    "share": {
+      "enabled": true,
+      "title": {
+        "zh-CN": "存储芯片：长协锁量确立，行业景气上行",
+        "en-US": "Memory Chips: Long-Term Supply Deals Signal an Industry Upcycle"
+      },
+      "description": {
+        "zh-CN": "云厂商提前锁定供给，存储大厂议价能力增强。一键查看从设计到封测的核心标的。",
+        "en-US": "Cloud providers are securing supply in advance, strengthening leading memory vendors' pricing power. Explore the key segments from manufacturing materials to packaging and testing."
+      },
+      "imageAssetId": "asset-panorama"
+    }
+  },
+  "metadata": {
+    "createdAt": "2026-07-15T08:11:13.839Z",
+    "updatedAt": "2026-07-20T11:40:44.863Z",
+    "revision": 24,
+    "schemaVersion": "3.0.0"
+  }
+}
