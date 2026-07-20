@@ -37,6 +37,8 @@ export type CatalogListener = (event: CatalogEvent) => void
 export interface CatalogRuntimeOptions {
   assets: CatalogRuntimeAssetLoader
   listeners?: CatalogListener[]
+  /** Localized item title used to derive the initial stage/category/item selection. */
+  initialItemTitle?: string
 }
 
 export class CatalogRuntime {
@@ -78,6 +80,10 @@ export class CatalogRuntime {
 
     const imgUrl = this.opts.assets.resolveUrl(this.manifest.panorama.url)
     const image = await this.opts.assets.loadImage(imgUrl)
+    const initialSelection = resolveCatalogInitialSelection(
+      this.manifest,
+      this.opts.initialItemTitle,
+    )
     this.scene = new CatalogScene({
       root: this.mountedEl,
       manifest: this.manifest,
@@ -86,6 +92,7 @@ export class CatalogRuntime {
         width: image.naturalWidth || this.manifest.config.viewport.width,
         height: image.naturalHeight || this.manifest.config.viewport.height,
       },
+      initialSelection,
       onSelectionChange: selection => this.handleSceneSelection(selection),
       onAtlasLaunch: url => this.emit({ type: 'atlaslaunch', url }),
     })
@@ -122,6 +129,10 @@ export class CatalogRuntime {
 
   selectStage(stageKey: 'upstream' | 'midstream' | 'downstream'): void {
     this.scene?.selectStage(stageKey)
+  }
+
+  getSelection(): CatalogSceneSelection | null {
+    return this.scene?.getSelection() ?? null
   }
 
   private handleSceneSelection(selection: CatalogSceneSelection): void {
@@ -198,6 +209,25 @@ export class CatalogRuntime {
 
   private emit(event: CatalogEvent): void {
     for (const l of this.listeners) l(event)
+  }
+}
+
+export function resolveCatalogInitialSelection(
+  manifest: CatalogManifest,
+  localizedItemTitle: string | undefined,
+): CatalogSceneSelection | undefined {
+  const requestedTitle = localizedItemTitle?.trim().normalize('NFC')
+  if (!requestedTitle) return undefined
+  const item = manifest.items.find(entry => entry.title.trim().normalize('NFC') === requestedTitle)
+  if (!item) return undefined
+  const stage = manifest.stages.find(entry =>
+    entry.categories.some(category => category.id === item.categoryId),
+  )
+  if (!stage) return undefined
+  return {
+    stageKey: stage.key,
+    categoryId: item.categoryId,
+    itemId: item.id,
   }
 }
 

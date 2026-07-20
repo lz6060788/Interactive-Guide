@@ -21,6 +21,7 @@ export async function bootstrapCatalogProduct(
     navigatorLanguages: navigator.languages,
   })
   const manifest = resolveCatalogManifest(sourceManifest, locale)
+  const initialItemTitle = new URLSearchParams(window.location.search).get('focus') ?? undefined
   document.documentElement.lang = locale
   document.title = manifest.projectTitle
   const { shell, runtimeMount } = createShellFrame(app)
@@ -62,6 +63,7 @@ export async function bootstrapCatalogProduct(
   })
 
   runtime = new CatalogRuntime({
+    initialItemTitle,
     assets: {
       resolveUrl: url => assetLoader.resolveUrl(url),
       loadImage: url => assetLoader.loadImage(url),

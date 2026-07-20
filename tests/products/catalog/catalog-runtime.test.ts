@@ -6,6 +6,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   CatalogRuntime,
+  resolveCatalogInitialSelection,
   type CatalogRuntimeAssetLoader,
   type CatalogEvent,
 } from '../../../src/products/catalog/runtime/catalog-runtime.js'
@@ -94,6 +95,35 @@ function minimalManifest(): CatalogManifest {
   }
 }
 
+function manifestWithDram(): CatalogManifest {
+  const manifest = minimalManifest()
+  manifest.stages.push({
+    key: 'midstream',
+    label: '中游',
+    order: 2,
+    categories: [
+      {
+        id: 'cat-memory-products',
+        title: '存储芯片产品',
+        order: 0,
+        itemIds: ['item-dram'],
+        experience: { kind: 'panorama' },
+        viewport: { centerX: 0.65, centerY: 0.5, zoom: 3 },
+      },
+    ],
+  })
+  manifest.items.push({
+    id: 'item-dram',
+    categoryId: 'cat-memory-products',
+    title: 'DRAM',
+    description: 'Dynamic random-access memory',
+    order: 0,
+    marker: { x: 0.6, y: 0.5 },
+    focusRect: { x: 0.55, y: 0.4, width: 0.1, height: 0.2 },
+  })
+  return manifest
+}
+
 class FakeEl {
   children: FakeEl[] = []
   dataset: Record<string, string | undefined> = {}
@@ -166,6 +196,33 @@ test('CatalogRuntime.loadManifest + mount creates the complete catalog scene', a
     sceneChildren.some(child => child.dataset.testid === 'catalog-atlas-launch'),
     'legacy-compatible Atlas entry remains visible before a URL is configured',
   )
+  rt.destroy()
+})
+
+test('resolveCatalogInitialSelection locates an item and derives its stage and category', () => {
+  assert.deepEqual(resolveCatalogInitialSelection(manifestWithDram(), ' DRAM '), {
+    stageKey: 'midstream',
+    categoryId: 'cat-memory-products',
+    itemId: 'item-dram',
+  })
+  const chinese = minimalManifest()
+  chinese.items[0].title = '半导体硅片'
+  assert.equal(resolveCatalogInitialSelection(chinese, '半导体硅片')?.itemId, 'item-1')
+  const english = minimalManifest()
+  english.items[0].title = 'Semiconductor Wafers'
+  assert.equal(resolveCatalogInitialSelection(english, 'Semiconductor Wafers')?.itemId, 'item-1')
+  assert.equal(resolveCatalogInitialSelection(manifestWithDram(), 'Unknown item'), undefined)
+})
+
+test('CatalogRuntime mounts with the URL-selected item highlighted', async () => {
+  const rt = new CatalogRuntime({ assets: makeLoader(), initialItemTitle: 'DRAM' })
+  rt.loadManifest(manifestWithDram())
+  await rt.mount(new FakeEl() as unknown as HTMLElement)
+  assert.deepEqual(rt.getSelection(), {
+    stageKey: 'midstream',
+    categoryId: 'cat-memory-products',
+    itemId: 'item-dram',
+  })
   rt.destroy()
 })
 

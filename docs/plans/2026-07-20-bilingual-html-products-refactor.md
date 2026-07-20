@@ -244,6 +244,13 @@ const RUNTIME_MESSAGES = {
 - Catalog 打开独立 Atlas 时，在 `atlasLaunchUrl` 上合并当前 `lang` 参数，不覆盖原有 query/hash。
 - 分享当前页面时保留 `lang`，确保接收者打开后看到分享者所用语言。
 
+Catalog 还支持通过 `focus` 参数指定初始化时高亮的三级节点：
+
+- 参数值使用当前 `lang` 对应的完整节点标题，并由 URL 按 UTF-8 编码。
+- 运行时先解析语言，再按当前语言标题精确匹配 item，并自动推导其所属阶段与分类。
+- 示例：`?lang=zh-CN&focus=半导体硅片`、`?lang=en-US&focus=Semiconductor%20Wafers`、`?lang=en-US&focus=DRAM`。
+- 未传入、空值或未匹配时继续使用 Catalog 原有的默认首项，不影响页面启动。
+
 ### 10. HTML Scene 协议
 
 宿主无法自动翻译第三方 HTML Scene。为使“双语产物”语义完整，Scene 必须显式声明以下模式之一：
