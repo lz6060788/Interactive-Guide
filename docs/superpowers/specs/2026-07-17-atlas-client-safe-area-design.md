@@ -54,7 +54,7 @@ top: calc(var(--host-toolbar-safe-area-top) + 16px);
 本次不修改以下内容：
 
 - 返回按钮的 `left`、宽高和 SVG 尺寸。
-- 标题容器的水平居中方式、最大宽度、标题字体和说明图标间距。
+- 标题容器继续以 `left: 50%` 为中心锚点；最大宽度、标题字体和说明图标间距保持不变。根据运行时视觉复核，仅允许整体增加 `4px` 向右光学补偿。
 - 分享按钮的 `right`、宽高和 SVG 尺寸。
 - 各按钮的点击区域、层级、颜色和交互逻辑。
 - Atlas 相机、全景图容器、hotspot、callout 和底部卡片布局。
@@ -91,3 +91,12 @@ Atlas 全景当前传入 `showGradient: false`，本次不改变该产品配置�
 - Atlas 全景与 Atlas HTML Scene 的共享顶部工具栏行为一致。
 - 全景图相机范围、拖动缩放、hotspot/callout 定位和底部浮层不受影响。
 - 相关运行时测试、导出产物测试和 ES5 构建校验通过。
+
+## 实施结果（2026-07-17）
+
+- 统一产物外壳的 viewport 已增加 `viewport-fit=cover`，iOS 客户端 WebView 可以提供顶部安全区值。
+- 共享 `HostToolbarDomController` 已在自身 Chrome 层定义 `--host-toolbar-safe-area-top`；返回按钮、标题/说明图标容器与分享按钮复用同一个 `calc(... + 16px)` 顶部表达式。
+- 顶部渐变容器只扩展安全区高度；Atlas 全景仍保持 `showGradient: false`，不会因本次修复重新显示顶部渐变。
+- 回归测试锁定了返回按钮的 `left: 16px` 与 `32px` 尺寸、分享按钮的 `right: 16px` 与 `24px` 尺寸，并验证三个顶部定位点使用完全相同的安全区偏移。
+- 标题与说明图标组合保持 `left: 50%` 中心锚点，并统一向右增加 `4px` 光学补偿；组合内部 DOM、间距、尺寸以及两侧按钮位置均未改变。
+- 定向测试 14/14、完整测试 187/187 通过；TypeScript 类型检查、Server 构建和 Admin 构建均通过。预览/发布路由测试继续使用 Acorn ES5 parser 校验最终 `app.js`。

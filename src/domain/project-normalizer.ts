@@ -84,9 +84,6 @@ export function normalizeProject(
           zoom: PROJECT_DEFAULTS.panorama.categoryZoom,
         },
       }
-      if (!layout.activationZoom) {
-        layout.activationZoom = PROJECT_DEFAULTS.panorama.categoryZoom
-      }
       next.panorama.categories[category.id] = layout
     }
   }

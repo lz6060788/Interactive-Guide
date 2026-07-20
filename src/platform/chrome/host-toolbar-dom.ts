@@ -5,6 +5,9 @@ import {
   HOST_SHARE_ICON_SVG,
 } from './host-toolbar-icons.js'
 import {
+  HOST_TOOLBAR_CENTER_OPTICAL_OFFSET_PX,
+  HOST_TOOLBAR_SAFE_AREA_TOP_CSS_VALUE,
+  HOST_TOOLBAR_SAFE_AREA_TOP_CSS_VARIABLE,
   HOST_TOOLBAR_SIDE_OFFSET_PX,
   HOST_TOOLBAR_TITLE_MAX_WIDTH_PX,
   HOST_TOOLBAR_TOP_GRADIENT,
@@ -48,12 +51,18 @@ export class HostToolbarDomController {
   mount(): void {
     if (this.toolbarEl) return
     const zIndexBase = this.options.zIndexBase ?? 20
+    const safeAreaTop = `var(${HOST_TOOLBAR_SAFE_AREA_TOP_CSS_VARIABLE}, 0px)`
+    const toolbarControlTop = `calc(${safeAreaTop} + ${HOST_TOOLBAR_TOP_OFFSET_PX}px)`
     const gradient = document.createElement('div')
+    gradient.style.setProperty(
+      HOST_TOOLBAR_SAFE_AREA_TOP_CSS_VARIABLE,
+      HOST_TOOLBAR_SAFE_AREA_TOP_CSS_VALUE,
+    )
     gradient.style.position = 'absolute'
     gradient.style.left = '0'
     gradient.style.right = '0'
     gradient.style.top = '0'
-    gradient.style.height = '96px'
+    gradient.style.height = `calc(96px + ${safeAreaTop})`
     gradient.style.pointerEvents = 'none'
     gradient.style.zIndex = String(zIndexBase - 1)
     gradient.style.background = HOST_TOOLBAR_TOP_GRADIENT
@@ -61,6 +70,10 @@ export class HostToolbarDomController {
 
     const toolbar = document.createElement('div')
     if (this.options.testIds?.toolbar) toolbar.dataset.testid = this.options.testIds.toolbar
+    toolbar.style.setProperty(
+      HOST_TOOLBAR_SAFE_AREA_TOP_CSS_VARIABLE,
+      HOST_TOOLBAR_SAFE_AREA_TOP_CSS_VALUE,
+    )
     toolbar.style.position = 'absolute'
     toolbar.style.inset = '0'
     toolbar.style.pointerEvents = 'none'
@@ -75,15 +88,15 @@ export class HostToolbarDomController {
     if (this.options.testIds?.back) backButton.dataset.testid = this.options.testIds.back
     backButton.style.position = 'absolute'
     backButton.style.left = `${HOST_TOOLBAR_SIDE_OFFSET_PX}px`
-    backButton.style.top = `${HOST_TOOLBAR_TOP_OFFSET_PX}px`
+    backButton.style.top = toolbarControlTop
     backButton.style.width = '32px'
     backButton.style.height = '32px'
 
     const center = document.createElement('div')
     center.style.position = 'absolute'
     center.style.left = '50%'
-    center.style.top = `${HOST_TOOLBAR_TOP_OFFSET_PX}px`
-    center.style.transform = 'translateX(-50%)'
+    center.style.top = toolbarControlTop
+    center.style.transform = `translateX(-50%) translateX(${HOST_TOOLBAR_CENTER_OPTICAL_OFFSET_PX}px)`
     center.style.display = 'flex'
     center.style.alignItems = 'center'
     center.style.gap = '4px'
@@ -123,7 +136,7 @@ export class HostToolbarDomController {
     if (this.options.testIds?.share) shareButton.dataset.testid = this.options.testIds.share
     shareButton.style.position = 'absolute'
     shareButton.style.right = `${HOST_TOOLBAR_SIDE_OFFSET_PX}px`
-    shareButton.style.top = `${HOST_TOOLBAR_TOP_OFFSET_PX}px`
+    shareButton.style.top = toolbarControlTop
     shareButton.style.width = '24px'
     shareButton.style.height = '24px'
     shareButton.style.display = this.options.showShare === false ? 'none' : 'flex'

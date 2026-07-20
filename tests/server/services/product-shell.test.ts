@@ -8,5 +8,9 @@ test('product shell fills its browser or iframe host without a phone-sized frame
   assert.match(html, /html, body \{[\s\S]*width: 100%;[\s\S]*height: 100%;/)
   assert.match(html, /#app \{[\s\S]*width: 100%;[\s\S]*height: 100%;/)
   assert.match(html, /overflow: hidden;/)
+  assert.match(
+    html,
+    /<meta name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover" \/>/,
+  )
   assert.doesNotMatch(html, /min-height:\s*100vh|375px|808px|24px auto/)
 })

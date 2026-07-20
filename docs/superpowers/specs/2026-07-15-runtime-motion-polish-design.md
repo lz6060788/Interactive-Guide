@@ -31,3 +31,13 @@
 - 切换具有不同 viewport 的三级节点时，聚焦框内清晰图像与背景同一位置逐帧一致。
 - 聚焦框和虚线仍平滑移动，无瞬移或断连。
 - Atlas 点击 hotspot、callout 或卡片引起的程序化居中滚动具有平滑动画。
+
+## 实施结果（2026-07-15）
+
+- Catalog marker 按钮已清除浏览器默认 padding，并为内外圆增加不可压缩的正方形尺寸约束。
+- Catalog 原图、模糊背景、marker、聚焦框内部图像和虚线连接现由同一个 520ms rAF 时间线更新；中间帧测试验证了背景与聚焦框的坐标关系逐帧一致。
+- Atlas 卡片居中滚动已从 `auto` 恢复为旧版 `smooth`，420ms 同步锁保持不变。
+- 完整测试 187/187 通过，TypeScript、Server/Admin 构建均通过；ESLint 为 0 错误、11 个既有警告。
+- Atlas revision 21 预览：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/atlas/builds/atlas-1784122799304-21/index.html`。
+- Catalog revision 21 预览：`http://localhost:8788/api/projects/memory-chip-industry-chain/previews/catalog/builds/catalog-1784122801185-21/index.html`。
+- 两份预览入口和脚本均返回 HTTP 200，脚本通过 ES5 语法校验；两份 HTML 标题与共用资料来源文案也已同步验证。

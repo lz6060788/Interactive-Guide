@@ -54,7 +54,6 @@ export interface BootstrapInput {
       {
         hotspot: NormalizedPoint
         viewport?: Viewport
-        activationZoom?: number
         hotspotMinZoom?: number
       }
     >
@@ -312,7 +311,6 @@ export function assembleProject(input: BootstrapInput): BootstrapResult {
                 centerY: authored.hotspot.y,
                 zoom: PROJECT_DEFAULTS.panorama.categoryZoom,
               },
-          activationZoom: authored.activationZoom ?? PROJECT_DEFAULTS.panorama.categoryZoom,
           ...(authored.hotspotMinZoom !== undefined
             ? { hotspotMinZoom: authored.hotspotMinZoom }
             : {}),

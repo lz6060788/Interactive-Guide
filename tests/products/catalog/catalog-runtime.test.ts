@@ -202,6 +202,7 @@ test('CatalogRuntime uses the legacy 520ms focus and camera easing contract', as
       order: 1,
       marker: { x: 0.7, y: 0.6 },
       focusRect: { x: 0.6, y: 0.5, width: 0.1, height: 0.1 },
+      viewportOverride: { centerX: 0.7, centerY: 0.5, zoom: 3 },
     })
     manifest.stages[0].categories[0].itemIds.push('item-2')
     rt.loadManifest(manifest)
@@ -210,8 +211,38 @@ test('CatalogRuntime uses the legacy 520ms focus and camera easing contract', as
     const children = (container as unknown as FakeEl).children
     const backdrop = children.find(child => child.dataset.testid === 'catalog-scene-original')
     const focus = children.find(child => child.dataset.testid === 'catalog-focus-window')
-    assert.match(backdrop?.style.transition ?? '', /520ms cubic-bezier\(\.22,1,\.36,1\)/)
+    const markerLayer = children.find(child => child.dataset.testid === 'catalog-marker-layer')
+    const currentMarker = () =>
+      [...(markerLayer?.children ?? [])]
+        .reverse()
+        .find(child => child.dataset.testid === 'catalog-marker-item-2')
+    const assertSceneAligned = () => {
+      const backdropLeft = Number.parseFloat(backdrop?.style.left ?? '')
+      const backdropTop = Number.parseFloat(backdrop?.style.top ?? '')
+      const backdropWidth = Number.parseFloat(backdrop?.style.width ?? '')
+      const backdropHeight = Number.parseFloat(backdrop?.style.height ?? '')
+      const focusLeft = Number.parseFloat(focus?.style.left ?? '')
+      const focusTop = Number.parseFloat(focus?.style.top ?? '')
+      const [focusBackgroundWidth, focusBackgroundHeight] = (focus?.style.backgroundSize ?? '')
+        .split(' ')
+        .map(Number.parseFloat)
+      const [focusBackgroundX, focusBackgroundY] = (focus?.style.backgroundPosition ?? '')
+        .split(' ')
+        .map(Number.parseFloat)
+      assert.ok(Math.abs(focusBackgroundWidth - backdropWidth) < 0.001)
+      assert.ok(Math.abs(focusBackgroundHeight - backdropHeight) < 0.001)
+      assert.ok(Math.abs(focusBackgroundX - (backdropLeft - focusLeft)) < 0.001)
+      assert.ok(Math.abs(focusBackgroundY - (backdropTop - focusTop)) < 0.001)
+      assert.ok(
+        Math.abs(
+          Number.parseFloat(currentMarker()?.style.left ?? '') -
+            (backdropLeft + 0.7 * backdropWidth - 10.5),
+        ) < 0.001,
+      )
+    }
+    assert.equal(backdrop?.style.transition, 'none')
     const initialLeft = Number.parseFloat(focus?.style.left ?? '')
+    const initialBackdropLeft = Number.parseFloat(backdrop?.style.left ?? '')
 
     rt.selectItem('item-2')
     assert.ok(
@@ -223,21 +254,27 @@ test('CatalogRuntime uses the legacy 520ms focus and camera easing contract', as
       initialLeft,
       'focus must not jump before the first animation frame',
     )
+    assert.equal(Number.parseFloat(backdrop?.style.left ?? ''), initialBackdropLeft)
 
     now = 1260
     runFrames(now)
     const middleLeft = Number.parseFloat(focus?.style.left ?? '')
+    const middleBackdropLeft = Number.parseFloat(backdrop?.style.left ?? '')
     assert.ok(
-      middleLeft > initialLeft && middleLeft < 716.8,
+      middleLeft > initialLeft && middleLeft < 204.8,
       'half-time frame must be between the old and target positions',
     )
+    assert.ok(middleBackdropLeft < initialBackdropLeft && middleBackdropLeft > -1638.4)
+    assertSceneAligned()
 
     now = 1520
     runFrames(now)
     assert.ok(
-      Math.abs(Number.parseFloat(focus?.style.left ?? '') - 716.8) < 0.001,
+      Math.abs(Number.parseFloat(focus?.style.left ?? '') - 204.8) < 0.001,
       '520ms frame must land on the target position',
     )
+    assert.ok(Math.abs(Number.parseFloat(backdrop?.style.left ?? '') + 1638.4) < 0.001)
+    assertSceneAligned()
     rt.destroy()
   } finally {
     globalThis.requestAnimationFrame = originalRaf
@@ -259,7 +296,20 @@ test('CatalogRuntime aligns the focus crop with the same panorama coordinates as
   const connector = (container as unknown as FakeEl).children.find(
     child => child.dataset.testid === 'catalog-focus-connector',
   )
+  const markerLayer = (container as unknown as FakeEl).children.find(
+    child => child.dataset.testid === 'catalog-marker-layer',
+  )
+  const activeMarker = markerLayer?.children.find(
+    child => child.dataset.testid === 'catalog-marker-item-1',
+  )
+  const activeDot = activeMarker?.children[0]
   assert.ok(focus, 'the selected item must render a focus crop')
+  assert.equal(activeMarker?.style.padding, '0')
+  assert.equal(activeMarker?.style.width, activeMarker?.style.height)
+  assert.equal(activeDot?.style.width, activeDot?.style.height)
+  assert.equal(activeDot?.style.minWidth, activeDot?.style.minHeight)
+  assert.equal(activeDot?.style.flex, '0 0 auto')
+  assert.equal(activeDot?.style.aspectRatio, '1 / 1')
   // The source image is 4:3 in this fixture. At zoom 2 the image begins at
   // (-512px, -384px) and the crop begins at (-307.2px, -230.4px). CSS
   // backgrounds are local to the crop, so they shift by the difference, not

@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: 双产品 HTML 项目标题 / 资料来源通用文案 / Catalog 聚焦框圆角 (2026-07-15)
+Last sync: Catalog 圆点与场景动画同步 / Atlas 卡片平滑滚动 / revision 21 双预览验收 (2026-07-15)
 
 ### Modules
 
@@ -17,6 +17,7 @@ Last sync: 双产品 HTML 项目标题 / 资料来源通用文案 / Catalog 聚�
 
 | Doc | Description |
 |-----|-------------|
+| [Catalog 与 Atlas 运行时动效修复设计](superpowers/specs/2026-07-15-runtime-motion-polish-design.md) | Catalog marker 正圆与场景统一时间线、Atlas 卡片平滑居中滚动 (2026-07-15) |
 | [双产品 HTML 标题与资料来源文案设计](superpowers/specs/2026-07-15-product-title-source-copy-design.md) | Atlas/Catalog HTML 标题使用项目标题，共用资料来源默认文案去除机构名称 (2026-07-15) |
 | [Catalog 聚焦框固定圆角设计](superpowers/specs/2026-07-15-catalog-focus-radius-design.md) | Catalog 运行时与实时预览统一 12px 聚焦框圆角，保留 pill 主题行为 (2026-07-15) |
 | [Atlas F10 分享与 WeBlog 四事件设计](superpowers/specs/2026-07-15-atlas-f10-weblog-integration-design.md) | Atlas-only 四事件、Falcon 宿主预检、F10 分享/跳转与 revision 21 产物验收 (2026-07-15) |

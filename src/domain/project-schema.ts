@@ -67,7 +67,6 @@ export const ItemCalloutSchema = z.object({
 
 export const CategorySpatialLayoutSchema = z.object({
   viewport: ViewportSchema,
-  activationZoom: z.number().positive().optional(),
   hotspot: NormalizedPointSchema.optional(),
   hotspotMinZoom: z.number().positive().optional(),
 })
@@ -78,6 +77,7 @@ export const ItemSpatialLayoutSchema = z.object({
   // must provide it (catalog compiler skips items missing focusRect),
   // atlas-only items can omit it.
   focusRect: NormalizedRectSchema.optional(),
+  // Catalog-only background camera for the selected item.
   viewportOverride: ViewportSchema.optional(),
   callout: ItemCalloutSchema.optional(),
   markerMinZoom: z.number().positive().optional(),

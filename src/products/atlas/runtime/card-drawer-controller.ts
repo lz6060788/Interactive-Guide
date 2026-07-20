@@ -310,7 +310,7 @@ export class CardDrawerController {
     const targetLeft = Math.max(0, cardOffsetLeft - Math.max((listWidth - cardWidth) / 2, 0))
     const clampedTargetLeft = Math.min(targetLeft, maxScrollLeft)
     if (typeof list.scrollTo === 'function') {
-      list.scrollTo({ left: clampedTargetLeft, behavior: 'auto' })
+      list.scrollTo({ left: clampedTargetLeft, behavior: 'smooth' })
     } else {
       list.scrollLeft = clampedTargetLeft
     }

@@ -55,8 +55,6 @@ export interface AtlasCategoryEntry {
   itemIds: string[]
   experience: { kind: 'panorama' } | { kind: 'html-scene'; sceneId: string; viewId: string }
   viewport: Viewport
-  /** Zoom used when hotspot click should focus the category's default callout/item. */
-  activationZoom?: number
   /** Click target on the panorama (normalized [0,1]). */
   hotspot?: { x: number; y: number }
   /** Hide this hotspot when camera zoom falls below this value. */
@@ -70,7 +68,6 @@ export interface AtlasItemEntry {
   description: string
   order: number
   marker: { x: number; y: number }
-  viewportOverride?: Viewport
   /** Hide this item marker when camera zoom falls below this value. */
   markerMinZoom?: number
   callout?: {

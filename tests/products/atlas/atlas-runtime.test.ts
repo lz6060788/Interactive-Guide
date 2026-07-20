@@ -49,7 +49,6 @@ function minimalManifest(): AtlasManifest {
     itemIds: ['item-1'],
     experience: { kind: 'panorama' },
     viewport: { centerX: 0.5, centerY: 0.5, zoom: 2 },
-    activationZoom: 3.6,
     hotspot: { x: 0.5, y: 0.5 },
   }
   const item: AtlasItemEntry = {
@@ -99,8 +98,21 @@ class FakeEl {
   innerHTML = ''
   tagName = 'div'
   id = ''
+  clientWidth = 260
+  scrollWidth = 520
+  scrollLeft = 0
+  offsetLeft = 0
+  offsetWidth = 120
+  lastScrollBehavior: ScrollBehavior | undefined
   ownerDocument: Document | null = null
   listeners = new Map<string, Array<(event?: any) => void>>()
+  constructor() {
+    Object.defineProperty(this.style, 'setProperty', {
+      value: (property: string, value: string) => {
+        this.style[property] = value
+      },
+    })
+  }
   appendChild<T>(child: T): T {
     this.children.push(child as unknown as FakeEl)
     const fakeChild = child as unknown as FakeEl
@@ -131,6 +143,10 @@ class FakeEl {
     )
   }
   scrollIntoView(): void {}
+  scrollTo(options: ScrollToOptions): void {
+    this.scrollLeft = Number(options.left) || 0
+    this.lastScrollBehavior = options.behavior
+  }
   remove(): void {
     if (!this.parent) return
     this.parent.children = this.parent.children.filter(child => child !== this)
@@ -205,6 +221,23 @@ test('AtlasRuntime.loadManifest + mount sets up children', async () => {
   assert.ok(testids.has('atlas-card-drawer'), 'drawer missing')
   assert.ok(testids.has('atlas-runtime-toolbar'), 'toolbar missing')
   assert.ok(testids.has('atlas-runtime-hint'), 'hint missing')
+  const toolbar = findByTestId(containerEl, 'atlas-runtime-toolbar')
+  const back = findByTestId(containerEl, 'atlas-runtime-back')
+  const title = findByTestId(containerEl, 'atlas-runtime-toolbar-title')
+  const share = findByTestId(containerEl, 'atlas-runtime-share')
+  const expectedTop = 'calc(var(--host-toolbar-safe-area-top, 0px) + 16px)'
+  assert.equal(toolbar?.style['--host-toolbar-safe-area-top'], 'env(safe-area-inset-top, 0px)')
+  assert.equal(back?.style.top, expectedTop)
+  assert.equal(title?.parent?.style.top, expectedTop)
+  assert.equal(share?.style.top, expectedTop)
+  assert.equal(title?.parent?.style.left, '50%')
+  assert.equal(title?.parent?.style.transform, 'translateX(-50%) translateX(4px)')
+  assert.equal(back?.style.left, '16px')
+  assert.equal(share?.style.right, '16px')
+  assert.equal(back?.style.width, '32px')
+  assert.equal(back?.style.height, '32px')
+  assert.equal(share?.style.width, '24px')
+  assert.equal(share?.style.height, '24px')
   rt.destroy()
 })
 
@@ -230,12 +263,38 @@ test('AtlasRuntime.focusCategory activates the default marker and drawer card', 
   rt.destroy()
 })
 
-test('AtlasRuntime.focusCategory focuses the default highlighted item with category activationZoom', async () => {
+test('AtlasRuntime smoothly centers the active drawer card', async () => {
+  const rt = new AtlasRuntime({ assets: makeLoader() })
+  const manifest = minimalManifest()
+  manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
+  manifest.items.push({
+    id: 'item-2',
+    categoryId: 'cat-1',
+    title: 'Item 2',
+    description: '',
+    order: 1,
+    marker: { x: 0.7, y: 0.6 },
+    callout: { markerPosition: 'top', markerGapPx: 6 },
+  })
+  manifest.categories[0].itemIds.push('item-2')
+  rt.loadManifest(manifest)
+  const containerEl = new FakeEl()
+  containerEl.ownerDocument = fakeDocument as unknown as Document
+  await rt.mount(containerEl as unknown as HTMLElement)
+
+  rt.focusCategory('cat-1')
+
+  const list = findByTestId(containerEl, 'atlas-card-drawer-list')
+  assert.equal(list?.lastScrollBehavior, 'smooth')
+  rt.destroy()
+})
+
+test('AtlasRuntime.focusCategory focuses the default item marker at its Callout display threshold', async () => {
   const loader = makeLoader()
   const rt = new AtlasRuntime({ assets: loader })
   const manifest = minimalManifest()
-  manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
-  manifest.items[0].viewportOverride = { centerX: 0.3, centerY: 0.4, zoom: 2.2 }
+  manifest.config.theme.calloutMinZoom = 1.7
+  manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6, minZoom: 2.4 }
   rt.loadManifest(manifest)
   const containerEl = new FakeEl()
   containerEl.ownerDocument = fakeDocument as unknown as Document
@@ -254,12 +313,43 @@ test('AtlasRuntime.focusCategory focuses the default highlighted item with categ
   rt.focusCategory('cat-1')
 
   assert.deepEqual(animateCalls[0], {
-    centerX: 0.3,
-    centerY: 0.4,
-    zoom: 3.6,
+    centerX: 0.5,
+    centerY: 0.6,
+    zoom: 2.4,
   })
 
   rt.destroy()
+})
+
+test('AtlasRuntime item focus falls back from the global Callout threshold to the runtime default', () => {
+  const rt = new AtlasRuntime({ assets: makeLoader() })
+  const manifest = minimalManifest()
+  manifest.config.theme.calloutMinZoom = 1.7
+  manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
+  rt.loadManifest(manifest)
+
+  const resolveFocus = (
+    rt as unknown as {
+      resolveItemFocusViewport: (item: AtlasItemEntry) => {
+        centerX: number
+        centerY: number
+        zoom: number
+      }
+    }
+  ).resolveItemFocusViewport.bind(rt)
+
+  assert.deepEqual(resolveFocus(manifest.items[0]), {
+    centerX: 0.5,
+    centerY: 0.6,
+    zoom: 1.7,
+  })
+
+  delete manifest.config.theme.calloutMinZoom
+  assert.deepEqual(resolveFocus(manifest.items[0]), {
+    centerX: 0.5,
+    centerY: 0.6,
+    zoom: 2,
+  })
 })
 
 test('AtlasRuntime keeps hotspot roots as flex containers when visible', async () => {
@@ -302,14 +392,23 @@ test('AtlasRuntime hotspot click opens the drawer and item click keeps card stat
   const events: AtlasEvent[] = []
   const rt = new AtlasRuntime({ assets: loader })
   const manifest = minimalManifest()
-  manifest.items[0].viewportOverride = { centerX: 0.3, centerY: 0.4, zoom: 3 }
-  manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6 }
+  manifest.config.theme.calloutMinZoom = 1.7
+  manifest.items[0].callout = { markerPosition: 'top', markerGapPx: 6, minZoom: 2.4 }
   rt.loadManifest(manifest)
   rt.on(event => events.push(event))
   const containerEl = new FakeEl()
   containerEl.ownerDocument = fakeDocument as unknown as Document
   const container = containerEl as unknown as HTMLElement
   await rt.mount(container)
+
+  const animateCalls: Array<{ centerX: number; centerY: number; zoom: number }> = []
+  ;(
+    rt as unknown as {
+      camera: { animateTo: (viewport: { centerX: number; centerY: number; zoom: number }) => void }
+    }
+  ).camera.animateTo = viewport => {
+    animateCalls.push(viewport)
+  }
 
   const hotspot = findByTestId(containerEl, 'atlas-hotspot-cat-1')
   hotspot?.children[1]?.click()
@@ -318,10 +417,16 @@ test('AtlasRuntime hotspot click opens the drawer and item click keeps card stat
   assert.equal(drawer?.style.opacity, '1')
   assert.equal(card?.dataset.active, 'true')
   assert.ok(events.some(event => event.type === 'hotspotclick' && event.categoryId === 'cat-1'))
+  assert.deepEqual(animateCalls[0], { centerX: 0.5, centerY: 0.6, zoom: 2.4 })
 
   card?.click()
   assert.ok(events.some(event => event.type === 'itemclick' && event.itemId === 'item-1'))
   assert.equal(card?.dataset.active, 'true')
+  assert.deepEqual(animateCalls[1], { centerX: 0.5, centerY: 0.6, zoom: 2.4 })
+
+  const callout = findByTestId(containerEl, 'atlas-callout-item-1')
+  callout?.children[1]?.click()
+  assert.deepEqual(animateCalls[2], { centerX: 0.5, centerY: 0.6, zoom: 2.4 })
 
   const closeButton = findByTestId(containerEl, 'atlas-card-drawer-close')
   closeButton?.click()
@@ -434,9 +539,19 @@ test('AtlasRuntime.openRoute handles panorama targets by focusing the requested 
   const container = containerEl as unknown as HTMLElement
   await rt.mount(container)
 
+  const animateCalls: Array<{ centerX: number; centerY: number; zoom: number }> = []
+  ;(
+    rt as unknown as {
+      camera: { animateTo: (viewport: { centerX: number; centerY: number; zoom: number }) => void }
+    }
+  ).camera.animateTo = viewport => {
+    animateCalls.push(viewport)
+  }
+
   rt.openRoute('route-scene-back-to-item')
 
   assert.ok(events.some(event => event.type === 'itemclick' && event.itemId === 'item-1'))
+  assert.deepEqual(animateCalls[0], { centerX: 0.5, centerY: 0.6, zoom: 2 })
   rt.destroy()
 })
 

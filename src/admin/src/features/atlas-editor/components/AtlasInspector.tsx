@@ -599,25 +599,10 @@ function CategoryInspector({
                 }}
               />
             </Box>
-            <Box flex="1">
-              <NumberFieldPlain
-                label="callout zoom"
-                value={layout?.activationZoom ?? 3.6}
-                min={1}
-                max={4}
-                step={0.1}
-                onChange={v => {
-                  patchLayout(l => ({
-                    ...l,
-                    activationZoom: v,
-                  }))
-                }}
-              />
-            </Box>
           </HStack>
           <Text fontSize="11px" color="ink.faint" lineHeight="1.5">
-            zoom 是分类默认视口；callout zoom 是点击 hotspot 后聚焦首个 callout / item
-            时使用的放大倍数。
+            zoom 是分类默认视口；点击 hotspot 聚焦首个三级节点时，使用该节点实际生效的
+            Callout 显示阈值。
           </Text>
         </FieldGroup>
       </Stack>

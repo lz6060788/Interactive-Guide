@@ -39,7 +39,6 @@ function sample(): GuideProject {
   }
   p.panorama.categories['cat-up'] = {
     viewport: { centerX: 0.5, centerY: 0.5, zoom: 2 },
-    activationZoom: 3.6,
     hotspot: { x: 0.5, y: 0.5 },
   }
   p.panorama.items['item-1'] = {
@@ -61,10 +60,10 @@ test('compileAtlas projects project fields into the manifest', () => {
   assert.equal(manifest.categories[0].id, 'cat-up')
   assert.equal(manifest.categories[0].stageLabel, '上游')
   assert.equal(manifest.categories[0].hotspot?.x, 0.5)
-  assert.equal(manifest.categories[0].activationZoom, 3.6)
+  assert.equal('activationZoom' in manifest.categories[0], false)
   assert.equal(manifest.items.length, 1)
   assert.equal(manifest.items[0].marker.y, 0.6)
-  assert.equal(manifest.items[0].viewportOverride?.zoom, 2.6)
+  assert.equal('viewportOverride' in manifest.items[0], false)
 })
 
 test('compileAtlas throws when panorama.assetId is missing', () => {

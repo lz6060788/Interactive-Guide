@@ -293,7 +293,7 @@ export class AtlasRuntime {
     const firstItem = firstItemId
       ? (this.manifest.items.find(entry => entry.id === firstItemId) ?? null)
       : null
-    this.camera.animateTo(this.resolveCategoryFocusViewport(cat, firstItem))
+    this.camera.animateTo(firstItem ? this.resolveItemFocusViewport(firstItem) : cat.viewport)
     this.markers.activate(firstItemId ? null : categoryId)
     this.activateItemSelection(firstItemId, { scrollIntoView: true })
     this.openDrawerForCategory(categoryId, firstItemId)
@@ -400,6 +400,7 @@ export class AtlasRuntime {
     const item = this.manifest?.items.find(entry => entry.id === itemId)
     if (item) {
       this.markers?.activate(null)
+      this.camera?.animateTo(this.resolveItemFocusViewport(item))
       this.openDrawerForCategory(item.categoryId, itemId)
     }
   }
@@ -409,8 +410,7 @@ export class AtlasRuntime {
     this.activateItemSelection(itemId, { scrollIntoView: false })
     const item = this.manifest?.items.find(entry => entry.id === itemId)
     if (!item) return
-    const viewport = item.viewportOverride ?? this.viewportForItem(item)
-    this.camera?.animateTo(viewport)
+    this.camera?.animateTo(this.resolveItemFocusViewport(item))
   }
 
   private openDrawerForCategory(categoryId: string, activeItemId: string | null): void {
@@ -689,30 +689,14 @@ export class AtlasRuntime {
     }
   }
 
-  private viewportForItem(item: AtlasItemEntry): Viewport {
-    const base = this.camera?.getViewport() ??
-      this.manifest?.panorama.initialViewport ?? {
-        centerX: item.marker.x,
-        centerY: item.marker.y,
-        zoom: 2,
-      }
+  private resolveItemFocusViewport(item: AtlasItemEntry): Viewport {
     return {
       centerX: item.marker.x,
       centerY: item.marker.y,
-      zoom: Math.max(base.zoom, 2),
-    }
-  }
-
-  private resolveCategoryFocusViewport(
-    category: AtlasCategoryEntry,
-    item: AtlasItemEntry | null,
-  ): Viewport {
-    if (!item) return category.viewport
-    const itemViewport = item.viewportOverride
-    return {
-      centerX: itemViewport?.centerX ?? item.marker.x,
-      centerY: itemViewport?.centerY ?? item.marker.y,
-      zoom: category.activationZoom ?? itemViewport?.zoom ?? category.viewport.zoom,
+      zoom:
+        item.callout?.minZoom ??
+        this.manifest?.config.theme.calloutMinZoom ??
+        DEFAULT_CALLOUT_MIN_ZOOM,
     }
   }
 

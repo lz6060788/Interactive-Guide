@@ -56,3 +56,11 @@ Atlas 点击 hotspot、callout 或底部卡片选择三级节点时，镜头曾�
 - Atlas manifest 不包含 item `viewportOverride` 或 category `activationZoom`。
 - Catalog 的 `viewportOverride` 行为、背景动画和聚焦区域不变。
 - 全量测试、类型检查、Server/Admin 构建和 ES5 产物校验通过。
+
+## 实施结果（2026-07-17）
+
+- `AtlasRuntime.resolveItemFocusViewport()` 已成为三级节点镜头目标的唯一解析入口；hotspot 默认首项、callout、底部卡片和 panorama item 路由均使用该入口。
+- Atlas compiler/manifest 已停止输出和消费 item `viewportOverride` 与 category `activationZoom`；Catalog 仍保留并使用项目级 `viewportOverride`。
+- Atlas 分类 Inspector 已删除独立的 `callout zoom` 输入；聚焦倍率现在与“Callout 显示阈值”使用同一条三级覆盖全局、全局覆盖默认值的解析链。
+- 现有项目数据中的 `activationZoom` 已清理，项目类型、schema、normalizer 与 bootstrap 不再声明或生成该字段。
+- 自动验证通过：188 项测试全部通过（包含 ES5 preview/release 解析校验）、TypeScript 类型检查通过、Server/Admin 构建通过、lint 为 0 error（11 条既有 warning）。

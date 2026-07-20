@@ -49,6 +49,7 @@ export class CatalogScene {
   private connector: HTMLElement | null = null
   private cameraCenter: HTMLElement | null = null
   private detailById = new Map<string, HTMLElement>()
+  private markerById = new Map<string, { element: HTMLElement; item: CatalogItemEntry }>()
   private detailTopSpacer: HTMLElement | null = null
   private detailBottomSpacer: HTMLElement | null = null
   private listDragState: { pointerId: number; startY: number; startScrollTop: number; moved: boolean } | null = null
@@ -116,7 +117,7 @@ export class CatalogScene {
     this.observeRuntimeSize()
   }
 
-  destroy(): void { this.stopObservingRuntimeSize(); if (this.focusAnimationFrame !== null) cancelAnimationFrame(this.focusAnimationFrame); if (this.listCenterFrame !== null) cancelAnimationFrame(this.listCenterFrame); this.focusAnimationFrame = null; this.listCenterFrame = null; this.displayedFocusRect = null; this.displayedGeometry = null; this.listDragState = null; this.previewItemId = null; this.root.innerHTML = ''; this.detailById.clear(); this.detailTopSpacer = this.detailBottomSpacer = null; this.original = this.dimmed = this.shade = this.focusWindow = this.markerLayer = this.stageTabs = this.categoryTabs = this.detailList = this.connector = this.cameraCenter = null }
+  destroy(): void { this.stopObservingRuntimeSize(); if (this.focusAnimationFrame !== null) cancelAnimationFrame(this.focusAnimationFrame); if (this.listCenterFrame !== null) cancelAnimationFrame(this.listCenterFrame); this.focusAnimationFrame = null; this.listCenterFrame = null; this.displayedFocusRect = null; this.displayedGeometry = null; this.listDragState = null; this.previewItemId = null; this.root.innerHTML = ''; this.detailById.clear(); this.markerById.clear(); this.detailTopSpacer = this.detailBottomSpacer = null; this.original = this.dimmed = this.shade = this.focusWindow = this.markerLayer = this.stageTabs = this.categoryTabs = this.detailList = this.connector = this.cameraCenter = null }
   getSelection(): CatalogSceneSelection { return { ...this.selection } }
   selectStage(stageKey: CatalogStageEntry['key']): void { this.selection = resolveSelection(this.manifest, { stageKey }); this.render(); this.onSelectionChange?.(this.getSelection()) }
   selectCategory(categoryId: string): void { const stage = this.findStageByCategory(categoryId); if (!stage) return; this.selection = resolveSelection(this.manifest, { stageKey: stage.key, categoryId }); this.render(); this.onSelectionChange?.(this.getSelection()) }
@@ -127,7 +128,7 @@ export class CatalogScene {
     const items = category ? orderedItems(this.manifest, category) : []; const active = items.find(i => i.id === this.selection.itemId) ?? null
     const viewport = active?.viewportOverride ?? category?.viewport ?? { centerX: .5, centerY: .5, zoom: 1 }
     const geometry = this.geometry(viewport)
-    this.renderBackdrop(geometry); this.renderStageTabs(); this.renderCategoryTabs(stage); this.renderFocus(active, geometry); this.renderMarkers(items, active?.id ?? null, geometry); this.renderDetailList(items, active?.id ?? null); this.renderConnector(active, geometry)
+    this.renderStageTabs(); this.renderCategoryTabs(stage); this.renderFocus(active, geometry); this.renderMarkers(items, active?.id ?? null, this.displayedGeometry ?? geometry); this.renderDetailList(items, active?.id ?? null); this.renderConnector(active, geometry)
   }
 
   private geometry(viewport: Viewport): SceneGeometry {
@@ -165,14 +166,14 @@ export class CatalogScene {
     this.resizeFallbackWindow = null
   }
 
-  private renderBackdrop(g: SceneGeometry): void {
-    for (const layer of [this.original, this.dimmed]) if (layer) Object.assign(layer.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px`, transition: sceneTransition('left, top, width, height') })
+  private applyBackdropFrame(g: SceneGeometry): void {
+    for (const layer of [this.original, this.dimmed]) if (layer) Object.assign(layer.style, { left: `${g.left}px`, top: `${g.top}px`, width: `${g.width}px`, height: `${g.height}px`, transition: 'none' })
   }
   private renderStageTabs(): void { if (!this.stageTabs) return; this.stageTabs.innerHTML = ''; for (const stage of this.manifest.stages) { const b = document.createElement('button'); b.type = 'button'; b.dataset.testid = `catalog-stage-tab-${stage.key}`; b.textContent = stage.label; const active = stage.key === this.selection.stageKey; Object.assign(b.style, { minWidth: '0', height: '30px', padding: '5px 8px', borderRadius: '4px', border: active ? '1px solid rgba(255,255,255,.78)' : '1px solid rgba(255,255,255,.1)', background: active ? 'linear-gradient(0deg,rgba(146,146,146,.1),rgba(146,146,146,.1)),#fff' : 'linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.03))', color: active ? 'rgba(0,0,0,.84)' : 'rgba(255,255,255,.78)', fontSize: '14px', lineHeight: '20px', fontWeight: active ? '500' : '400', cursor: 'pointer', textAlign: 'center', boxShadow: active ? 'inset 0 1px 0 rgba(255,255,255,.4),0 10px 24px rgba(0,0,0,.14)' : 'inset 0 1px 0 rgba(255,255,255,.08)', backdropFilter: 'blur(8px) saturate(125%)' }); b.addEventListener('click', () => this.selectStage(stage.key)); this.stageTabs.appendChild(b) } }
   private renderCategoryTabs(stage: CatalogStageEntry | null): void { if (!this.categoryTabs) return; this.categoryTabs.innerHTML = ''; const categories = [...(stage?.categories ?? [])].sort((a,b) => a.order - b.order); categories.forEach((c, index) => { if (index > 0) { const divider = document.createElement('span'); Object.assign(divider.style, { width: '1px', height: '12px', background: 'rgba(255,255,255,.2)', flex: '0 0 auto' }); this.categoryTabs!.appendChild(divider) } const b = document.createElement('button'); b.type = 'button'; b.dataset.testid = `catalog-category-tab-${c.id}`; b.textContent = c.title; const active = c.id === this.selection.categoryId; Object.assign(b.style, { padding: '0', border: '0', background: 'transparent', color: active ? '#fff' : 'rgba(255,255,255,.6)', fontSize: '14px', lineHeight: '18px', fontWeight: active ? '500' : '400', cursor: 'pointer', textShadow: '0 1px 2px rgba(0,0,0,.4)' }); b.addEventListener('click', () => this.selectCategory(c.id)); this.categoryTabs!.appendChild(b) }) }
   private renderFocus(item: CatalogItemEntry | null, g: SceneGeometry): void {
     if (!this.focusWindow) return
-    if (!item) { this.focusWindow.style.display = 'none'; this.resetFocusAnimation(); return }
+    if (!item) { this.focusWindow.style.display = 'none'; this.resetFocusAnimation(); this.applyBackdropFrame(g); return }
     const projected = projectRect(item.focusRect, g)
     const target: ProjectedFocusRect = {
       ...projected,
@@ -182,13 +183,13 @@ export class CatalogScene {
     if (!this.displayedFocusRect || !this.displayedGeometry) {
       this.displayedFocusRect = target
       this.displayedGeometry = g
-      this.applyFocusFrame(target, g)
+      this.applySceneFrame(target, g)
       return
     }
     if (projectedFocusEqual(this.displayedFocusRect, target) && geometryEqual(this.displayedGeometry, g)) {
       this.displayedFocusRect = target
       this.displayedGeometry = g
-      this.applyFocusFrame(target, g)
+      this.applySceneFrame(target, g)
       return
     }
     if (this.focusAnimationFrame !== null) cancelAnimationFrame(this.focusAnimationFrame)
@@ -202,10 +203,10 @@ export class CatalogScene {
       const currentGeometry = interpolateGeometry(fromGeometry, g, eased)
       this.displayedFocusRect = currentRect
       this.displayedGeometry = currentGeometry
-      this.applyFocusFrame(currentRect, currentGeometry)
+      this.applySceneFrame(currentRect, currentGeometry)
       this.renderConnectorFromRect(item, currentRect)
       if (progress < 1) this.focusAnimationFrame = requestAnimationFrame(tick)
-      else { this.focusAnimationFrame = null; this.displayedFocusRect = target; this.displayedGeometry = g; this.applyFocusFrame(target, g); this.renderConnectorFromRect(item, target) }
+      else { this.focusAnimationFrame = null; this.displayedFocusRect = target; this.displayedGeometry = g; this.applySceneFrame(target, g); this.renderConnectorFromRect(item, target) }
     }
     this.focusAnimationFrame = requestAnimationFrame(tick)
   }
@@ -216,13 +217,26 @@ export class CatalogScene {
     if (this.shade) this.shade.style.background = `rgba(0,0,0,${rect.maskOpacity})`
   }
 
+  private applySceneFrame(rect: ProjectedFocusRect, g: SceneGeometry): void {
+    this.applyBackdropFrame(g)
+    this.applyFocusFrame(rect, g)
+    this.applyMarkerFrame(g)
+  }
+
+  private applyMarkerFrame(g: SceneGeometry): void {
+    for (const { element, item } of this.markerById.values()) {
+      element.style.left = `${g.left + item.marker.x * g.width - 10.5}px`
+      element.style.top = `${g.top + item.marker.y * g.height - 10.5}px`
+    }
+  }
+
   private resetFocusAnimation(): void {
     if (this.focusAnimationFrame !== null) cancelAnimationFrame(this.focusAnimationFrame)
     this.focusAnimationFrame = null
     this.displayedFocusRect = null
     this.displayedGeometry = null
   }
-  private renderMarkers(items: CatalogItemEntry[], activeId: string | null, g: SceneGeometry): void { if (!this.markerLayer) return; this.markerLayer.innerHTML = ''; for (const item of items) { const active = item.id === activeId; const b = document.createElement('button'); b.type = 'button'; b.dataset.testid = `catalog-marker-${item.id}`; b.dataset.active = active ? 'true' : 'false'; const x = g.left + item.marker.x * g.width; const y = g.top + item.marker.y * g.height; Object.assign(b.style, { position: 'absolute', left: `${x - 10.5}px`, top: `${y - 10.5}px`, width: '21px', height: '21px', borderRadius: '999px', border: active ? '0.5px solid #ff2436' : '0.5px solid rgba(255,255,255,.96)', background: active ? 'rgba(255,36,54,.1)' : 'rgba(255,255,255,.1)', boxShadow: 'none', cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: `${sceneTransition('left, top')},background 220ms ease,border-color 220ms ease,transform 220ms ease`, transform: active ? 'scale(1.04)' : 'scale(1)' }); const dot = document.createElement('span'); Object.assign(dot.style, { display: 'block', width: active ? '11px' : '9px', height: active ? '11px' : '9px', margin: 'auto', borderRadius: '999px', background: active ? '#ff2436' : '#fff', border: active ? '1px solid #fff' : '0', transition: 'width 220ms ease,height 220ms ease,background 220ms ease,border 220ms ease' }); b.appendChild(dot); b.addEventListener('click', () => this.selectItem(item.id)); if (this.editor) this.bindMarkerDrag(b, item); this.markerLayer.appendChild(b) } }
+  private renderMarkers(items: CatalogItemEntry[], activeId: string | null, g: SceneGeometry): void { if (!this.markerLayer) return; this.markerLayer.innerHTML = ''; this.markerById.clear(); for (const item of items) { const active = item.id === activeId; const b = document.createElement('button'); b.type = 'button'; b.dataset.testid = `catalog-marker-${item.id}`; b.dataset.active = active ? 'true' : 'false'; const x = g.left + item.marker.x * g.width; const y = g.top + item.marker.y * g.height; Object.assign(b.style, { appearance: 'none', position: 'absolute', left: `${x - 10.5}px`, top: `${y - 10.5}px`, width: '21px', height: '21px', minWidth: '21px', minHeight: '21px', padding: '0', boxSizing: 'border-box', borderRadius: '999px', border: active ? '0.5px solid #ff2436' : '0.5px solid rgba(255,255,255,.96)', background: active ? 'rgba(255,36,54,.1)' : 'rgba(255,255,255,.1)', boxShadow: 'none', cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 220ms ease,border-color 220ms ease,transform 220ms ease', transform: active ? 'scale(1.04)' : 'scale(1)' }); const dot = document.createElement('span'); Object.assign(dot.style, { display: 'block', width: active ? '11px' : '9px', height: active ? '11px' : '9px', minWidth: active ? '11px' : '9px', minHeight: active ? '11px' : '9px', flex: '0 0 auto', aspectRatio: '1 / 1', boxSizing: 'border-box', margin: 'auto', borderRadius: '999px', background: active ? '#ff2436' : '#fff', border: active ? '1px solid #fff' : '0', transition: 'width 220ms ease,height 220ms ease,background 220ms ease,border 220ms ease' }); b.appendChild(dot); b.addEventListener('click', () => this.selectItem(item.id)); if (this.editor) this.bindMarkerDrag(b, item); this.markerLayer.appendChild(b); this.markerById.set(item.id, { element: b, item }) } }
   private renderDetailList(items: CatalogItemEntry[], activeId: string | null): void {
     if (!this.detailList) return
     this.detailList.innerHTML = ''
@@ -371,7 +385,6 @@ function resizeHandleStyle(corner: 'nw'|'ne'|'se'|'sw'): Record<string,string> {
 function resizeRect(rect: CatalogItemEntry['focusRect'], dx:number, dy:number, mode:'move'|'nw'|'ne'|'se'|'sw'): CatalogItemEntry['focusRect'] { const min=.03; let {x,y,width,height}=rect; if(mode==='move'){x+=dx;y+=dy}else{if(mode.includes('w')){x+=dx;width-=dx}if(mode.includes('e'))width+=dx;if(mode.includes('n')){y+=dy;height-=dy}if(mode.includes('s'))height+=dy}width=Math.max(min,Math.min(width,1));height=Math.max(min,Math.min(height,1));x=Math.min(Math.max(x,0),1-width);y=Math.min(Math.max(y,0),1-height);return {...rect,x,y,width,height} }
 function clamp(value:number,min:number,max:number):number{return Math.min(max,Math.max(min,value))}
 function clamp01(value:number):number{return clamp(value,0,1)}
-function sceneTransition(properties: string): string { return properties.split(',').map(property => `${property.trim()} 520ms cubic-bezier(.22,1,.36,1)`).join(',') }
 function easeOutCubic(value: number): number { return 1 - Math.pow(1 - value, 3) }
 function lerp(from: number, to: number, progress: number): number { return from + (to - from) * progress }
 function interpolateFocusRect(from: ProjectedFocusRect, to: ProjectedFocusRect, progress: number): ProjectedFocusRect { return { left: lerp(from.left, to.left, progress), top: lerp(from.top, to.top, progress), width: lerp(from.width, to.width, progress), height: lerp(from.height, to.height, progress), radius: lerp(from.radius, to.radius, progress), maskOpacity: lerp(from.maskOpacity, to.maskOpacity, progress) } }

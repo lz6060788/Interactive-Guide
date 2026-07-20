@@ -69,7 +69,6 @@ export interface CameraBounds {
 
 export interface CategorySpatialLayout {
   viewport: Viewport
-  activationZoom?: number
   hotspot?: NormalizedPoint
   /** Hide this hotspot when camera zoom falls below this value. */
   hotspotMinZoom?: number
@@ -92,6 +91,7 @@ export interface ItemSpatialLayout {
   marker: NormalizedPoint
   /** Catalog-only: required for items exposed in catalog; optional for atlas-only items. */
   focusRect?: NormalizedFocusRect
+  /** Catalog-only: background camera used while this item is selected. */
   viewportOverride?: Viewport
   callout?: ItemCallout
   /** Hide this item marker when camera zoom falls below this value. */

@@ -90,7 +90,6 @@ export function compileAtlas(
         description: item.description ?? '',
         order: item.order ?? 0,
         marker: { x: layout.marker.x, y: layout.marker.y },
-        ...(layout.viewportOverride ? { viewportOverride: { ...layout.viewportOverride } } : {}),
         ...(layout.callout
           ? {
               callout: {
@@ -120,7 +119,6 @@ export function compileAtlas(
         itemIds: [...c.category.itemIds],
         experience: c.category.experience,
         viewport: layout.viewport!,
-        ...(layout.activationZoom !== undefined ? { activationZoom: layout.activationZoom } : {}),
         ...(layout.hotspot ? { hotspot: { ...layout.hotspot } } : {}),
         ...(layout.hotspotMinZoom !== undefined ? { hotspotMinZoom: layout.hotspotMinZoom } : {}),
       }
