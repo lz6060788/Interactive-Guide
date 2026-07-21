@@ -1,10 +1,16 @@
 import express, { Router, type NextFunction, type Request, type Response } from 'express'
 import { z } from 'zod'
+import { ProjectIdSchema } from '../../domain/project-schema.js'
 import {
   GUIDE_AUTHORING_BUNDLE_CONTRACT,
   GUIDE_AUTHORING_BUNDLE_VERSION,
   GuideAuthoringBundleV1Schema,
 } from '../../automation/contracts/authoring-bundle-v1.js'
+import {
+  GUIDE_AUTHORING_CHANGESET_CONTRACT,
+  GUIDE_AUTHORING_CHANGESET_VERSION,
+  GuideAuthoringChangeSetV1Schema,
+} from '../../automation/contracts/authoring-changeset-v1.js'
 import {
   AuthoringBlobHashMismatchError,
   AuthoringBlobRepository,
@@ -26,6 +32,16 @@ import {
   AuthoringValidationFailedError,
   AuthoringValidationTokenStaleError,
 } from '../services/authoring-service.js'
+import {
+  AuthoringChangeSetAssetConflictError,
+  AuthoringChangeSetRevisionConflictError,
+  AuthoringChangeSetService,
+} from '../services/authoring-changeset-service.js'
+import {
+  AuthoringStateCorruptError,
+  AuthoringStateService,
+} from '../services/authoring-state-service.js'
+import { ProjectNotFoundError } from '../storage/project-repository.js'
 
 const ApplyBodySchema = z
   .object({
@@ -34,11 +50,28 @@ const ApplyBodySchema = z
   })
   .strict()
 
+const ApplyChangeSetBodySchema = z
+  .object({
+    changeSet: GuideAuthoringChangeSetV1Schema,
+    validationToken: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict()
+
 const jsonBody = express.json({ limit: '50mb' })
+const BundleContract = {
+  name: GUIDE_AUTHORING_BUNDLE_CONTRACT,
+  version: GUIDE_AUTHORING_BUNDLE_VERSION,
+} as const
+const ChangeSetContract = {
+  name: GUIDE_AUTHORING_CHANGESET_CONTRACT,
+  version: GUIDE_AUTHORING_CHANGESET_VERSION,
+} as const
 
 export function createAuthoringRouter(
   blobs: AuthoringBlobRepository,
   service: AuthoringService,
+  changeSetService: AuthoringChangeSetService,
+  stateService: AuthoringStateService,
 ): Router {
   const router = Router()
 
@@ -66,14 +99,50 @@ export function createAuthoringRouter(
     }
   })
 
+  router.get(
+    '/automation/v1/projects/:projectId/authoring-state',
+    handle((req, res) => {
+      const projectId = ProjectIdSchema.safeParse(String(req.params.projectId))
+      if (!projectId.success) {
+        res.status(400).json({ error: 'invalid project id', code: 'BAD_REQUEST' })
+        return
+      }
+      res.json({ data: stateService.get(projectId.data) })
+    }),
+  )
+
   router.post(
     '/automation/v1/authoring/bundles/validate',
     jsonBody,
     handle((req, res) => {
-      if (rejectUnsupportedContract(req.body, res)) return
+      if (rejectUnsupportedContract(req.body, res, BundleContract)) return
       const parsed = GuideAuthoringBundleV1Schema.safeParse(req.body)
       if (!parsed.success) return sendBadRequest(res, parsed.error)
       res.json({ data: service.validate(parsed.data) })
+    }),
+  )
+
+  router.post(
+    '/automation/v1/authoring/changesets/validate',
+    jsonBody,
+    handle((req, res) => {
+      if (rejectUnsupportedContract(req.body, res, ChangeSetContract)) return
+      const parsed = GuideAuthoringChangeSetV1Schema.safeParse(req.body)
+      if (!parsed.success) return sendBadRequest(res, parsed.error)
+      res.json({ data: changeSetService.validate(parsed.data) })
+    }),
+  )
+
+  router.post(
+    '/automation/v1/authoring/changesets/apply',
+    jsonBody,
+    handle((req, res) => {
+      const candidate = isRecord(req.body) ? req.body.changeSet : undefined
+      if (rejectUnsupportedContract(candidate, res, ChangeSetContract)) return
+      const parsed = ApplyChangeSetBodySchema.safeParse(req.body)
+      if (!parsed.success) return sendBadRequest(res, parsed.error)
+      const result = changeSetService.apply(parsed.data.changeSet, parsed.data.validationToken)
+      res.status(200).json({ data: result })
     }),
   )
 
@@ -82,7 +151,7 @@ export function createAuthoringRouter(
     jsonBody,
     handle((req, res) => {
       const candidate = isRecord(req.body) ? req.body.bundle : undefined
-      if (rejectUnsupportedContract(candidate, res)) return
+      if (rejectUnsupportedContract(candidate, res, BundleContract)) return
       const parsed = ApplyBodySchema.safeParse(req.body)
       if (!parsed.success) return sendBadRequest(res, parsed.error)
       const result = service.apply(parsed.data.bundle, parsed.data.validationToken)
@@ -132,21 +201,19 @@ function requireBlobSize(req: Request, res: Response): number | null {
   return size
 }
 
-function rejectUnsupportedContract(candidate: unknown, res: Response): boolean {
+function rejectUnsupportedContract(
+  candidate: unknown,
+  res: Response,
+  expected: { name: string; version: string },
+): boolean {
   if (!isRecord(candidate)) return false
-  if (
-    candidate.contract !== GUIDE_AUTHORING_BUNDLE_CONTRACT ||
-    candidate.contractVersion !== GUIDE_AUTHORING_BUNDLE_VERSION
-  ) {
+  const isSupported =
+    candidate.contract === expected.name && candidate.contractVersion === expected.version
+  if (!isSupported) {
     res.status(400).json({
       error: 'authoring contract or contractVersion is unsupported',
       code: 'CONTRACT_UNSUPPORTED',
-      supported: [
-        {
-          name: GUIDE_AUTHORING_BUNDLE_CONTRACT,
-          versions: [GUIDE_AUTHORING_BUNDLE_VERSION],
-        },
-      ],
+      supported: [{ name: expected.name, versions: [expected.version] }],
     })
     return true
   }
@@ -162,6 +229,14 @@ function sendBadRequest(res: Response, error: z.ZodError): void {
 }
 
 export function mapAuthoringError(error: unknown, res: Response): boolean {
+  if (error instanceof ProjectNotFoundError) {
+    res.status(404).json({ error: error.message, code: 'PROJECT_NOT_FOUND' })
+    return true
+  }
+  if (error instanceof AuthoringStateCorruptError) {
+    res.status(500).json({ error: error.message, code: 'AUTHORING_STATE_CORRUPT' })
+    return true
+  }
   if (error instanceof InvalidAuthoringBlobDigestError) {
     res.status(400).json({ error: error.message, code: 'BAD_REQUEST' })
     return true
@@ -199,6 +274,23 @@ export function mapAuthoringError(error: unknown, res: Response): boolean {
   }
   if (error instanceof AuthoringProjectExistsError) {
     res.status(409).json({ error: error.message, code: 'PROJECT_EXISTS' })
+    return true
+  }
+  if (error instanceof AuthoringChangeSetRevisionConflictError) {
+    res.status(409).json({
+      error: error.message,
+      code: 'REVISION_CONFLICT',
+      expectedRevision: error.expectedRevision,
+      currentRevision: error.currentRevision,
+    })
+    return true
+  }
+  if (error instanceof AuthoringChangeSetAssetConflictError) {
+    res.status(409).json({
+      error: error.message,
+      code: 'ASSET_CONFLICT',
+      targetId: error.targetId,
+    })
     return true
   }
   if (error instanceof AuthoringOperationFingerprintConflictError) {

@@ -58,6 +58,62 @@ test('ProjectRepository.save increments revision on subsequent saves', () => {
   cleanup()
 })
 
+test('ProjectRepository.save honors a transaction-owned timestamp', () => {
+  const { dir, cleanup } = tmpDataDir()
+  const repo = new ProjectRepository({ dataDir: dir })
+  const project = createDraftProject({ id: 'p1', title: 'T' })
+  const timestamp = '2026-07-21T12:34:56.789Z'
+  const result = repo.save(project, { expectedRevision: 0, timestamp })
+  if (result.conflict) throw new Error('expected save')
+  assert.equal(result.project.metadata.createdAt, project.metadata.createdAt)
+  assert.equal(result.project.metadata.updatedAt, timestamp)
+  cleanup()
+})
+
+test('ProjectRepository.save rejects a non-canonical transaction timestamp', () => {
+  const { dir, cleanup } = tmpDataDir()
+  const repo = new ProjectRepository({ dataDir: dir })
+  const project = createDraftProject({ id: 'p1', title: 'T' })
+  assert.throws(
+    () => repo.save(project, { expectedRevision: 0, timestamp: '2026-07-21T12:34:56Z' }),
+    /canonical ISO-8601/,
+  )
+  cleanup()
+})
+
+test('ProjectRepository.save reloads disk state even when project.json mtime is preserved', () => {
+  const { dir, cleanup } = tmpDataDir()
+  const first = new ProjectRepository({ dataDir: dir })
+  const project = createDraftProject({ id: 'p1', title: 'T' })
+  const created = first.save(project, { expectedRevision: 0 })
+  if (created.conflict) throw new Error('expected create')
+  const second = new ProjectRepository({ dataDir: dir })
+  const projectFile = path.join(dir, 'projects', 'p1', 'project.json')
+  const originalStat = fs.statSync(projectFile)
+  const changed = JSON.parse(fs.readFileSync(projectFile, 'utf8')) as {
+    metadata: { revision: number; updatedAt: string }
+  }
+  changed.metadata.revision = 2
+  changed.metadata.updatedAt = '2026-07-21T12:34:56.789Z'
+  fs.writeFileSync(projectFile, JSON.stringify(changed, null, 2))
+  fs.utimesSync(projectFile, originalStat.atime, originalStat.mtime)
+
+  const staleSave = second.save(project, { expectedRevision: 1 })
+  assert.equal(staleSave.conflict, true)
+  if (staleSave.conflict) assert.equal(staleSave.currentRevision, 2)
+  cleanup()
+})
+
+test('ProjectRepository evicts cached state when project.json is deleted', () => {
+  const { dir, cleanup } = tmpDataDir()
+  const repo = new ProjectRepository({ dataDir: dir })
+  const project = createDraftProject({ id: 'p1', title: 'T' })
+  repo.save(project, { expectedRevision: 0 })
+  fs.unlinkSync(path.join(dir, 'projects', 'p1', 'project.json'))
+  assert.equal(repo.tryGet('p1'), null)
+  cleanup()
+})
+
 test('ProjectRepository persists projects to disk and reloads on next instantiation', () => {
   const { dir, cleanup } = tmpDataDir()
   const repo1 = new ProjectRepository({ dataDir: dir })

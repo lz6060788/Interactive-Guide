@@ -32,6 +32,11 @@ export interface ListEntry {
 
 export interface SaveOptions {
   expectedRevision?: number
+  /**
+   * Optional ISO timestamp chosen by an enclosing transaction. Supplying it
+   * lets the transaction hash the exact project that will become visible.
+   */
+  timestamp?: string
 }
 
 export interface SaveResult {
@@ -80,8 +85,6 @@ export class RevisionConflictError extends Error {
 export class ProjectRepository {
   private readonly projectsRoot: string
   private readonly projects: Map<string, GuideProject> = new Map()
-  /** projectId -> mtimeMs of project.json for hot-reload detection */
-  private readonly loadedAt: Map<string, number> = new Map()
 
   constructor(opts: { dataDir?: string } = {}) {
     const dataDir = opts.dataDir ?? path.resolve('data')
@@ -92,17 +95,14 @@ export class ProjectRepository {
 
   private loadAll(): void {
     this.projects.clear()
-    this.loadedAt.clear()
     if (!fs.existsSync(this.projectsRoot)) return
     for (const entry of fs.readdirSync(this.projectsRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
       const projectId = entry.name
       const filePath = path.join(this.projectsRoot, projectId, 'project.json')
       try {
-        const stat = fs.statSync(filePath)
         const project = migrateGuideProject(JSON.parse(fs.readFileSync(filePath, 'utf-8')))
         this.projects.set(projectId, project)
-        this.loadedAt.set(projectId, stat.mtimeMs)
       } catch (err) {
         throw new ProjectCorruptError(projectId, filePath, err)
       }
@@ -110,6 +110,7 @@ export class ProjectRepository {
   }
 
   list(): ListEntry[] {
+    this.loadAll()
     return Array.from(this.projects.values())
       .map(p => toListEntry(p))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -130,8 +131,10 @@ export class ProjectRepository {
   /** Persist a project with optional optimistic-lock revision check. */
   save(project: GuideProject, options: SaveOptions = {}): SaveResult | SaveConflict {
     const projectId = project.id
+    this.maybeReload(projectId)
     const existing = this.projects.get(projectId)
-    const now = new Date().toISOString()
+    const now = options.timestamp ?? new Date().toISOString()
+    requireCanonicalTimestamp(now)
     let nextRevision: number
     if (existing) {
       if (
@@ -163,33 +166,31 @@ export class ProjectRepository {
     }
     this.writeToDisk(next)
     this.projects.set(projectId, next)
-    this.loadedAt.set(projectId, Date.now())
     return { project: next, conflict: false, revision: nextRevision }
   }
 
   delete(projectId: string): void {
+    this.maybeReload(projectId)
     if (!this.projects.has(projectId)) throw new ProjectNotFoundError(projectId)
     const dir = path.join(this.projectsRoot, projectId)
     fs.rmSync(dir, { recursive: true, force: true })
     this.projects.delete(projectId)
-    this.loadedAt.delete(projectId)
   }
 
   resolveAssetDir(projectId: string): string {
     return path.join(this.projectsRoot, projectId, 'assets')
   }
 
-  /** Reload a project from disk if the file mtime changed since load. */
+  /** Read the authoritative file on every integrity-sensitive access. */
   private maybeReload(projectId: string): void {
-    const filePath = path.join(this.projectsRoot, projectId, 'project.json')
-    if (!fs.existsSync(filePath)) return
-    const stat = fs.statSync(filePath)
-    const last = this.loadedAt.get(projectId) ?? 0
-    if (stat.mtimeMs <= last) return
+    const filePath = this.projectFile(projectId)
+    if (!fs.existsSync(filePath)) {
+      this.projects.delete(projectId)
+      return
+    }
     try {
       const project = migrateGuideProject(JSON.parse(fs.readFileSync(filePath, 'utf-8')))
       this.projects.set(projectId, project)
-      this.loadedAt.set(projectId, stat.mtimeMs)
     } catch (err) {
       throw new ProjectCorruptError(projectId, filePath, err)
     }
@@ -202,6 +203,20 @@ export class ProjectRepository {
     const tmp = path.join(dir, `.project.${crypto.randomBytes(4).toString('hex')}.tmp`)
     fs.writeFileSync(tmp, JSON.stringify(project, null, 2))
     fs.renameSync(tmp, filePath)
+  }
+
+  private projectFile(projectId: string): string {
+    return path.join(this.projectsRoot, projectId, 'project.json')
+  }
+}
+
+function requireCanonicalTimestamp(value: string): void {
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) ||
+    Number.isNaN(Date.parse(value)) ||
+    new Date(value).toISOString() !== value
+  ) {
+    throw new Error('project save timestamp must be a canonical ISO-8601 UTC timestamp')
   }
 }
 

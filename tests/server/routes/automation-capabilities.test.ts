@@ -26,7 +26,17 @@ test('GET /automation/v1/capabilities advertises only implemented stable capabil
           selected: '1.0.0',
           supported: ['1.0.0'],
         },
+        {
+          name: 'guide-authoring-changeset',
+          selected: '1.0.0',
+          supported: ['1.0.0'],
+        },
       ],
+      authoringStateContract: {
+        name: 'guide-authoring-state',
+        selected: '1.0.0',
+        supported: ['1.0.0'],
+      },
       projectSchemas: {
         read: ['2.0.0', '3.0.0'],
         write: ['3.0.0'],
@@ -35,7 +45,9 @@ test('GET /automation/v1/capabilities advertises only implemented stable capabil
       capabilities: [
         'approval-gated-release',
         'atomic-authoring-create',
+        'atomic-authoring-update',
         'atomic-dual-product-build',
+        'authoring-state-read',
         'catalog-initial-focus',
         'content-addressed-authoring-blobs',
         'draft-product-build',

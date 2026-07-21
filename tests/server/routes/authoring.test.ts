@@ -164,6 +164,40 @@ test('Automation v1 validates blobs and atomically creates a replay-safe authori
     )
     assert.equal(storedProject.assets.byId['knowledge-doc'], undefined)
 
+    const authoringState = await request(app).get(
+      `/api/automation/v1/projects/${bundle.project.id}/authoring-state`,
+    )
+    assert.equal(authoringState.status, 200, JSON.stringify(authoringState.body))
+    assert.equal(authoringState.body.data.contract, 'guide-authoring-state')
+    assert.equal(authoringState.body.data.contractVersion, '1.0.0')
+    assert.equal(authoringState.body.data.revision, 1)
+    assert.equal(authoringState.body.data.projectId, bundle.project.id)
+    assert.equal(
+      authoringState.body.data.knowledge.stages[0].categories[0].items[0].id,
+      'silicon-wafer',
+    )
+    assert.deepEqual(authoringState.body.data.runtimeAssets, [
+      {
+        assetId: 'panorama',
+        kind: 'image',
+        mimeType: 'image/png',
+        sha256: sha256(panorama),
+        size: panorama.length,
+      },
+    ])
+    assert.equal(JSON.stringify(authoringState.body.data).includes('sourcePath'), false)
+    assert.equal(JSON.stringify(authoringState.body.data).includes(projectDir), false)
+    assert.deepEqual(authoringState.body.data.authoringSources, [
+      {
+        fileRef: 'knowledge-doc',
+        blobSha256: sha256(knowledge),
+        size: knowledge.length,
+        mediaType: 'text/markdown',
+        semanticRole: 'knowledge-source',
+        originalName: 'knowledge.md',
+      },
+    ])
+
     const replay = await request(app)
       .post('/api/automation/v1/authoring/bundles/apply')
       .send({ bundle, validationToken: validation.body.data.validationToken })
@@ -183,6 +217,53 @@ test('Automation v1 validates blobs and atomically creates a replay-safe authori
     })
     assert.equal(reusedKey.status, 409)
     assert.equal(reusedKey.body.code, 'IDEMPOTENCY_KEY_REUSED')
+
+    const changeSet = {
+      contract: 'guide-authoring-changeset',
+      contractVersion: '1.0.0',
+      projectId: bundle.project.id,
+      expectedRevision: 1,
+      idempotencyKey: '90a605b8-d62a-4a15-a29a-80dca42743b1',
+      partitions: {
+        profile: {
+          title: {
+            'zh-CN': '存储芯片产业链（更新）',
+            'en-US': 'Memory Chip Industry Chain Updated',
+          },
+        },
+      },
+    }
+    const changeValidation = await request(app)
+      .post('/api/automation/v1/authoring/changesets/validate')
+      .send(changeSet)
+    assert.equal(changeValidation.status, 200, JSON.stringify(changeValidation.body))
+    assert.equal(changeValidation.body.data.ok, true, JSON.stringify(changeValidation.body.data))
+    assert.equal(changeValidation.body.data.projectedRevision, 2)
+
+    const changeApply = await request(app)
+      .post('/api/automation/v1/authoring/changesets/apply')
+      .send({
+        changeSet,
+        validationToken: changeValidation.body.data.validationToken,
+      })
+    assert.equal(changeApply.status, 200, JSON.stringify(changeApply.body))
+    assert.equal(changeApply.body.data.revision, 2)
+    const updatedState = await request(app).get(
+      `/api/automation/v1/projects/${bundle.project.id}/authoring-state`,
+    )
+    assert.equal(updatedState.body.data.revision, 2)
+    assert.equal(
+      updatedState.body.data.project.title['en-US'],
+      'Memory Chip Industry Chain Updated',
+    )
+    const changeReplay = await request(app)
+      .post('/api/automation/v1/authoring/changesets/apply')
+      .send({
+        changeSet,
+        validationToken: changeValidation.body.data.validationToken,
+      })
+    assert.equal(changeReplay.status, 200)
+    assert.deepEqual(changeReplay.body.data, changeApply.body.data)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
@@ -211,6 +292,65 @@ test('Automation v1 rejects tampered blob bytes and stale validation tokens', as
     assert.equal(stale.status, 409)
     assert.equal(stale.body.code, 'VALIDATION_TOKEN_STALE')
     assert.equal(fs.existsSync(path.join(root, 'projects', bundle.project.id)), false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Automation authoring state returns a stable not-found error', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guide-authoring-state-missing-'))
+  const app = createWorkbenchApp({ dataDir: root })
+  try {
+    const response = await request(app).get(
+      '/api/automation/v1/projects/missing-project/authoring-state',
+    )
+    assert.equal(response.status, 404)
+    assert.equal(response.body.code, 'PROJECT_NOT_FOUND')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Automation authoring state represents a valid empty Workbench draft', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guide-authoring-state-draft-'))
+  const app = createWorkbenchApp({ dataDir: root })
+  try {
+    const created = await request(app)
+      .post('/api/projects')
+      .send({ id: 'empty-authoring-draft', title: '空草稿' })
+    assert.equal(created.status, 201)
+    const response = await request(app).get(
+      '/api/automation/v1/projects/empty-authoring-draft/authoring-state',
+    )
+    assert.equal(response.status, 200, JSON.stringify(response.body))
+    assert.equal(response.body.data.panorama.imageAssetId, null)
+    assert.deepEqual(response.body.data.runtimeAssets, [])
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Automation authoring endpoints reject a contract supported only by the other endpoint', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guide-authoring-contract-routing-'))
+  const app = createWorkbenchApp({ dataDir: root })
+  try {
+    const changeSetOnBundle = await request(app)
+      .post('/api/automation/v1/authoring/bundles/validate')
+      .send({ contract: 'guide-authoring-changeset', contractVersion: '1.0.0' })
+    assert.equal(changeSetOnBundle.status, 400)
+    assert.equal(changeSetOnBundle.body.code, 'CONTRACT_UNSUPPORTED')
+    assert.deepEqual(changeSetOnBundle.body.supported, [
+      { name: 'guide-authoring-bundle', versions: ['1.0.0'] },
+    ])
+
+    const bundleOnChangeSet = await request(app)
+      .post('/api/automation/v1/authoring/changesets/validate')
+      .send({ contract: 'guide-authoring-bundle', contractVersion: '1.0.0' })
+    assert.equal(bundleOnChangeSet.status, 400)
+    assert.equal(bundleOnChangeSet.body.code, 'CONTRACT_UNSUPPORTED')
+    assert.deepEqual(bundleOnChangeSet.body.supported, [
+      { name: 'guide-authoring-changeset', versions: ['1.0.0'] },
+    ])
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }

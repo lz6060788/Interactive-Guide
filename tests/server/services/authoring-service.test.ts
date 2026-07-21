@@ -7,6 +7,7 @@ import test from 'node:test'
 import type { GuideAuthoringBundleV1 } from '../../../src/automation/contracts/authoring-bundle-v1.js'
 import {
   AuthoringApplyAtomicityError,
+  AuthoringOperationRecoveryRequiredError,
   AuthoringService,
 } from '../../../src/server/services/authoring-service.js'
 import { AuthoringBlobRepository } from '../../../src/server/storage/authoring-blob-repository.js'
@@ -100,6 +101,88 @@ test('prepared authoring apply is invisible on failure and resumes from its dura
     assert.equal(recovered.revision, 1)
     assert.equal(projects.get(bundle.project.id).metadata.revision, 1)
     assert.equal(operations.get(bundle.project.id, bundle.idempotencyKey)?.status, 'succeeded')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('succeeded authoring replay fails closed when the visible project was altered', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guide-authoring-replay-integrity-'))
+  try {
+    const bytes = Buffer.from('panorama bytes')
+    const bundle = bundleFor(bytes)
+    const projects = new ProjectRepository({ dataDir: root })
+    const blobs = new AuthoringBlobRepository({ dataDir: root })
+    const operations = new AuthoringOperationRepository({ dataDir: root })
+    blobs.put({ sha256: digest(bytes), size: bytes.length, bytes })
+    const service = new AuthoringService(projects, blobs, operations, { dataDir: root })
+    const validation = service.validate(bundle)
+    service.apply(bundle, validation.validationToken)
+
+    const projectFile = path.join(root, 'projects', bundle.project.id, 'project.json')
+    const altered = JSON.parse(fs.readFileSync(projectFile, 'utf8')) as {
+      title: Record<string, string>
+    }
+    altered.title['zh-CN'] = '被篡改'
+    fs.writeFileSync(projectFile, JSON.stringify(altered, null, 2))
+    const future = new Date(Date.now() + 5_000)
+    fs.utimesSync(projectFile, future, future)
+
+    assert.throws(
+      () => service.apply(bundle, validation.validationToken),
+      AuthoringOperationRecoveryRequiredError,
+    )
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('succeeded authoring replay fails closed when project.json was deleted', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guide-authoring-replay-missing-json-'))
+  try {
+    const bytes = Buffer.from('panorama bytes')
+    const bundle = bundleFor(bytes)
+    const projects = new ProjectRepository({ dataDir: root })
+    const blobs = new AuthoringBlobRepository({ dataDir: root })
+    const operations = new AuthoringOperationRepository({ dataDir: root })
+    blobs.put({ sha256: digest(bytes), size: bytes.length, bytes })
+    const service = new AuthoringService(projects, blobs, operations, { dataDir: root })
+    const validation = service.validate(bundle)
+    service.apply(bundle, validation.validationToken)
+    fs.unlinkSync(path.join(root, 'projects', bundle.project.id, 'project.json'))
+
+    assert.throws(
+      () => service.apply(bundle, validation.validationToken),
+      AuthoringOperationRecoveryRequiredError,
+    )
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('bundle replay rejects incompatible optional journal metadata', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'guide-authoring-replay-journal-'))
+  try {
+    const bytes = Buffer.from('panorama bytes')
+    const bundle = bundleFor(bytes)
+    const projects = new ProjectRepository({ dataDir: root })
+    const blobs = new AuthoringBlobRepository({ dataDir: root })
+    const operations = new AuthoringOperationRepository({ dataDir: root })
+    blobs.put({ sha256: digest(bytes), size: bytes.length, bytes })
+    const service = new AuthoringService(projects, blobs, operations, { dataDir: root })
+    const validation = service.validate(bundle)
+    service.apply(bundle, validation.validationToken)
+
+    const keyHash = crypto.createHash('sha256').update(bundle.idempotencyKey, 'utf8').digest('hex')
+    const journalFile = path.join(operations.rootDir(), bundle.project.id, `${keyHash}.json`)
+    const journal = JSON.parse(fs.readFileSync(journalFile, 'utf8')) as Record<string, unknown>
+    journal.operationContract = 'guide-authoring-changeset'
+    fs.writeFileSync(journalFile, JSON.stringify(journal, null, 2))
+
+    assert.throws(
+      () => service.apply(bundle, validation.validationToken),
+      AuthoringOperationRecoveryRequiredError,
+    )
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }

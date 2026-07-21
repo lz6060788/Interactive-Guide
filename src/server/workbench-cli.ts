@@ -181,14 +181,16 @@ const processIo: WorkbenchCliIo = {
   stderr: value => process.stderr.write(`${value}\n`),
 }
 
-async function main(): Promise<void> {
-  const args = process.argv.slice(2)
+export async function runWorkbenchCli(
+  args: string[] = process.argv.slice(2),
+  io: WorkbenchCliIo = processIo,
+): Promise<void> {
   try {
-    process.exitCode = await executeWorkbenchCli(args)
+    process.exitCode = await executeWorkbenchCli(args, io)
   } catch (error) {
     const result = { ok: false, error: classifyError(error) }
-    if (args.includes('--json')) processIo.stdout(JSON.stringify(result))
-    else processIo.stderr(result.error.message)
+    if (args.includes('--json')) io.stdout(JSON.stringify(result))
+    else io.stderr(result.error.message)
     process.exitCode = 1
   }
 }
@@ -203,4 +205,4 @@ function isMainModule(): boolean {
   }
 }
 
-if (isMainModule()) void main()
+if (isMainModule()) void runWorkbenchCli()

@@ -31,5 +31,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Verify offline Workbench package on minimum Node.js
+        if: matrix.node-version == 20
+        run: npm run test:offline-package
+
       - name: Coverage
         run: npm run coverage:check

@@ -12,6 +12,8 @@ import { ProjectService } from './services/project-service.js'
 import { AssetService } from './services/asset-service.js'
 import { ReviewService } from './services/review-service.js'
 import { AuthoringService } from './services/authoring-service.js'
+import { AuthoringChangeSetService } from './services/authoring-changeset-service.js'
+import { AuthoringStateService } from './services/authoring-state-service.js'
 import { healthRouter } from './routes/health.js'
 import { createAutomationRouter } from './routes/automation.js'
 import { createProjectsRouter } from './routes/projects.js'
@@ -52,10 +54,26 @@ export function createWorkbenchApp(options: WorkbenchAppOptions): Express {
     authoringOperationRepo,
     { dataDir },
   )
+  const authoringChangeSetService = new AuthoringChangeSetService(
+    projectRepo,
+    assetRepo,
+    authoringBlobRepo,
+    authoringOperationRepo,
+    { dataDir },
+  )
+  const authoringStateService = new AuthoringStateService(projectRepo)
 
   const app = express()
   if (options.corsOrigin) app.use(cors({ origin: options.corsOrigin }))
-  app.use('/api', createAuthoringRouter(authoringBlobRepo, authoringService))
+  app.use(
+    '/api',
+    createAuthoringRouter(
+      authoringBlobRepo,
+      authoringService,
+      authoringChangeSetService,
+      authoringStateService,
+    ),
+  )
   app.use(express.json({ limit: '50mb' }))
 
   app.use('/api', healthRouter)

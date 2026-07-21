@@ -8,6 +8,7 @@ import {
   type AuthoringFile,
   type GuideAuthoringBundleV1,
 } from '../../automation/contracts/authoring-bundle-v1.js'
+import { PROJECT_TREE_HASH_ALGORITHM } from '../../automation/contracts/authoring-state-v1.js'
 import type { AssetDefinition, AssetRegistry } from '../../domain/project-types.js'
 import { validateReleaseProject, type ValidationIssue } from '../../domain/project-validator.js'
 import { WORKBENCH_VERSION } from '../workbench-version.js'
@@ -31,7 +32,7 @@ import {
   type AuthoringCalibrationQueueItem,
 } from './authoring-mapper.js'
 
-const PROJECT_TREE_HASH_ALGORITHM = 'sha256-path-length-content-v1' as const
+export { PROJECT_TREE_HASH_ALGORITHM }
 const VALIDATION_TOKEN_ALGORITHM = 'sha256-authoring-validation-v1' as const
 
 export interface AuthoringValidationIssue {
@@ -315,8 +316,9 @@ export class AuthoringService {
     )
     if (existingOperation) {
       assertOperationFingerprint(existingOperation, fingerprint)
+      assertBundleOperationMetadata(bundle, plan, existingOperation)
       if (existingOperation.status === 'succeeded') {
-        return requireApplyResult(bundle.project.id, existingOperation.result)
+        return this.replaySucceeded(bundle, plan, existingOperation)
       }
       return this.recoverPrepared(bundle, plan, existingOperation)
     }
@@ -361,6 +363,9 @@ export class AuthoringService {
         projectId: bundle.project.id,
         idempotencyKey: bundle.idempotencyKey,
         requestFingerprint: plan.requestHash,
+        operationContract: bundle.contract,
+        expectedRevision: bundle.expectedRevision,
+        validationToken: plan.validationToken,
         targetProjectSha256,
         targetAssetTreeSha256,
         projectedRevision: 1,
@@ -377,7 +382,8 @@ export class AuthoringService {
       ) {
         cleanupStage(this.stagingRoot, stageDataDir)
         if (operation.status === 'succeeded') {
-          return requireApplyResult(bundle.project.id, operation.result)
+          assertBundleOperationMetadata(bundle, plan, operation)
+          return this.replaySucceeded(bundle, plan, operation)
         }
         return this.recoverPrepared(bundle, plan, operation)
       }
@@ -406,6 +412,7 @@ export class AuthoringService {
     plan: AuthoringValidationPlan,
     operation: PreparedAuthoringOperation,
   ): AuthoringApplyResult {
+    assertBundleOperationMetadata(bundle, plan, operation)
     const visible = this.projects.tryGet(bundle.project.id)
     if (visible) return this.finalizeCommitted(bundle, plan, operation)
     if (!operation.stagingRelativePath) {
@@ -485,6 +492,50 @@ export class AuthoringService {
       result,
       succeededAt: this.now().toISOString(),
     }).result
+  }
+
+  private replaySucceeded(
+    bundle: GuideAuthoringBundleV1,
+    plan: AuthoringValidationPlan,
+    operation: Extract<AuthoringOperationRecord<unknown>, { status: 'succeeded' }>,
+  ): AuthoringApplyResult {
+    const projectId = bundle.project.id
+    assertBundleOperationMetadata(bundle, plan, operation)
+    const result = requireApplyResult(projectId, operation.result)
+    const visible = this.projects.tryGet(projectId)
+    if (!visible) {
+      throw new AuthoringOperationRecoveryRequiredError(
+        projectId,
+        'succeeded journal points to a missing visible project',
+      )
+    }
+    let projectSha256: string
+    let projectTreeSha256: string
+    try {
+      projectSha256 = hashGuideProject(visible)
+      projectTreeSha256 = hashProjectTree(projectDir(this.projects, projectId))
+    } catch {
+      throw new AuthoringOperationRecoveryRequiredError(
+        projectId,
+        'succeeded journal points to an incomplete visible project tree',
+      )
+    }
+    if (
+      projectSha256 !== operation.targetProjectSha256 ||
+      projectTreeSha256 !== operation.targetAssetTreeSha256 ||
+      result.projectSha256 !== projectSha256 ||
+      result.projectTreeSha256 !== projectTreeSha256 ||
+      result.requestHash !== operation.requestFingerprint ||
+      result.requestHash !== plan.requestHash ||
+      result.validationToken !== plan.validationToken ||
+      result.revision !== (operation.projectedRevision ?? 1)
+    ) {
+      throw new AuthoringOperationRecoveryRequiredError(
+        projectId,
+        'visible project no longer matches the succeeded journal',
+      )
+    }
+    return result
   }
 
   private commitStagedProject(stageProjects: ProjectRepository, projectId: string): void {
@@ -650,6 +701,26 @@ function assertOperationFingerprint(
     operation.requestFingerprint,
     fingerprint,
   )
+}
+
+function assertBundleOperationMetadata(
+  bundle: GuideAuthoringBundleV1,
+  plan: AuthoringValidationPlan,
+  operation: AuthoringOperationRecord<unknown>,
+): void {
+  if (
+    (operation.operationContract !== undefined &&
+      operation.operationContract !== GUIDE_AUTHORING_BUNDLE_CONTRACT) ||
+    (operation.expectedRevision !== undefined &&
+      operation.expectedRevision !== bundle.expectedRevision) ||
+    (operation.projectedRevision !== undefined && operation.projectedRevision !== 1) ||
+    (operation.validationToken !== undefined && operation.validationToken !== plan.validationToken)
+  ) {
+    throw new AuthoringOperationRecoveryRequiredError(
+      bundle.project.id,
+      'journal metadata does not match the authoring bundle',
+    )
+  }
 }
 
 function projectDir(projects: ProjectRepository, projectId: string): string {

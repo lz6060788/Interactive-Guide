@@ -16,6 +16,9 @@ import {
 const REQUEST_FINGERPRINT = '1'.repeat(64)
 const TARGET_PROJECT_SHA256 = '2'.repeat(64)
 const TARGET_ASSET_TREE_SHA256 = 'a'.repeat(64)
+const BASE_PROJECT_SHA256 = '3'.repeat(64)
+const BASE_PROJECT_TREE_SHA256 = '4'.repeat(64)
+const VALIDATION_TOKEN = '5'.repeat(64)
 
 test('AuthoringOperationRepository persists a prepared operation without exposing its raw key', () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ig-authoring-operation-'))
@@ -30,6 +33,11 @@ test('AuthoringOperationRepository persists a prepared operation without exposin
       projectId: 'memory-chip-industry-chain',
       idempotencyKey,
       requestFingerprint: REQUEST_FINGERPRINT,
+      operationContract: 'guide-authoring-changeset',
+      expectedRevision: 7,
+      baseProjectSha256: BASE_PROJECT_SHA256,
+      baseProjectTreeSha256: BASE_PROJECT_TREE_SHA256,
+      validationToken: VALIDATION_TOKEN,
       targetProjectSha256: TARGET_PROJECT_SHA256,
       targetAssetTreeSha256: TARGET_ASSET_TREE_SHA256,
       projectedRevision: 1,
@@ -42,6 +50,11 @@ test('AuthoringOperationRepository persists a prepared operation without exposin
       projectId: 'memory-chip-industry-chain',
       idempotencyKeyHash: keyHash,
       requestFingerprint: REQUEST_FINGERPRINT,
+      operationContract: 'guide-authoring-changeset',
+      expectedRevision: 7,
+      baseProjectSha256: BASE_PROJECT_SHA256,
+      baseProjectTreeSha256: BASE_PROJECT_TREE_SHA256,
+      validationToken: VALIDATION_TOKEN,
       targetProjectSha256: TARGET_PROJECT_SHA256,
       targetAssetTreeSha256: TARGET_ASSET_TREE_SHA256,
       status: 'prepared',

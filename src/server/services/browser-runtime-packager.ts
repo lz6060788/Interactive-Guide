@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { transformSync } from '@babel/core'
 import presetEnv from '@babel/preset-env'
 import { parse } from 'acorn'
@@ -19,10 +20,12 @@ export function buildBrowserRuntimeBundle(options: {
   product: ProductShellProduct
   entrySourcePath?: string
 }): BrowserRuntimeBundleResult {
+  const workbenchRoot = resolveWorkbenchResourceRoot()
   const entrySourcePath = path.resolve(
     options.entrySourcePath ??
       path.join(
-        path.resolve('src'),
+        workbenchRoot,
+        'src',
         'product-shell',
         'browser',
         options.product === 'atlas' ? 'atlas-entry.ts' : 'catalog-entry.ts',
@@ -33,7 +36,7 @@ export function buildBrowserRuntimeBundle(options: {
   const bootstrapSource = buildBootstrapSource(
     entrySourcePath,
     bootstrapExport,
-    loadKingFisherVendorScripts(),
+    loadKingFisherVendorScripts(workbenchRoot),
   )
 
   const bundle = buildSync({
@@ -45,6 +48,16 @@ export function buildBrowserRuntimeBundle(options: {
     },
     bundle: true,
     write: false,
+    // Keep esbuild entirely inside the portable package. Without an explicit
+    // working directory and raw TS config it searches parent directories for
+    // tsconfig.json/node_modules, which can cross an extraction boundary.
+    absWorkingDir: workbenchRoot,
+    tsconfigRaw: {
+      compilerOptions: {
+        target: 'ES2017',
+        useDefineForClassFields: false,
+      },
+    },
     format: 'iife',
     platform: 'browser',
     target: 'es2017',
@@ -105,7 +118,10 @@ function buildBootstrapSource(
   bootstrapExport: string,
   kingFisherScripts: { bridge: string; falcon: string },
 ): string {
-  const entrySpecifier = normalizePath(entrySourcePath)
+  // stdin.resolveDir already points at the entry's directory. A relative
+  // specifier avoids Windows drive-letter imports being interpreted as
+  // package names when the portable Workbench is invoked from another cwd.
+  const entrySpecifier = `./${path.basename(entrySourcePath).replaceAll('\\', '/')}`
   return `
 import { ${bootstrapExport} } from ${JSON.stringify(entrySpecifier)}
 
@@ -130,14 +146,18 @@ Promise.resolve(${bootstrapExport}(app, manifestUrl)).catch(function (error) {
 `
 }
 
-function loadKingFisherVendorScripts(): { bridge: string; falcon: string } {
-  const vendorRoot = path.resolve('vendor', 'king-fisher')
+/**
+ * Resolve the repository/portable-package root from either
+ * src/server/services/*.ts or dist/server/services/*.js.
+ */
+export function resolveWorkbenchResourceRoot(moduleUrl = import.meta.url): string {
+  return path.resolve(path.dirname(fileURLToPath(moduleUrl)), '..', '..', '..')
+}
+
+function loadKingFisherVendorScripts(workbenchRoot: string): { bridge: string; falcon: string } {
+  const vendorRoot = path.join(workbenchRoot, 'vendor', 'king-fisher')
   return {
     bridge: fs.readFileSync(path.join(vendorRoot, 'bridge-0.6.0.umd.js'), 'utf8'),
     falcon: fs.readFileSync(path.join(vendorRoot, 'falcon-0.5.26-zcp-692-snapshot.umd.js'), 'utf8'),
   }
-}
-
-function normalizePath(value: string): string {
-  return value.replaceAll('\\', '/')
 }

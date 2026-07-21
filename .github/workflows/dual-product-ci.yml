@@ -20,5 +20,5 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm test
-      - name: Build server
-        run: npm run build:server
+      - name: Verify offline Workbench package
+        run: npm run test:offline-package

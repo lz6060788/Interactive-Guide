@@ -17,6 +17,11 @@ interface AuthoringOperationBase {
   projectId: string
   idempotencyKeyHash: string
   requestFingerprint: string
+  operationContract?: string
+  expectedRevision?: number
+  baseProjectSha256?: string
+  baseProjectTreeSha256?: string
+  validationToken?: string
   targetProjectSha256: string
   targetAssetTreeSha256: string
   preparedAt: string
@@ -43,6 +48,11 @@ export interface PrepareAuthoringOperationInput {
   projectId: string
   idempotencyKey: string
   requestFingerprint: string
+  operationContract?: string
+  expectedRevision?: number
+  baseProjectSha256?: string
+  baseProjectTreeSha256?: string
+  validationToken?: string
   targetProjectSha256: string
   targetAssetTreeSha256: string
   preparedAt?: string
@@ -152,6 +162,19 @@ export class AuthoringOperationRepository {
 
   prepare(input: PrepareAuthoringOperationInput): AuthoringOperationRecord {
     validateFingerprint('requestFingerprint', input.requestFingerprint)
+    if (input.operationContract !== undefined) {
+      validateIdentifier('operationContract', input.operationContract)
+    }
+    if (input.expectedRevision !== undefined) validateExpectedRevision(input.expectedRevision)
+    if (input.baseProjectSha256 !== undefined) {
+      validateFingerprint('baseProjectSha256', input.baseProjectSha256)
+    }
+    if (input.baseProjectTreeSha256 !== undefined) {
+      validateFingerprint('baseProjectTreeSha256', input.baseProjectTreeSha256)
+    }
+    if (input.validationToken !== undefined) {
+      validateFingerprint('validationToken', input.validationToken)
+    }
     validateFingerprint('targetProjectSha256', input.targetProjectSha256)
     validateFingerprint('targetAssetTreeSha256', input.targetAssetTreeSha256)
     if (input.projectedRevision !== undefined) validateProjectedRevision(input.projectedRevision)
@@ -177,6 +200,19 @@ export class AuthoringOperationRepository {
         projectId: input.projectId,
         idempotencyKeyHash: location.keyHash,
         requestFingerprint: input.requestFingerprint,
+        ...(input.operationContract === undefined
+          ? {}
+          : { operationContract: input.operationContract }),
+        ...(input.expectedRevision === undefined
+          ? {}
+          : { expectedRevision: input.expectedRevision }),
+        ...(input.baseProjectSha256 === undefined
+          ? {}
+          : { baseProjectSha256: input.baseProjectSha256 }),
+        ...(input.baseProjectTreeSha256 === undefined
+          ? {}
+          : { baseProjectTreeSha256: input.baseProjectTreeSha256 }),
+        ...(input.validationToken === undefined ? {} : { validationToken: input.validationToken }),
         targetProjectSha256: input.targetProjectSha256,
         targetAssetTreeSha256: input.targetAssetTreeSha256,
         status: 'prepared',
@@ -334,6 +370,11 @@ function parseRecord<TResult>(
     'projectId',
     'idempotencyKeyHash',
     'requestFingerprint',
+    'operationContract',
+    'expectedRevision',
+    'baseProjectSha256',
+    'baseProjectTreeSha256',
+    'validationToken',
     'targetProjectSha256',
     'targetAssetTreeSha256',
     'status',
@@ -352,6 +393,19 @@ function parseRecord<TResult>(
     throw new Error('record idempotencyKeyHash does not match path')
   }
   validateFingerprint('requestFingerprint', value.requestFingerprint)
+  if (value.operationContract !== undefined) {
+    validateIdentifier('operationContract', value.operationContract)
+  }
+  if (value.expectedRevision !== undefined) validateExpectedRevision(value.expectedRevision)
+  if (value.baseProjectSha256 !== undefined) {
+    validateFingerprint('baseProjectSha256', value.baseProjectSha256)
+  }
+  if (value.baseProjectTreeSha256 !== undefined) {
+    validateFingerprint('baseProjectTreeSha256', value.baseProjectTreeSha256)
+  }
+  if (value.validationToken !== undefined) {
+    validateFingerprint('validationToken', value.validationToken)
+  }
   validateFingerprint('targetProjectSha256', value.targetProjectSha256)
   validateFingerprint('targetAssetTreeSha256', value.targetAssetTreeSha256)
   validateTimestamp('preparedAt', value.preparedAt)
@@ -400,6 +454,12 @@ function validateFingerprint(field: string, value: unknown): asserts value is st
 function validateProjectedRevision(value: unknown): asserts value is number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
     throw new InvalidAuthoringOperationFieldError('projectedRevision', value)
+  }
+}
+
+function validateExpectedRevision(value: unknown): asserts value is number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new InvalidAuthoringOperationFieldError('expectedRevision', value)
   }
 }
 
