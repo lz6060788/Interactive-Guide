@@ -2,8 +2,8 @@
  * AssetService — registers and removes assets for a project.
  *
  * Each operation:
- *   1. Writes the blob to disk.
- *   2. Updates the project's asset registry via the underlying repository
+ *   1. Validates revision and id conflicts before any filesystem mutation.
+ *   2. Stages the blob and updates the project's asset registry
  *      (not through the field-level ProjectService patches, because a
  *      single asset operation may touch assets + scenes + navigation).
  *   3. Bumps revision with optimistic-lock semantics.
@@ -12,7 +12,7 @@ import type { AssetDefinition, GuideProject } from '../../domain/project-types.j
 import {
   AssetRepository,
   AssetNotFoundError,
-  type RegisterResult,
+  type AssetWriteTransaction,
 } from '../storage/asset-repository.js'
 import { ProjectRepository } from '../storage/project-repository.js'
 
@@ -45,7 +45,12 @@ export class AssetService {
     input: { id: string; bytes: Buffer; mimeType: string; extension: string },
     options: RegisterAssetOptions,
   ): AssetDefinition {
-    return this.register(projectId, this.assets.registerImage(projectId, input), options)
+    const project = this.requireRegistration(projectId, input.id, options.expectedRevision)
+    return this.register(
+      project,
+      this.assets.beginRegisterImage(projectId, input),
+      options.expectedRevision,
+    )
   }
 
   registerVideo(
@@ -53,7 +58,12 @@ export class AssetService {
     input: { id: string; bytes: Buffer; mimeType: string; extension: string },
     options: RegisterAssetOptions,
   ): AssetDefinition {
-    return this.register(projectId, this.assets.registerVideo(projectId, input), options)
+    const project = this.requireRegistration(projectId, input.id, options.expectedRevision)
+    return this.register(
+      project,
+      this.assets.beginRegisterVideo(projectId, input),
+      options.expectedRevision,
+    )
   }
 
   registerHtmlBundle(
@@ -61,15 +71,20 @@ export class AssetService {
     input: { id: string; bytes: Buffer },
     options: RegisterAssetOptions,
   ): AssetDefinition {
-    return this.register(projectId, this.assets.registerHtmlBundle(projectId, input), options)
+    const project = this.requireRegistration(projectId, input.id, options.expectedRevision)
+    return this.register(
+      project,
+      this.assets.beginRegisterHtmlBundle(projectId, input),
+      options.expectedRevision,
+    )
   }
 
   remove(projectId: string, assetId: string, expectedRevision: number): void {
-    const project = this.projects.get(projectId)
+    const project = this.requireRevision(projectId, expectedRevision)
     if (!project.assets.byId[assetId]) {
       throw new Error(`asset "${assetId}" not found in project "${projectId}"`)
     }
-    this.assets.remove(projectId, assetId)
+    const removal = this.assets.beginRemove(projectId, assetId)
     const next: GuideProject = {
       ...project,
       assets: { byId: { ...project.assets.byId } },
@@ -78,11 +93,17 @@ export class AssetService {
     if (next.panorama.assetId === assetId) {
       next.panorama = { ...next.panorama, assetId: '' }
     }
-    next.scenes = next.scenes.filter((s) => s.assetId !== assetId)
-    next.navigation.routes = next.navigation.routes.map((r) =>
+    next.scenes = next.scenes.filter(s => s.assetId !== assetId)
+    next.navigation.routes = next.navigation.routes.map(r =>
       r.transition?.assetId === assetId ? { ...r, transition: undefined } : r,
     )
-    this.saveBumped(project, next, expectedRevision)
+    try {
+      this.saveBumped(project, next, expectedRevision)
+    } catch (error) {
+      removal.rollback()
+      throw error
+    }
+    removal.commit()
   }
 
   /**
@@ -113,17 +134,47 @@ export class AssetService {
     return this.assets.absoluteHtmlBundleFilePathFor(projectId, assetId, filePath)
   }
 
-  private register(projectId: string, reg: RegisterResult, options: RegisterAssetOptions): AssetDefinition {
-    const project = this.projects.get(projectId)
-    if (project.assets.byId[reg.definition.id]) {
-      throw new AssetConflictError(reg.definition.id)
-    }
+  private register(
+    project: GuideProject,
+    transaction: AssetWriteTransaction,
+    expectedRevision: number,
+  ): AssetDefinition {
     const next: GuideProject = {
       ...project,
-      assets: { byId: { ...project.assets.byId, [reg.definition.id]: reg.definition } },
+      assets: {
+        byId: {
+          ...project.assets.byId,
+          [transaction.definition.id]: transaction.definition,
+        },
+      },
     }
-    this.saveBumped(project, next, options.expectedRevision)
-    return reg.definition
+    try {
+      transaction.commit()
+      this.saveBumped(project, next, expectedRevision)
+      transaction.accept()
+      return transaction.definition
+    } catch (error) {
+      transaction.rollback()
+      throw error
+    }
+  }
+
+  private requireRegistration(
+    projectId: string,
+    assetId: string,
+    expectedRevision: number,
+  ): GuideProject {
+    const project = this.requireRevision(projectId, expectedRevision)
+    if (project.assets.byId[assetId]) throw new AssetConflictError(assetId)
+    return project
+  }
+
+  private requireRevision(projectId: string, expectedRevision: number): GuideProject {
+    const project = this.projects.get(projectId)
+    if (project.metadata.revision !== expectedRevision) {
+      throw new RevisionConflictError(project.metadata.revision)
+    }
+    return project
   }
 
   private saveBumped(previous: GuideProject, next: GuideProject, expectedRevision: number): void {

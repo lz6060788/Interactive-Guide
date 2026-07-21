@@ -13,6 +13,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import AdmZip from 'adm-zip'
 import type { AssetDefinition, AssetKind } from '../../domain/project-types.js'
+import { AssetIdSchema } from '../../domain/project-schema.js'
 import type { ProjectRepository } from './project-repository.js'
 
 export interface RegisterImageInput {
@@ -37,6 +38,17 @@ export interface RegisterHtmlBundleInput {
 
 export interface RegisterResult {
   definition: AssetDefinition
+}
+
+export interface AssetWriteTransaction extends RegisterResult {
+  commit(): void
+  accept(): void
+  rollback(): void
+}
+
+export interface AssetRemoveTransaction {
+  commit(): void
+  rollback(): void
 }
 
 export class AssetConflictError extends Error {
@@ -75,76 +87,143 @@ export class AssetRepository {
   ) {}
 
   registerImage(projectId: string, input: RegisterImageInput): RegisterResult {
+    return commitStandalone(this.beginRegisterImage(projectId, input))
+  }
+
+  beginRegisterImage(projectId: string, input: RegisterImageInput): AssetWriteTransaction {
     const root = this.projects.resolveAssetDir(projectId)
-    const dir = this.imageDir(root, input.id)
-    fs.mkdirSync(dir, { recursive: true })
-    const ext = input.extension.replace(/^\./, '')
-    const rel = path.posix.join('images', input.id, `image.${ext}`)
-    fs.writeFileSync(path.join(root, rel), input.bytes)
-    return {
-      definition: {
-        id: input.id,
+    const assetId = requireAssetId(input.id)
+    const ext = requireAssetExtension(input.extension)
+    const rel = path.posix.join('images', assetId, `image.${ext}`)
+    return this.beginWrite(
+      root,
+      'images',
+      assetId,
+      {
+        id: assetId,
         kind: 'image',
         sourcePath: rel,
         mimeType: input.mimeType,
         size: input.bytes.length,
         sha256: hash(input.bytes),
       },
-    }
+      stagingDir => {
+        fs.writeFileSync(path.join(stagingDir, `image.${ext}`), input.bytes)
+      },
+    )
   }
 
   registerVideo(projectId: string, input: RegisterVideoInput): RegisterResult {
+    return commitStandalone(this.beginRegisterVideo(projectId, input))
+  }
+
+  beginRegisterVideo(projectId: string, input: RegisterVideoInput): AssetWriteTransaction {
     const root = this.projects.resolveAssetDir(projectId)
-    const dir = this.videoDir(root, input.id)
-    fs.mkdirSync(dir, { recursive: true })
-    const ext = input.extension.replace(/^\./, '')
-    const rel = path.posix.join('videos', input.id, `video.${ext}`)
-    fs.writeFileSync(path.join(root, rel), input.bytes)
-    return {
-      definition: {
-        id: input.id,
+    const assetId = requireAssetId(input.id)
+    const ext = requireAssetExtension(input.extension)
+    const rel = path.posix.join('videos', assetId, `video.${ext}`)
+    return this.beginWrite(
+      root,
+      'videos',
+      assetId,
+      {
+        id: assetId,
         kind: 'video',
         sourcePath: rel,
         mimeType: input.mimeType,
         size: input.bytes.length,
         sha256: hash(input.bytes),
       },
-    }
+      stagingDir => {
+        fs.writeFileSync(path.join(stagingDir, `video.${ext}`), input.bytes)
+      },
+    )
   }
 
   registerHtmlBundle(projectId: string, input: RegisterHtmlBundleInput): RegisterResult {
+    return commitStandalone(this.beginRegisterHtmlBundle(projectId, input))
+  }
+
+  beginRegisterHtmlBundle(
+    projectId: string,
+    input: RegisterHtmlBundleInput,
+  ): AssetWriteTransaction {
     const root = this.projects.resolveAssetDir(projectId)
-    const dir = this.sceneDir(root, input.id)
-    fs.rmSync(dir, { recursive: true, force: true })
-    fs.mkdirSync(dir, { recursive: true })
-    const files = unzipSafely(input.bytes, dir)
-    if (!files.includes('index.html')) {
-      throw new AssetValidationError('html bundle must contain index.html at root')
-    }
-    return {
-      definition: {
-        id: input.id,
+    const assetId = requireAssetId(input.id)
+    return this.beginWrite(
+      root,
+      'scenes',
+      assetId,
+      {
+        id: assetId,
         kind: 'html-bundle',
-        sourcePath: path.posix.join('scenes', input.id),
+        sourcePath: path.posix.join('scenes', assetId),
         entryPath: 'index.html',
         size: input.bytes.length,
         sha256: hash(input.bytes),
       },
-    }
+      stagingDir => {
+        const files = unzipSafely(input.bytes, stagingDir)
+        if (!files.includes('index.html')) {
+          throw new AssetValidationError('html bundle must contain index.html at root')
+        }
+      },
+    )
   }
 
   remove(projectId: string, assetId: string): void {
+    const transaction = this.beginRemove(projectId, assetId)
+    try {
+      transaction.commit()
+    } catch (error) {
+      transaction.rollback()
+      throw error
+    }
+  }
+
+  beginRemove(projectId: string, assetId: string): AssetRemoveTransaction {
     const project = this.projects.tryGet(projectId)
     if (!project) throw new AssetNotFoundError(assetId)
     const def = project.assets.byId[assetId]
     if (!def) throw new AssetNotFoundError(assetId)
-    const abs = path.join(this.projects.resolveAssetDir(projectId), def.sourcePath)
-    fs.rmSync(abs, { recursive: true, force: true })
-    // Also remove the assetId directory itself (e.g. `assets/images/asset-pano/`)
-    // so a subsequent re-registration of the same asset id starts clean.
-    const parent = path.dirname(abs)
-    if (parent !== this.projects.resolveAssetDir(projectId)) {
-      fs.rmSync(parent, { recursive: true, force: true })
+    if (def.id !== assetId) {
+      throw new AssetValidationError(
+        `asset registry key "${assetId}" does not match definition id "${def.id}"`,
+      )
+    }
+    const root = this.projects.resolveAssetDir(projectId)
+    const storageDir = this.storageDir(root, def)
+    const stagedDir = path.join(
+      path.dirname(storageDir),
+      `.asset-delete-${def.id}-${crypto.randomUUID()}`,
+    )
+    const moved = fs.existsSync(storageDir)
+    if (moved) fs.renameSync(storageDir, stagedDir)
+    let finished = false
+    return {
+      commit() {
+        if (finished) return
+        finished = true
+        if (moved) {
+          try {
+            fs.rmSync(stagedDir, { recursive: true, force: true })
+          } catch (error) {
+            console.warn(
+              `[AssetRepository] deferred cleanup required for ${stagedDir}: ${(error as Error).message}`,
+            )
+          }
+        }
+      },
+      rollback() {
+        if (finished) return
+        if (moved && fs.existsSync(stagedDir)) {
+          if (fs.existsSync(storageDir)) {
+            throw new AssetConflictError(def.id)
+          }
+          fs.renameSync(stagedDir, storageDir)
+        }
+        finished = true
+      },
     }
   }
 
@@ -158,6 +237,58 @@ export class AssetRepository {
     return path.join(this.sceneDir(this.projects.resolveAssetDir(projectId), assetId), safeFile)
   }
 
+  private beginWrite(
+    root: string,
+    kindDir: 'images' | 'videos' | 'scenes',
+    assetId: string,
+    definition: AssetDefinition,
+    populate: (stagingDir: string) => void,
+  ): AssetWriteTransaction {
+    const parent = path.join(root, kindDir)
+    const finalDir = path.join(parent, assetId)
+    if (fs.existsSync(finalDir)) throw new AssetConflictError(assetId)
+    fs.mkdirSync(parent, { recursive: true })
+    const stagingDir = path.join(parent, `.asset-staging-${assetId}-${crypto.randomUUID()}`)
+    fs.mkdirSync(stagingDir)
+    try {
+      populate(stagingDir)
+    } catch (error) {
+      fs.rmSync(stagingDir, { recursive: true, force: true })
+      throw error
+    }
+    let committed = false
+    let accepted = false
+    return {
+      definition,
+      commit() {
+        if (committed) return
+        if (fs.existsSync(finalDir)) throw new AssetConflictError(assetId)
+        fs.renameSync(stagingDir, finalDir)
+        committed = true
+      },
+      accept() {
+        if (!committed) throw new Error('asset transaction must be committed before acceptance')
+        accepted = true
+      },
+      rollback() {
+        if (accepted) return
+        fs.rmSync(committed ? finalDir : stagingDir, { recursive: true, force: true })
+      },
+    }
+  }
+
+  private storageDir(root: string, definition: AssetDefinition): string {
+    const assetId = requireAssetId(definition.id)
+    switch (definition.kind) {
+      case 'image':
+        return this.imageDir(root, assetId)
+      case 'video':
+        return this.videoDir(root, assetId)
+      case 'html-bundle':
+        return this.sceneDir(root, assetId)
+    }
+  }
+
   private imageDir(root: string, assetId: string): string {
     return path.join(root, 'images', assetId)
   }
@@ -167,6 +298,34 @@ export class AssetRepository {
   private sceneDir(root: string, assetId: string): string {
     return path.join(root, 'scenes', assetId)
   }
+}
+
+function commitStandalone(transaction: AssetWriteTransaction): RegisterResult {
+  try {
+    transaction.commit()
+    transaction.accept()
+    return { definition: transaction.definition }
+  } catch (error) {
+    transaction.rollback()
+    throw error
+  }
+}
+
+function requireAssetId(assetId: string): string {
+  if (!AssetIdSchema.safeParse(assetId).success) {
+    throw new AssetValidationError(`asset id "${assetId}" must be a safe path segment`)
+  }
+  return assetId
+}
+
+function requireAssetExtension(extension: string): string {
+  const normalized = extension.replace(/^\./, '').toLowerCase()
+  if (!/^[a-z0-9]{1,10}$/.test(normalized)) {
+    throw new AssetValidationError(
+      `asset extension "${extension}" must be 1-10 alphanumeric characters`,
+    )
+  }
+  return normalized
 }
 
 function hash(buf: Buffer): string {
@@ -195,7 +354,9 @@ function unzipSafely(zipBuf: Buffer, targetDir: string): string[] {
     if (entry.isDirectory) continue
     const name = entry.entryName
     if (files.length >= HTML_BUNDLE_LIMITS.maxFiles) {
-      throw new AssetValidationError(`html bundle exceeds ${HTML_BUNDLE_LIMITS.maxFiles} file limit`)
+      throw new AssetValidationError(
+        `html bundle exceeds ${HTML_BUNDLE_LIMITS.maxFiles} file limit`,
+      )
     }
     const size = entry.header.size
     if (size > HTML_BUNDLE_LIMITS.maxFileBytes) {
@@ -225,7 +386,9 @@ function unzipSafely(zipBuf: Buffer, targetDir: string): string[] {
 function assertInsideProject(_projectId: string, sourcePath: string): string {
   const normalized = sourcePath.replaceAll('\\', '/')
   if (normalized.startsWith('/') || normalized.includes('..')) {
-    throw new AssetValidationError(`asset path "${sourcePath}" must be project-relative and inside the project root`)
+    throw new AssetValidationError(
+      `asset path "${sourcePath}" must be project-relative and inside the project root`,
+    )
   }
   return normalized
 }

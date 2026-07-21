@@ -10,7 +10,11 @@ import fs from 'node:fs'
 import type { ProjectService } from '../services/project-service.js'
 import type { AssetService } from '../services/asset-service.js'
 import { AssetConflictError, RevisionConflictError } from '../services/asset-service.js'
-import { AssetValidationError, AssetNotFoundError } from '../storage/asset-repository.js'
+import {
+  AssetConflictError as StoredAssetConflictError,
+  AssetValidationError,
+  AssetNotFoundError,
+} from '../storage/asset-repository.js'
 import { mapServiceError } from './projects.js'
 
 export function createAssetsRouter(
@@ -20,7 +24,8 @@ export function createAssetsRouter(
   const router = Router()
   router.use(express.json({ limit: '200mb' }))
 
-  const handle = (fn: (req: Request, res: Response) => Promise<void> | void) =>
+  const handle =
+    (fn: (req: Request, res: Response) => Promise<void> | void) =>
     (req: Request, res: Response, next: NextFunction) => {
       try {
         const r = fn(req, res)
@@ -113,68 +118,74 @@ export function createAssetsRouter(
   // editor can render the panorama image / play the transition video without
   // needing direct file-system access. The mime type comes from the asset
   // definition; missing assets return 404.
-  router.get('/projects/:id/assets/blob/:assetId', handle((req, res) => {
-    const projectId = String(req.params.id)
-    const assetId = String(req.params.assetId)
-    const project = projectService.get(projectId)
-    const def = project.assets.byId[assetId]
-    if (!def) {
-      res.status(404).json({ error: `asset ${assetId} not found`, code: 'NOT_FOUND' })
-      return
-    }
-    let abs: string
-    try {
-      abs = assetService.absolutePathFor(projectId, assetId)
-    } catch (err) {
-      if (err instanceof AssetNotFoundError) {
-        res.status(404).json({ error: err.message, code: 'NOT_FOUND' })
+  router.get(
+    '/projects/:id/assets/blob/:assetId',
+    handle((req, res) => {
+      const projectId = String(req.params.id)
+      const assetId = String(req.params.assetId)
+      const project = projectService.get(projectId)
+      const def = project.assets.byId[assetId]
+      if (!def) {
+        res.status(404).json({ error: `asset ${assetId} not found`, code: 'NOT_FOUND' })
         return
       }
-      throw err
-    }
-    if (!fs.existsSync(abs)) {
-      res.status(404).json({ error: 'asset blob missing on disk', code: 'NOT_FOUND' })
-      return
-    }
-    if (def.mimeType) res.setHeader('content-type', def.mimeType)
-    res.setHeader('cache-control', 'private, max-age=300')
-    fs.createReadStream(abs).pipe(res)
-  }))
+      let abs: string
+      try {
+        abs = assetService.absolutePathFor(projectId, assetId)
+      } catch (err) {
+        if (err instanceof AssetNotFoundError) {
+          res.status(404).json({ error: err.message, code: 'NOT_FOUND' })
+          return
+        }
+        throw err
+      }
+      if (!fs.existsSync(abs)) {
+        res.status(404).json({ error: 'asset blob missing on disk', code: 'NOT_FOUND' })
+        return
+      }
+      if (def.mimeType) res.setHeader('content-type', def.mimeType)
+      res.setHeader('cache-control', 'private, max-age=300')
+      fs.createReadStream(abs).pipe(res)
+    }),
+  )
 
-  router.get(/^\/projects\/([^/]+)\/assets\/html-bundle\/([^/]+)\/(.+)$/, handle((req, res) => {
-    const params = req.params as unknown as Record<string, string | undefined>
-    const projectId = String(params['0'] ?? '')
-    const assetId = String(params['1'] ?? '')
-    const rawFilePath = String(params['2'] ?? '')
-    const filePath = String(rawFilePath || '').trim()
-    if (!filePath) {
-      res.status(400).json({ error: 'file path is required', code: 'BAD_REQUEST' })
-      return
-    }
-    let abs: string
-    try {
-      abs = assetService.absoluteHtmlBundleFilePathFor(projectId, assetId, filePath)
-    } catch (err) {
-      if (err instanceof AssetNotFoundError) {
-        res.status(404).json({ error: err.message, code: 'NOT_FOUND' })
+  router.get(
+    /^\/projects\/([^/]+)\/assets\/html-bundle\/([^/]+)\/(.+)$/,
+    handle((req, res) => {
+      const params = req.params as unknown as Record<string, string | undefined>
+      const projectId = String(params['0'] ?? '')
+      const assetId = String(params['1'] ?? '')
+      const rawFilePath = String(params['2'] ?? '')
+      const filePath = String(rawFilePath || '').trim()
+      if (!filePath) {
+        res.status(400).json({ error: 'file path is required', code: 'BAD_REQUEST' })
         return
       }
-      throw err
-    }
-    if (!fs.existsSync(abs)) {
-      res.status(404).json({ error: 'html bundle file missing on disk', code: 'NOT_FOUND' })
-      return
-    }
-    res.setHeader('content-type', mimeForSceneFile(abs))
-    res.setHeader('cache-control', 'private, max-age=300')
-    fs.createReadStream(abs).pipe(res)
-  }))
+      let abs: string
+      try {
+        abs = assetService.absoluteHtmlBundleFilePathFor(projectId, assetId, filePath)
+      } catch (err) {
+        if (err instanceof AssetNotFoundError) {
+          res.status(404).json({ error: err.message, code: 'NOT_FOUND' })
+          return
+        }
+        throw err
+      }
+      if (!fs.existsSync(abs)) {
+        res.status(404).json({ error: 'html bundle file missing on disk', code: 'NOT_FOUND' })
+        return
+      }
+      res.setHeader('content-type', mimeForSceneFile(abs))
+      res.setHeader('cache-control', 'private, max-age=300')
+      fs.createReadStream(abs).pipe(res)
+    }),
+  )
 
   return router
 }
 
 function mapAssetError(err: unknown, res: Response): boolean {
-  if (err instanceof AssetConflictError) {
+  if (err instanceof AssetConflictError || err instanceof StoredAssetConflictError) {
     res.status(409).json({ error: err.message, code: 'ASSET_CONFLICT' })
     return true
   }
@@ -201,7 +212,9 @@ function parseRevision(req: Request, res: Response): number | null {
   }
   const num = Number(raw)
   if (!Number.isInteger(num) || num < 0) {
-    res.status(400).json({ error: 'expectedRevision must be a non-negative integer', code: 'BAD_REQUEST' })
+    res
+      .status(400)
+      .json({ error: 'expectedRevision must be a non-negative integer', code: 'BAD_REQUEST' })
     return null
   }
   return num
@@ -212,16 +225,23 @@ function pickImageExt(mime: string, req: Request): string {
   if (mime.includes('png')) return 'png'
   if (mime.includes('webp')) return 'webp'
   if (mime.includes('gif')) return 'gif'
-  const fromName = String(req.query.filename ?? '').split('.').pop()
-  return fromName || 'bin'
+  return requireSafeFilenameExtension(req)
 }
 
 function pickVideoExt(mime: string, req: Request): string {
   if (mime.includes('mp4')) return 'mp4'
   if (mime.includes('webm')) return 'webm'
   if (mime.includes('quicktime')) return 'mov'
-  const fromName = String(req.query.filename ?? '').split('.').pop()
-  return fromName || 'mp4'
+  return requireSafeFilenameExtension(req)
+}
+
+function requireSafeFilenameExtension(req: Request): string {
+  const filename = String(req.query.filename ?? '')
+  const extension = filename.includes('.') ? filename.split('.').pop()?.toLowerCase() : undefined
+  if (!extension || !/^[a-z0-9]{1,10}$/.test(extension)) {
+    throw new AssetValidationError('a safe filename extension is required for this content type')
+  }
+  return extension
 }
 
 function mimeForSceneFile(absPath: string): string {

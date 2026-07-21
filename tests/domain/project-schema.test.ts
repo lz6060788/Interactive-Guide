@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { z } from 'zod'
 import {
   GuideProjectSchema,
+  AssetIdSchema,
   ProjectIdSchema,
   ProjectVersionSchema,
   SchemaVersionSchema,
@@ -15,6 +16,29 @@ test('SchemaVersionSchema accepts only "3.0.0"', () => {
   assert.equal(SchemaVersionSchema.safeParse('3.0.0').success, true)
   assert.equal(SchemaVersionSchema.safeParse('1.0.0').success, false)
   assert.equal(SchemaVersionSchema.safeParse('2.0.0').success, false)
+})
+
+test('asset ids, source paths, and registry keys are safe and consistent', () => {
+  assert.equal(AssetIdSchema.safeParse('scene_bundle-01').success, true)
+  for (const value of ['.', '..', '../escape', 'nested/path', 'nested\\path', 'CON']) {
+    assert.equal(AssetIdSchema.safeParse(value).success, false, value)
+  }
+
+  const traversal = base()
+  traversal.assets.byId.safe = {
+    id: 'safe',
+    kind: 'image',
+    sourcePath: '../../outside.png',
+  }
+  assert.equal(GuideProjectSchema.safeParse(traversal).success, false)
+
+  const mismatch = base()
+  mismatch.assets.byId.registryKey = {
+    id: 'different-id',
+    kind: 'image',
+    sourcePath: 'images/different-id/image.png',
+  }
+  assert.equal(GuideProjectSchema.safeParse(mismatch).success, false)
 })
 
 test('project id and version schemas accept safe release path segments only', () => {

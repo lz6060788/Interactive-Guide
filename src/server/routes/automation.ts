@@ -1,15 +1,18 @@
 import { Router } from 'express'
+import { AUTOMATION_PROTOCOL_VERSION, WORKBENCH_VERSION } from '../workbench-version.js'
 
-export const WORKBENCH_VERSION = '0.2.0'
-export const AUTOMATION_PROTOCOL_VERSION = '1.0'
+export { AUTOMATION_PROTOCOL_VERSION, WORKBENCH_VERSION }
 
 const IMPLEMENTED_CAPABILITIES = [
+  'approval-gated-release',
   'atomic-dual-product-build',
   'catalog-initial-focus',
   'draft-product-build',
   'localized-content',
   'project-section-update',
+  'revision-bound-review-approval',
   'revision-locked-update',
+  'versioned-release-api',
 ] as const
 
 export function getWorkbenchCapabilities() {

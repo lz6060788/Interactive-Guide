@@ -2,6 +2,25 @@
   "_meta": {
     "lastDocSyncRef": "22c6a5a"
   },
+  "orchestration": {
+    "code_paths": [
+      "src/automation/**",
+      "src/server/routes/automation.ts",
+      "src/server/routes/review-sessions.ts",
+      "src/server/routes/releases.ts",
+      "src/server/services/review-service.ts",
+      "src/server/services/asset-integrity.ts",
+      "src/server/workbench-*.ts",
+      "skills/**"
+    ],
+    "module_summary": "Versioned offline orchestration boundary between a thin agent Skill and the independently evolving Interactive Guide Workbench.",
+    "docs": {
+      "architecture": {
+        "path": "docs/architecture/workbench-skill-offline-orchestration.md",
+        "summary": "Dual-version Workbench-Skill architecture covering intake, capability negotiation, revision-bound human approval, offline packaging, trust boundaries, and roadmap."
+      }
+    }
+  },
   "server": {
     "code_paths": ["src/server/**"],
     "module_summary": "Express 5 backend API server with guide CRUD, build pipeline orchestration, and runtime bundle packaging.",

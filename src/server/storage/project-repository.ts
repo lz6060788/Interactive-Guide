@@ -53,6 +53,17 @@ export class ProjectNotFoundError extends Error {
   }
 }
 
+export class ProjectCorruptError extends Error {
+  constructor(
+    public readonly projectId: string,
+    public readonly filePath: string,
+    cause: unknown,
+  ) {
+    super(`project "${projectId}" is corrupt: ${(cause as Error).message}`)
+    this.name = 'ProjectCorruptError'
+  }
+}
+
 export class RevisionConflictError extends Error {
   constructor(
     public readonly projectId: string,
@@ -93,7 +104,7 @@ export class ProjectRepository {
         this.projects.set(projectId, project)
         this.loadedAt.set(projectId, stat.mtimeMs)
       } catch (err) {
-        console.error(`[ProjectRepository] failed to load ${filePath}:`, (err as Error).message)
+        throw new ProjectCorruptError(projectId, filePath, err)
       }
     }
   }
@@ -180,7 +191,7 @@ export class ProjectRepository {
       this.projects.set(projectId, project)
       this.loadedAt.set(projectId, stat.mtimeMs)
     } catch (err) {
-      console.error(`[ProjectRepository] reload failed for ${filePath}:`, (err as Error).message)
+      throw new ProjectCorruptError(projectId, filePath, err)
     }
   }
 

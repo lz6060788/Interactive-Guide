@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: Catalog 圆点与场景动画同步 / Atlas 卡片平滑滚动 / revision 21 双预览验收 (2026-07-15)
+Last sync: Workbench–Skill 双版本离线编排 / revision-bound Review / asset integrity gate (2026-07-21)
 
 ### Modules
 
@@ -12,11 +12,13 @@ Last sync: Catalog 圆点与场景动画同步 / Atlas 卡片平滑滚动 / revi
 | products/catalog | `src/products/catalog/` | — | — | [Catalog产品](features/独立全景HTML产物方案设计.md) | ✅ |
 | platform | `src/platform/` | — | — | [HTML协议](features/HTML节点通信协议与接入指南.md) | ✅ |
 | admin | `src/admin/` | — | — | [UI流程](features/管理端UI与操作流程设计.md) | ✅ |
+| orchestration | `src/automation/` + Workbench automation routes | [Workbench–Skill 离线编排](architecture/workbench-skill-offline-orchestration.md) | — | Review 与发布门禁 | ⚠️ authoring contract 待实现 |
 
 ### Development
 
 | Doc | Description |
 |-----|-------------|
+| [Workbench 与 Skill 双版本离线编排架构](architecture/workbench-skill-offline-orchestration.md) | 独立版本边界、素材收集、能力协商、人工批准、离线发行与后续 authoring contract (2026-07-21) |
 | [Catalog 与 Atlas 运行时动效修复设计](superpowers/specs/2026-07-15-runtime-motion-polish-design.md) | Catalog marker 正圆与场景统一时间线、Atlas 卡片平滑居中滚动 (2026-07-15) |
 | [双产品 HTML 标题与资料来源文案设计](superpowers/specs/2026-07-15-product-title-source-copy-design.md) | Atlas/Catalog HTML 标题使用项目标题，共用资料来源默认文案去除机构名称 (2026-07-15) |
 | [Catalog 聚焦框固定圆角设计](superpowers/specs/2026-07-15-catalog-focus-radius-design.md) | Catalog 运行时与实时预览统一 12px 聚焦框圆角，保留 pill 主题行为 (2026-07-15) |

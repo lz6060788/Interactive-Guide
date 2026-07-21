@@ -4,7 +4,7 @@
  * an `assetClosure` callback to inject this resolution at compile
  * time so the runtime never sees an absolute `/api/...` URL.
  */
-import type { AssetDefinition } from '../../domain/project-types.js'
+import type { AssetDefinition, GuideProject } from '../../domain/project-types.js'
 
 export type AssetClosureFn = (projectId: string, sourcePath: string) => string
 
@@ -27,7 +27,7 @@ export function buildAssetClosure(opts: AssetClosureOptions): {
 } {
   const prefix = opts.urlPrefix ?? './assets'
   const assets = Object.values(opts.assets)
-    .filter((a) => opts.referencedAssetIds.has(a.id))
+    .filter(a => opts.referencedAssetIds.has(a.id))
     .sort((a, b) => a.id.localeCompare(b.id))
 
   const closure: AssetClosureFn = (_projectId: string, sourcePath: string): string => {
@@ -46,8 +46,36 @@ export function computeReferencedAssetIds(
   sceneAssetIds: ReadonlySet<string>,
   transitionAssetIds: Iterable<string> = [],
 ): Set<string> {
-  const ids = new Set<string>([panoramaAssetId])
+  const ids = new Set<string>()
+  if (panoramaAssetId) ids.add(panoramaAssetId)
   for (const id of sceneAssetIds) ids.add(id)
   for (const id of transitionAssetIds) ids.add(id)
   return ids
+}
+
+/** One source of truth for the asset set copied into either released product. */
+export function computeProjectReleaseAssetIds(project: GuideProject): Set<string> {
+  const sceneAssetIds = new Set(project.scenes.map(scene => scene.assetId))
+  const sceneIds = new Set(project.scenes.map(scene => scene.id))
+  const transitionAssetIds = new Set<string>()
+  for (const route of project.navigation.routes) {
+    const reachable =
+      route.from.kind === 'panorama' ||
+      ('sceneId' in route.from && sceneIds.has(route.from.sceneId))
+    if (reachable && route.transition) {
+      transitionAssetIds.add(route.transition.assetId)
+      if (route.transition.posterAssetId) {
+        transitionAssetIds.add(route.transition.posterAssetId)
+      }
+    }
+  }
+  const referencedAssetIds = computeReferencedAssetIds(
+    project.panorama.assetId,
+    sceneAssetIds,
+    transitionAssetIds,
+  )
+  if (project.integrations.share?.imageAssetId) {
+    referencedAssetIds.add(project.integrations.share.imageAssetId)
+  }
+  return referencedAssetIds
 }

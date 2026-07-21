@@ -5,14 +5,17 @@ import cors from 'cors'
 import { ProjectRepository } from './storage/project-repository.js'
 import { AssetRepository } from './storage/asset-repository.js'
 import { ReleaseRepository } from './storage/release-repository.js'
+import { ReviewRepository } from './storage/review-repository.js'
 import { ProjectService } from './services/project-service.js'
 import { AssetService } from './services/asset-service.js'
+import { ReviewService } from './services/review-service.js'
 import { healthRouter } from './routes/health.js'
 import { createAutomationRouter } from './routes/automation.js'
 import { createProjectsRouter } from './routes/projects.js'
 import { createAssetsRouter } from './routes/assets.js'
 import { createReleasesRouter } from './routes/releases.js'
 import { createPreviewsRouter } from './routes/previews.js'
+import { createReviewSessionsRouter } from './routes/review-sessions.js'
 import { errorHandler } from './middleware/error-handler.js'
 
 export interface WorkbenchAppOptions {
@@ -33,8 +36,10 @@ export function createWorkbenchApp(options: WorkbenchAppOptions): Express {
   const projectRepo = new ProjectRepository({ dataDir })
   const assetRepo = new AssetRepository(projectRepo, { dataDir })
   const releaseRepo = new ReleaseRepository({ dataDir })
+  const reviewRepo = new ReviewRepository({ dataDir })
   const projectService = new ProjectService(projectRepo)
   const assetService = new AssetService(projectRepo, assetRepo)
+  const reviewService = new ReviewService(projectRepo, reviewRepo)
 
   const app = express()
   if (options.corsOrigin) app.use(cors({ origin: options.corsOrigin }))
@@ -44,7 +49,8 @@ export function createWorkbenchApp(options: WorkbenchAppOptions): Express {
   app.use('/api', createAutomationRouter())
   app.use('/api', createProjectsRouter(projectService))
   app.use('/api', createAssetsRouter(projectService, assetService))
-  app.use('/api', createReleasesRouter(projectRepo, releaseRepo))
+  app.use('/api', createReviewSessionsRouter(reviewService))
+  app.use('/api', createReleasesRouter(projectRepo, releaseRepo, reviewService))
   app.use('/api', createPreviewsRouter(projectRepo, { dataDir }))
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'Not found', code: 'NOT_FOUND' })

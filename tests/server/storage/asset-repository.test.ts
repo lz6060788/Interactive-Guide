@@ -5,7 +5,10 @@ import os from 'node:os'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import { ProjectRepository } from '../../../src/server/storage/project-repository.js'
-import { AssetRepository, AssetValidationError } from '../../../src/server/storage/asset-repository.js'
+import {
+  AssetRepository,
+  AssetValidationError,
+} from '../../../src/server/storage/asset-repository.js'
 import { AssetService } from '../../../src/server/services/asset-service.js'
 import { createDraftProject } from '../../../src/domain/project-normalizer.js'
 
@@ -21,7 +24,12 @@ test('AssetRepository.registerImage writes file and returns definition', () => {
   const project = createDraftProject({ id: 'p1', title: 'T' })
   project.panorama.assetId = 'asset-pano'
   projects.save(project, { expectedRevision: 0 })
-  const r = repo.registerImage('p1', { id: 'asset-pano', bytes: Buffer.from('hello'), mimeType: 'image/jpeg', extension: 'jpg' })
+  const r = repo.registerImage('p1', {
+    id: 'asset-pano',
+    bytes: Buffer.from('hello'),
+    mimeType: 'image/jpeg',
+    extension: 'jpg',
+  })
   assert.equal(r.definition.kind, 'image')
   assert.match(r.definition.sha256!, /^[a-f0-9]{64}$/)
   assert.equal(r.definition.size, 5)
@@ -56,7 +64,10 @@ test('AssetRepository.registerHtmlBundle rejects zip without index.html', () => 
   const zip = new AdmZip()
   zip.addFile('main.html', Buffer.from('x'))
   const bytes = zip.toBuffer()
-  assert.throws(() => repo.registerHtmlBundle('p1', { id: 'scene-rocket', bytes }), AssetValidationError)
+  assert.throws(
+    () => repo.registerHtmlBundle('p1', { id: 'scene-rocket', bytes }),
+    AssetValidationError,
+  )
   cleanup()
 })
 
@@ -209,6 +220,10 @@ test('AssetService.registerImage rejects duplicate asset id', () => {
     { id: 'asset-pano', bytes: Buffer.from('a'), mimeType: 'image/jpeg', extension: 'jpg' },
     { expectedRevision: r.revision },
   )
+  const originalPath = repo.absolutePathFor(
+    'p1',
+    projects.get('p1').assets.byId['asset-pano']!.sourcePath,
+  )
   assert.throws(() =>
     service.registerImage(
       'p1',
@@ -216,6 +231,80 @@ test('AssetService.registerImage rejects duplicate asset id', () => {
       { expectedRevision: 2 },
     ),
   )
+  assert.equal(fs.readFileSync(originalPath, 'utf8'), 'a')
+  assert.equal(projects.get('p1').metadata.revision, 2)
+  cleanup()
+})
+
+test('AssetService rejects stale writes before creating or deleting asset bytes', () => {
+  const { dir, cleanup } = tmpDataDir()
+  const projects = new ProjectRepository({ dataDir: dir })
+  const repo = new AssetRepository(projects, { dataDir: dir })
+  const service = new AssetService(projects, repo)
+  const project = createDraftProject({ id: 'p1', title: 'T' })
+  project.panorama.assetId = 'asset-pano'
+  const saved = projects.save(project, { expectedRevision: 0 })
+  if (saved.conflict) throw new Error('expected save')
+  service.registerImage(
+    'p1',
+    {
+      id: 'asset-pano',
+      bytes: Buffer.from('approved'),
+      mimeType: 'image/jpeg',
+      extension: 'jpg',
+    },
+    { expectedRevision: saved.revision },
+  )
+  const sourcePath = projects.get('p1').assets.byId['asset-pano']!.sourcePath
+  const absolutePath = repo.absolutePathFor('p1', sourcePath)
+
+  assert.throws(() =>
+    service.registerImage(
+      'p1',
+      { id: 'new-asset', bytes: Buffer.from('new'), mimeType: 'image/png', extension: 'png' },
+      { expectedRevision: 1 },
+    ),
+  )
+  assert.equal(fs.existsSync(path.join(dir, 'projects/p1/assets/images/new-asset')), false)
+
+  assert.throws(() => service.remove('p1', 'asset-pano', 1))
+  assert.equal(fs.readFileSync(absolutePath, 'utf8'), 'approved')
+  assert.ok(projects.get('p1').assets.byId['asset-pano'])
+  cleanup()
+})
+
+test('AssetRepository rejects unsafe ids and extensions without touching outside files', () => {
+  const { dir, cleanup } = tmpDataDir()
+  const projects = new ProjectRepository({ dataDir: dir })
+  const repo = new AssetRepository(projects, { dataDir: dir })
+  const project = createDraftProject({ id: 'p1', title: 'T' })
+  projects.save(project, { expectedRevision: 0 })
+  const sentinel = path.join(dir, 'sentinel.txt')
+  fs.writeFileSync(sentinel, 'keep')
+
+  for (const id of ['../escape', '../../escape', 'nested/asset', 'CON']) {
+    assert.throws(
+      () =>
+        repo.registerImage('p1', {
+          id,
+          bytes: Buffer.from('attack'),
+          mimeType: 'image/jpeg',
+          extension: 'jpg',
+        }),
+      AssetValidationError,
+    )
+  }
+  assert.throws(
+    () =>
+      repo.registerImage('p1', {
+        id: 'safe-id',
+        bytes: Buffer.from('attack'),
+        mimeType: 'image/jpeg',
+        extension: '../txt',
+      }),
+    AssetValidationError,
+  )
+  assert.equal(fs.readFileSync(sentinel, 'utf8'), 'keep')
   cleanup()
 })
 

@@ -3,9 +3,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { ProjectRepository } from '../../../src/server/storage/project-repository.js'
+import {
+  ProjectCorruptError,
+  ProjectRepository,
+} from '../../../src/server/storage/project-repository.js'
 import { createDraftProject } from '../../../src/domain/project-normalizer.js'
-import type { GuideProject } from '../../../src/domain/project-types.js'
 
 function tmpDataDir(): { dir: string; cleanup: () => void } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ig-proj-'))
@@ -68,6 +70,25 @@ test('ProjectRepository persists projects to disk and reloads on next instantiat
   assert.deepEqual(reloaded.title, { 'zh-CN': 'T' })
   assert.equal(reloaded.metadata.revision, 1)
   cleanup()
+})
+
+test('ProjectRepository fails closed when a hot-reloaded project file is corrupt', () => {
+  const { dir, cleanup } = tmpDataDir()
+  try {
+    const repo = new ProjectRepository({ dataDir: dir })
+    const project = createDraftProject({ id: 'p1', title: 'Test' })
+    repo.save(project, { expectedRevision: 0 })
+    repo.get('p1')
+
+    const projectFile = path.join(dir, 'projects', 'p1', 'project.json')
+    fs.writeFileSync(projectFile, '{invalid-json')
+    const future = new Date(Date.now() + 5_000)
+    fs.utimesSync(projectFile, future, future)
+
+    assert.throws(() => repo.get('p1'), ProjectCorruptError)
+  } finally {
+    cleanup()
+  }
 })
 
 test('ProjectRepository.delete removes the project and its directory', () => {

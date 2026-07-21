@@ -34,6 +34,15 @@ export const ProjectVersionSchema = z
     message: 'project version must not use a reserved file name',
   })
 
+export const AssetIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/, 'asset id must be a safe path segment')
+  .refine(value => !WINDOWS_RESERVED_SEGMENT.test(value), {
+    message: 'asset id must not use a reserved file name',
+  })
+
 export const LocalizedTextSchema = z.record(z.string().min(1), z.string())
 
 export const LocalizationConfigSchema = z.object({
@@ -55,10 +64,24 @@ export const NormalizedRectSchema = z.object({
 
 export const CoordinateSpaceSchema = z.literal('normalized')
 
+const AssetSourcePathSchema = z
+  .string()
+  .min(1)
+  .refine(value => {
+    const normalized = value.replaceAll('\\', '/')
+    const segments = normalized.split('/')
+    return (
+      !normalized.startsWith('/') &&
+      !/^[A-Za-z]:\//.test(normalized) &&
+      !segments.includes('..') &&
+      !segments.includes('.')
+    )
+  }, 'asset sourcePath must be project-relative and must not contain traversal segments')
+
 export const AssetDefinitionSchema = z.object({
-  id: z.string().min(1),
+  id: AssetIdSchema,
   kind: z.enum(['image', 'video', 'html-bundle']),
-  sourcePath: z.string().min(1),
+  sourcePath: AssetSourcePathSchema,
   entryPath: z.string().min(1).optional(),
   mimeType: z.string().min(1).optional(),
   width: z.number().int().positive().optional(),
@@ -70,9 +93,21 @@ export const AssetDefinitionSchema = z.object({
   size: z.number().int().nonnegative().optional(),
 })
 
-export const AssetRegistrySchema = z.object({
-  byId: z.record(z.string(), AssetDefinitionSchema),
-})
+export const AssetRegistrySchema = z
+  .object({
+    byId: z.record(AssetIdSchema, AssetDefinitionSchema),
+  })
+  .superRefine((registry, ctx) => {
+    for (const [key, definition] of Object.entries(registry.byId)) {
+      if (key !== definition.id) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['byId', key, 'id'],
+          message: `asset registry key "${key}" must equal definition id "${definition.id}"`,
+        })
+      }
+    }
+  })
 
 export const ViewportSchema = z.object({
   centerX: z.number().min(0).max(1),

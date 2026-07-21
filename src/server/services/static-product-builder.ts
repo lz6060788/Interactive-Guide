@@ -4,7 +4,7 @@ import type { GuideProject } from '../../domain/project-types.js'
 import { compileAtlas } from '../../products/atlas/compiler/atlas-compiler.js'
 import { compileCatalog } from '../../products/catalog/compiler/catalog-compiler.js'
 import { ProjectRepository } from '../storage/project-repository.js'
-import { buildAssetClosure, computeReferencedAssetIds } from './asset-closure.js'
+import { buildAssetClosure, computeProjectReleaseAssetIds } from './asset-closure.js'
 import { buildBrowserRuntimeBundle } from './browser-runtime-packager.js'
 import { buildProductShell, type ProductShellProduct } from './product-shell.js'
 import { validateProduct, type ValidationReport } from './static-validator.js'
@@ -31,22 +31,7 @@ export function buildStaticProduct(options: {
     throw new Error(`project "${project.id}" has no panorama bound; cannot build ${product}`)
   }
 
-  const sceneAssetIds = new Set(project.scenes.map(scene => scene.assetId))
-  const transitionAssetIds = new Set<string>()
-  for (const route of project.navigation.routes) {
-    const reachable =
-      route.from.kind === 'panorama' ||
-      ('sceneId' in route.from && sceneAssetIds.has(route.from.sceneId))
-    if (reachable && route.transition?.assetId) transitionAssetIds.add(route.transition.assetId)
-  }
-  const referencedAssetIds = computeReferencedAssetIds(
-    project.panorama.assetId,
-    sceneAssetIds,
-    transitionAssetIds,
-  )
-  if (project.integrations.share?.imageAssetId) {
-    referencedAssetIds.add(project.integrations.share.imageAssetId)
-  }
+  const referencedAssetIds = computeProjectReleaseAssetIds(project)
   const { closure, assets } = buildAssetClosure({
     projectId: project.id,
     assets: project.assets.byId,

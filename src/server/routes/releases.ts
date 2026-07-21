@@ -1,10 +1,12 @@
 /**
  * Release routes — list, read, and build releases.
  */
-import { Router } from 'express'
+import { Router, type Request, type Response } from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
+import { ReviewApprovalReceiptSchema } from '../../automation/contracts/review-session-v1.js'
 import { ProjectRepository } from '../storage/project-repository.js'
+import { ReviewRepository } from '../storage/review-repository.js'
 import {
   InvalidReleasePathError,
   ReleaseAlreadyExistsError,
@@ -12,14 +14,23 @@ import {
   ReleaseRepository,
 } from '../storage/release-repository.js'
 import {
+  ReleaseApprovalSnapshotMismatchError,
   ReleaseProjectValidationError,
   ReleaseService,
   ReleaseValidationError,
 } from '../services/release-service.js'
+import { ReviewService } from '../services/review-service.js'
+import { mapReviewError } from './review-sessions.js'
+
+const ReleaseApprovalBody = ReviewApprovalReceiptSchema
 
 export function createReleasesRouter(
   projects: ProjectRepository = new ProjectRepository(),
   repo: ReleaseRepository = new ReleaseRepository(),
+  reviews: ReviewService = new ReviewService(
+    projects,
+    new ReviewRepository({ dataDir: path.dirname(repo.rootDir()) }),
+  ),
 ): Router {
   const router = Router()
   const service = new ReleaseService(projects, repo)
@@ -44,17 +55,32 @@ export function createReleasesRouter(
       if (!mapReleaseError(error, res)) sendUnexpectedReleaseError(res)
     }
   })
-  router.post('/projects/:id/releases', (req, res) => {
+  const buildRelease = (req: Request, res: Response): void => {
+    const approval = ReleaseApprovalBody.safeParse(req.body ?? {})
+    if (!approval.success) {
+      res.status(400).json({
+        error: 'a valid review approval is required',
+        code: 'APPROVAL_REQUIRED',
+        issues: approval.error.issues,
+      })
+      return
+    }
     try {
-      const result = service.buildRelease(String(req.params.id))
+      const projectId = String(req.params.id)
+      const snapshot = reviews.requireApproved(projectId, approval.data)
+      const result = service.buildRelease(snapshot)
       res.json({ data: result })
     } catch (err) {
-      if (!mapReleaseError(err, res)) {
+      if (!mapReviewError(err, res) && !mapReleaseError(err, res)) {
         const msg = (err as Error).message
         res.status(500).json({ error: msg, code: 'BUILD_FAILED' })
       }
     }
-  })
+  }
+  // External orchestrators use only the protocol-versioned path. The legacy
+  // path remains available to existing Workbench clients during migration.
+  router.post('/automation/v1/projects/:id/releases', buildRelease)
+  router.post('/projects/:id/releases', buildRelease)
 
   router.get(/^\/projects\/([^/]+)\/releases\/([^/]+)\/files\/(.+)$/, (req, res) => {
     const captures = req.params as unknown as Record<number, string>
@@ -105,6 +131,10 @@ function mapReleaseError(error: unknown, res: import('express').Response): boole
   }
   if (error instanceof ReleaseBuildInProgressError) {
     res.status(409).json({ error: error.message, code: 'RELEASE_IN_PROGRESS' })
+    return true
+  }
+  if (error instanceof ReleaseApprovalSnapshotMismatchError) {
+    res.status(409).json({ error: error.message, code: 'APPROVAL_STALE' })
     return true
   }
   if (error instanceof ReleaseProjectValidationError) {

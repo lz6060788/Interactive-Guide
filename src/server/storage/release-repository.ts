@@ -2,12 +2,15 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import type {
+  REVIEW_ASSET_HASH_ALGORITHM,
+  REVIEW_PROJECT_HASH_ALGORITHM,
+} from '../../automation/contracts/review-session-v1.js'
 import { ProjectIdSchema, ProjectVersionSchema } from '../../domain/project-schema.js'
 
-export interface ReleaseManifest {
+interface ReleaseManifestBase {
   projectId: string
   projectVersion: string
-  schemaVersion: '1.0.0'
   generatedAt: string
   sourceRevision: number
   products: {
@@ -15,6 +18,30 @@ export interface ReleaseManifest {
     catalog: { entry: string; manifest: string }
   }
 }
+
+/** Legacy release manifests remain readable after approval-gated releases are introduced. */
+export interface ReleaseManifestV1 extends ReleaseManifestBase {
+  schemaVersion: '1.0.0'
+}
+
+export interface ReleaseManifestV1_1 extends ReleaseManifestBase {
+  schemaVersion: '1.1.0'
+  workbenchVersion: string
+  projectSha256: string
+  projectHashAlgorithm: typeof REVIEW_PROJECT_HASH_ALGORITHM
+  assetClosureSha256: string
+  assetHashAlgorithm: typeof REVIEW_ASSET_HASH_ALGORITHM
+  approval: {
+    reviewSessionId: string
+    approvedRevision: number
+    approvedWorkbenchVersion: string
+    approvedProjectSha256: string
+    approvedAssetClosureSha256: string
+    approvedAt: string
+  }
+}
+
+export type ReleaseManifest = ReleaseManifestV1 | ReleaseManifestV1_1
 
 export interface ReleaseTransaction {
   projectId: string

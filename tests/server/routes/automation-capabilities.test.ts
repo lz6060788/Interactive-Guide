@@ -4,10 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import express from 'express'
 import request from 'supertest'
-import {
-  WORKBENCH_VERSION,
-  createAutomationRouter,
-} from '../../../src/server/routes/automation.js'
+import { WORKBENCH_VERSION, createAutomationRouter } from '../../../src/server/routes/automation.js'
 
 test('GET /automation/v1/capabilities advertises only implemented stable capabilities', async () => {
   const app = express()
@@ -30,21 +27,24 @@ test('GET /automation/v1/capabilities advertises only implemented stable capabil
       },
       products: ['atlas', 'catalog'],
       capabilities: [
+        'approval-gated-release',
         'atomic-dual-product-build',
         'catalog-initial-focus',
         'draft-product-build',
         'localized-content',
         'project-section-update',
+        'revision-bound-review-approval',
         'revision-locked-update',
+        'versioned-release-api',
       ],
     },
   })
 })
 
 test('capability workbenchVersion stays aligned with package.json', () => {
-  const packageJson = JSON.parse(
-    fs.readFileSync(path.resolve('package.json'), 'utf8'),
-  ) as { version: string }
+  const packageJson = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8')) as {
+    version: string
+  }
 
   assert.equal(WORKBENCH_VERSION, packageJson.version)
 })

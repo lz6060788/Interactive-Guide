@@ -5,9 +5,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   buildAssetClosure,
+  computeProjectReleaseAssetIds,
   computeReferencedAssetIds,
 } from '../../../src/server/services/asset-closure.js'
 import type { AssetDefinition } from '../../../src/domain/project-types.js'
+import { createDraftProject } from '../../../src/domain/project-normalizer.js'
 
 const assets: Record<string, AssetDefinition> = {
   pano: {
@@ -68,4 +70,45 @@ test('buildAssetClosure strips leading slashes from sourcePath', () => {
     urlPrefix: './assets',
   })
   assert.equal(closure('p1', '/images/pano/image.jpg'), './assets/images/pano/image.jpg')
+})
+
+test('computeProjectReleaseAssetIds includes scene transitions and poster assets by scene id', () => {
+  const project = createDraftProject({ id: 'p1', title: 'T' })
+  project.panorama.assetId = 'pano'
+  project.scenes = [
+    {
+      id: 'scene-logical-id',
+      title: { 'zh-CN': 'Scene' },
+      assetId: 'scene-bundle-asset',
+      protocol: { channel: 'interactive-guide:scene-bridge', version: '1.0.0' },
+      views: [
+        {
+          id: 'view-1',
+          title: { 'zh-CN': 'View' },
+          activationMessage: { type: 'init' },
+          categoryIds: [],
+        },
+      ],
+    },
+  ]
+  project.navigation.routes = [
+    {
+      id: 'route-from-scene',
+      from: { kind: 'scene', sceneId: 'scene-logical-id' },
+      to: { kind: 'panorama' },
+      transition: {
+        kind: 'video',
+        assetId: 'transition-video',
+        posterAssetId: 'transition-poster',
+        onFailure: 'cut',
+      },
+    },
+  ]
+
+  assert.deepEqual([...computeProjectReleaseAssetIds(project)].sort(), [
+    'pano',
+    'scene-bundle-asset',
+    'transition-poster',
+    'transition-video',
+  ])
 })
