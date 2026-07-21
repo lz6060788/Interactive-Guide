@@ -20,7 +20,13 @@ test('GET /automation/v1/capabilities advertises only implemented stable capabil
         selected: '1.0',
         supported: ['1.0'],
       },
-      authoringContracts: [],
+      authoringContracts: [
+        {
+          name: 'guide-authoring-bundle',
+          selected: '1.0.0',
+          supported: ['1.0.0'],
+        },
+      ],
       projectSchemas: {
         read: ['2.0.0', '3.0.0'],
         write: ['3.0.0'],
@@ -28,8 +34,10 @@ test('GET /automation/v1/capabilities advertises only implemented stable capabil
       products: ['atlas', 'catalog'],
       capabilities: [
         'approval-gated-release',
+        'atomic-authoring-create',
         'atomic-dual-product-build',
         'catalog-initial-focus',
+        'content-addressed-authoring-blobs',
         'draft-product-build',
         'localized-content',
         'project-section-update',

@@ -1,12 +1,18 @@
 import { Router } from 'express'
 import { AUTOMATION_PROTOCOL_VERSION, WORKBENCH_VERSION } from '../workbench-version.js'
+import {
+  GUIDE_AUTHORING_BUNDLE_CONTRACT,
+  GUIDE_AUTHORING_BUNDLE_VERSION,
+} from '../../automation/contracts/authoring-bundle-v1.js'
 
 export { AUTOMATION_PROTOCOL_VERSION, WORKBENCH_VERSION }
 
 const IMPLEMENTED_CAPABILITIES = [
   'approval-gated-release',
+  'atomic-authoring-create',
   'atomic-dual-product-build',
   'catalog-initial-focus',
+  'content-addressed-authoring-blobs',
   'draft-product-build',
   'localized-content',
   'project-section-update',
@@ -22,8 +28,13 @@ export function getWorkbenchCapabilities() {
       selected: AUTOMATION_PROTOCOL_VERSION,
       supported: [AUTOMATION_PROTOCOL_VERSION],
     },
-    // Populated only after a stable external authoring contract exists.
-    authoringContracts: [],
+    authoringContracts: [
+      {
+        name: GUIDE_AUTHORING_BUNDLE_CONTRACT,
+        selected: GUIDE_AUTHORING_BUNDLE_VERSION,
+        supported: [GUIDE_AUTHORING_BUNDLE_VERSION],
+      },
+    ],
     projectSchemas: {
       read: ['2.0.0', '3.0.0'],
       write: ['3.0.0'],

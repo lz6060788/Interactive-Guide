@@ -345,19 +345,63 @@ function hash(buf: Buffer): string {
 function unzipSafely(zipBuf: Buffer, targetDir: string): string[] {
   const zip = new AdmZip(zipBuf)
   const entries = zip.getEntries()
+  const files = validateHtmlBundleEntries(zipBuf, entries)
+  const entriesByName = new Map(entries.map(entry => [normalizeZipEntryName(entry), entry]))
+  for (const entry of entries) {
+    if (entry.isDirectory) continue
+    const name = normalizeZipEntryName(entry)
+    const target = path.join(targetDir, name)
+    const resolved = path.resolve(target)
+    const rootResolved = path.resolve(targetDir)
+    if (!resolved.startsWith(rootResolved + path.sep) && resolved !== rootResolved) {
+      throw new AssetValidationError(`path traversal in zip entry: ${name}`)
+    }
+    fs.mkdirSync(path.dirname(resolved), { recursive: true })
+    const data = entriesByName.get(name)!.getData()
+    if (data.length !== entry.header.size || data.length > HTML_BUNDLE_LIMITS.maxFileBytes) {
+      throw new AssetValidationError(`file "${name}" has an invalid uncompressed size`)
+    }
+    fs.writeFileSync(resolved, data)
+  }
+  return files
+}
+
+/** Validate an uploaded HTML scene archive without writing it to the workspace. */
+export function validateHtmlBundleArchive(zipBuf: Buffer): string[] {
+  let entries: AdmZip.IZipEntry[]
+  try {
+    entries = new AdmZip(zipBuf).getEntries()
+  } catch (error) {
+    throw new AssetValidationError(`invalid html bundle zip: ${(error as Error).message}`)
+  }
+  return validateHtmlBundleEntries(zipBuf, entries)
+}
+
+function validateHtmlBundleEntries(zipBuf: Buffer, entries: AdmZip.IZipEntry[]): string[] {
+  if (zipBuf.length > HTML_BUNDLE_LIMITS.maxTotalBytes) {
+    throw new AssetValidationError(
+      `html bundle archive exceeds ${HTML_BUNDLE_LIMITS.maxTotalBytes} byte limit`,
+    )
+  }
   if (entries.length > HTML_BUNDLE_LIMITS.maxFiles) {
     throw new AssetValidationError(`html bundle exceeds ${HTML_BUNDLE_LIMITS.maxFiles} file limit`)
   }
   const files: string[] = []
+  const seenCaseFolded = new Map<string, string>()
   let totalBytes = 0
   for (const entry of entries) {
-    if (entry.isDirectory) continue
-    const name = entry.entryName
-    if (files.length >= HTML_BUNDLE_LIMITS.maxFiles) {
-      throw new AssetValidationError(
-        `html bundle exceeds ${HTML_BUNDLE_LIMITS.maxFiles} file limit`,
-      )
+    const name = normalizeZipEntryName(entry)
+    const caseFolded = name.toLowerCase()
+    const previous = seenCaseFolded.get(caseFolded)
+    if (previous) {
+      const kind = previous === name ? 'duplicate' : 'case-colliding'
+      throw new AssetValidationError(`${kind} path in html bundle: ${previous} / ${name}`)
     }
+    seenCaseFolded.set(caseFolded, name)
+    if (isZipSymlink(entry)) {
+      throw new AssetValidationError(`symbolic link is not allowed in html bundle: ${name}`)
+    }
+    if (entry.isDirectory) continue
     const size = entry.header.size
     if (size > HTML_BUNDLE_LIMITS.maxFileBytes) {
       throw new AssetValidationError(
@@ -370,17 +414,36 @@ function unzipSafely(zipBuf: Buffer, targetDir: string): string[] {
         `html bundle exceeds ${HTML_BUNDLE_LIMITS.maxTotalBytes} total bytes`,
       )
     }
-    const target = path.join(targetDir, name)
-    const resolved = path.resolve(target)
-    const rootResolved = path.resolve(targetDir)
-    if (!resolved.startsWith(rootResolved + path.sep) && resolved !== rootResolved) {
-      throw new AssetValidationError(`path traversal in zip entry: ${name}`)
-    }
-    fs.mkdirSync(path.dirname(resolved), { recursive: true })
-    fs.writeFileSync(resolved, entry.getData())
     files.push(name)
   }
+  if (!files.includes('index.html')) {
+    throw new AssetValidationError('html bundle must contain index.html at root')
+  }
   return files
+}
+
+function normalizeZipEntryName(entry: AdmZip.IZipEntry): string {
+  const raw = entry.entryName
+  if (
+    !raw ||
+    raw.includes('\\') ||
+    raw.includes('\0') ||
+    raw.startsWith('/') ||
+    /^[A-Za-z]:/.test(raw)
+  ) {
+    throw new AssetValidationError(`invalid path in html bundle: ${raw}`)
+  }
+  const normalized = entry.isDirectory && raw.endsWith('/') ? raw.slice(0, -1) : raw
+  const segments = normalized.split('/')
+  if (segments.some(segment => !segment || segment === '.' || segment === '..')) {
+    throw new AssetValidationError(`invalid path in html bundle: ${raw}`)
+  }
+  return normalized
+}
+
+function isZipSymlink(entry: AdmZip.IZipEntry): boolean {
+  const unixFileType = (entry.attr >>> 16) & 0xf000
+  return unixFileType === 0xa000
 }
 
 function assertInsideProject(_projectId: string, sourcePath: string): string {

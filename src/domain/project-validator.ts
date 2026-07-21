@@ -109,11 +109,18 @@ function checkCalibrationCompleteness(project: GuideProject, issues: ValidationI
         })
       }
       for (const itemId of category.itemIds) {
-        if (!project.panorama.items[itemId]) {
+        const itemLayout = project.panorama.items[itemId]
+        if (!itemLayout) {
           issues.push({
             code: 'CALIBRATION_MISSING',
             path: `panorama.items.${itemId}`,
             message: `release requires item "${itemId}" to have a spatial layout`,
+          })
+        } else if (!itemLayout.focusRect) {
+          issues.push({
+            code: 'CATALOG_FOCUS_RECT_MISSING',
+            path: `panorama.items.${itemId}.focusRect`,
+            message: `release requires catalog item "${itemId}" to have a focusRect`,
           })
         }
       }
@@ -396,6 +403,38 @@ function checkAssetReferences(project: GuideProject, issues: ValidationIssue[]):
         code: 'ASSET_KIND_MISMATCH',
         path: `navigation.routes.${route.id}.transition.assetId`,
         message: `route "${route.id}" transition must be a video asset, got "${asset.kind}"`,
+      })
+    }
+    if (route.transition.posterAssetId) {
+      const poster = project.assets.byId[route.transition.posterAssetId]
+      if (!poster) {
+        issues.push({
+          code: 'ASSET_MISSING',
+          path: `navigation.routes.${route.id}.transition.posterAssetId`,
+          message: `route transition posterAssetId "${route.transition.posterAssetId}" is not registered`,
+        })
+      } else if (poster.kind !== 'image') {
+        issues.push({
+          code: 'ASSET_KIND_MISMATCH',
+          path: `navigation.routes.${route.id}.transition.posterAssetId`,
+          message: `route "${route.id}" transition poster must be an image asset, got "${poster.kind}"`,
+        })
+      }
+    }
+  }
+  if (project.integrations.share?.imageAssetId) {
+    const shareImage = project.assets.byId[project.integrations.share.imageAssetId]
+    if (!shareImage) {
+      issues.push({
+        code: 'ASSET_MISSING',
+        path: 'integrations.share.imageAssetId',
+        message: `share imageAssetId "${project.integrations.share.imageAssetId}" is not registered`,
+      })
+    } else if (shareImage.kind !== 'image') {
+      issues.push({
+        code: 'ASSET_KIND_MISMATCH',
+        path: 'integrations.share.imageAssetId',
+        message: `share imageAssetId must reference an image asset, got "${shareImage.kind}"`,
       })
     }
   }

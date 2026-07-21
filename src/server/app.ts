@@ -6,9 +6,12 @@ import { ProjectRepository } from './storage/project-repository.js'
 import { AssetRepository } from './storage/asset-repository.js'
 import { ReleaseRepository } from './storage/release-repository.js'
 import { ReviewRepository } from './storage/review-repository.js'
+import { AuthoringBlobRepository } from './storage/authoring-blob-repository.js'
+import { AuthoringOperationRepository } from './storage/authoring-operation-repository.js'
 import { ProjectService } from './services/project-service.js'
 import { AssetService } from './services/asset-service.js'
 import { ReviewService } from './services/review-service.js'
+import { AuthoringService } from './services/authoring-service.js'
 import { healthRouter } from './routes/health.js'
 import { createAutomationRouter } from './routes/automation.js'
 import { createProjectsRouter } from './routes/projects.js'
@@ -16,6 +19,7 @@ import { createAssetsRouter } from './routes/assets.js'
 import { createReleasesRouter } from './routes/releases.js'
 import { createPreviewsRouter } from './routes/previews.js'
 import { createReviewSessionsRouter } from './routes/review-sessions.js'
+import { createAuthoringRouter } from './routes/authoring.js'
 import { errorHandler } from './middleware/error-handler.js'
 
 export interface WorkbenchAppOptions {
@@ -37,12 +41,21 @@ export function createWorkbenchApp(options: WorkbenchAppOptions): Express {
   const assetRepo = new AssetRepository(projectRepo, { dataDir })
   const releaseRepo = new ReleaseRepository({ dataDir })
   const reviewRepo = new ReviewRepository({ dataDir })
+  const authoringBlobRepo = new AuthoringBlobRepository({ dataDir })
+  const authoringOperationRepo = new AuthoringOperationRepository({ dataDir })
   const projectService = new ProjectService(projectRepo)
   const assetService = new AssetService(projectRepo, assetRepo)
   const reviewService = new ReviewService(projectRepo, reviewRepo)
+  const authoringService = new AuthoringService(
+    projectRepo,
+    authoringBlobRepo,
+    authoringOperationRepo,
+    { dataDir },
+  )
 
   const app = express()
   if (options.corsOrigin) app.use(cors({ origin: options.corsOrigin }))
+  app.use('/api', createAuthoringRouter(authoringBlobRepo, authoringService))
   app.use(express.json({ limit: '50mb' }))
 
   app.use('/api', healthRouter)

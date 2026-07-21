@@ -14,6 +14,7 @@ import { AssetService } from '../../../src/server/services/asset-service.js'
 import { createProjectsRouter } from '../../../src/server/routes/projects.js'
 import { createReviewSessionsRouter } from '../../../src/server/routes/review-sessions.js'
 import { createAssetsRouter } from '../../../src/server/routes/assets.js'
+import { WORKBENCH_VERSION } from '../../../src/server/workbench-version.js'
 
 function bootApp(): { app: express.Express; dataDir: string; cleanup: () => void } {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ig-review-routes-'))
@@ -97,7 +98,7 @@ test('review session can approve the revision produced by manual workbench edits
     assert.equal(approved.status, 200, JSON.stringify(approved.body))
     assert.equal(approved.body.data.status, 'approved')
     assert.equal(approved.body.data.approvedRevision, initialRevision + 1)
-    assert.equal(approved.body.data.approvedWorkbenchVersion, '0.3.0')
+    assert.equal(approved.body.data.approvedWorkbenchVersion, WORKBENCH_VERSION)
     assert.match(approved.body.data.approvedProjectSha256, /^[a-f0-9]{64}$/)
     assert.match(approved.body.data.approvedAssetClosureSha256, /^[a-f0-9]{64}$/)
     assert.equal(approved.body.data.hashAlgorithm, 'sha256-stable-json-v1')

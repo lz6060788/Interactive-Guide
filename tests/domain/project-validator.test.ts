@@ -129,6 +129,14 @@ test('validateReleaseProject requires all coordinates to be in [0,1]', () => {
   assert.ok(r.issues.some(i => i.code === 'COORD_OUT_OF_RANGE'))
 })
 
+test('validateReleaseProject requires a focusRect for every Catalog item', () => {
+  const project = normalizeProject(buildSampleProject(), { autoPickPanoramaAsset: false })
+  const r = validateReleaseProject(project)
+
+  assert.equal(r.ok, false)
+  assert.ok(r.issues.some(i => i.code === 'CATALOG_FOCUS_RECT_MISSING'))
+})
+
 test('validateReleaseProject rejects unknown sceneId in category.experience', () => {
   const project = buildSampleProject()
   project.knowledge.stages[0].categories[0].experience = {
@@ -172,6 +180,29 @@ test('validateReleaseProject rejects route referencing non-video transition asse
   const r = validateReleaseProject(project)
   assert.equal(r.ok, false)
   assert.ok(r.issues.some(i => i.code === 'ASSET_KIND_MISMATCH'))
+})
+
+test('validateDraftProject validates transition poster and share image references', () => {
+  const project = buildSampleProject()
+  project.navigation.routes[0].transition!.posterAssetId = 'asset-vid-1'
+  project.integrations.share = {
+    enabled: true,
+    imageAssetId: 'asset-missing-share',
+  }
+
+  const r = validateDraftProject(project)
+
+  assert.equal(r.ok, false)
+  assert.ok(
+    r.issues.some(
+      i =>
+        i.code === 'ASSET_KIND_MISMATCH' &&
+        i.path === 'navigation.routes.route-1.transition.posterAssetId',
+    ),
+  )
+  assert.ok(
+    r.issues.some(i => i.code === 'ASSET_MISSING' && i.path === 'integrations.share.imageAssetId'),
+  )
 })
 
 test('validateReleaseProject rejects duplicate item ids', () => {

@@ -8,6 +8,7 @@ import { ProjectRepository } from '../../../src/server/storage/project-repositor
 import {
   AssetRepository,
   AssetValidationError,
+  validateHtmlBundleArchive,
 } from '../../../src/server/storage/asset-repository.js'
 import { AssetService } from '../../../src/server/services/asset-service.js'
 import { createDraftProject } from '../../../src/domain/project-normalizer.js'
@@ -69,6 +70,14 @@ test('AssetRepository.registerHtmlBundle rejects zip without index.html', () => 
     AssetValidationError,
   )
   cleanup()
+})
+
+test('HTML bundle validation rejects case-colliding archive paths', () => {
+  const zip = new AdmZip()
+  zip.addFile('index.html', Buffer.from('lower'))
+  zip.addFile('INDEX.HTML', Buffer.from('upper'))
+
+  assert.throws(() => validateHtmlBundleArchive(zip.toBuffer()), /case-colliding path/)
 })
 
 test('AssetRepository.registerHtmlBundle rejects path traversal', () => {

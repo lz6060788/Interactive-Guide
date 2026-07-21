@@ -20,6 +20,7 @@ import { createPreviewsRouter } from '../../../src/server/routes/previews.js'
 import { createReleasesRouter } from '../../../src/server/routes/releases.js'
 import { createReviewSessionsRouter } from '../../../src/server/routes/review-sessions.js'
 import type { ReviewApprovalReceipt } from '../../../src/automation/contracts/review-session-v1.js'
+import { WORKBENCH_VERSION } from '../../../src/server/workbench-version.js'
 
 function bootApp(): { app: express.Express; dir: string; cleanup: () => void } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ig-preview-release-routes-'))
@@ -331,7 +332,7 @@ test('POST /projects/:id/releases rejects a pending or mismatched approval', asy
   const pending = await releaseRequest(app, {
     reviewId: opened.body.data.id,
     approvedRevision: revision,
-    approvedWorkbenchVersion: '0.3.0',
+    approvedWorkbenchVersion: WORKBENCH_VERSION,
     approvedProjectSha256: 'a'.repeat(64),
     approvedAssetClosureSha256: 'b'.repeat(64),
   })

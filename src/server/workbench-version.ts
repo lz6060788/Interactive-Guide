@@ -1,2 +1,2 @@
-export const WORKBENCH_VERSION = '0.3.0'
+export const WORKBENCH_VERSION = '0.4.0'
 export const AUTOMATION_PROTOCOL_VERSION = '1.0'
