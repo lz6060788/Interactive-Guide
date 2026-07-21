@@ -1,15 +1,18 @@
 {
   "_meta": {
-    "lastDocSyncRef": "1af65f0"
+    "lastDocSyncRef": "09c9ecc"
   },
   "orchestration": {
     "code_paths": [
       "src/automation/**",
       "src/server/routes/automation.ts",
+      "src/server/routes/authoring.ts",
       "src/server/routes/review-sessions.ts",
       "src/server/routes/releases.ts",
+      "src/server/services/authoring-*.ts",
       "src/server/services/review-service.ts",
       "src/server/services/asset-integrity.ts",
+      "src/server/storage/authoring-*.ts",
       "src/server/workbench-*.ts",
       "skills/**"
     ],
@@ -17,7 +20,11 @@
     "docs": {
       "architecture": {
         "path": "docs/architecture/workbench-skill-offline-orchestration.md",
-        "summary": "Dual-version Workbench-Skill architecture covering intake, capability negotiation, revision-bound human approval, offline packaging, trust boundaries, and roadmap."
+        "summary": "Dual-version Workbench-Skill architecture covering intake, capability negotiation, atomic authoring create, revision-bound human approval, offline packaging, trust boundaries, and roadmap."
+      },
+      "authoring_api": {
+        "path": "docs/api/automation-v1-authoring.md",
+        "summary": "Stable Automation v1 authoring API for content-addressed blobs, GuideAuthoringBundle validation, atomic creation, idempotency, and crash recovery."
       }
     }
   },
