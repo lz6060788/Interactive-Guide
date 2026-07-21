@@ -308,3 +308,112 @@ data/
 ```
 
 Skill 只能通过 Automation v1 API 操作这些状态，不得直接读写上述目录。
+
+## 11. Workbench 0.5.0 增量契约
+
+本节是对前述 `0.4.0` 创建契约的向后兼容增量；若表述冲突，以本节为准。Workbench `0.5.0` 保留 `GuideAuthoringBundle v1`，并新增稳定的 authoring state 读取与 `GuideAuthoringChangeSet v1` 定向修改。客户端仍不得调用未版本化项目接口或直接读写 workspace。
+
+能力发现新增：
+
+```json
+{
+  "authoringContracts": [
+    { "name": "guide-authoring-bundle", "selected": "1.0.0", "supported": ["1.0.0"] },
+    { "name": "guide-authoring-changeset", "selected": "1.0.0", "supported": ["1.0.0"] }
+  ],
+  "authoringStateContract": {
+    "name": "guide-authoring-state",
+    "selected": "1.0.0",
+    "supported": ["1.0.0"]
+  },
+  "capabilities": ["atomic-authoring-create", "atomic-authoring-update", "authoring-state-read"]
+}
+```
+
+### 11.1 GuideAuthoringState v1
+
+```http
+GET /api/automation/v1/projects/{projectId}/authoring-state
+```
+
+返回 `guide-authoring-state@1.0.0` 的严格、确定性、无本地路径投影，包含：
+
+- 当前 `revision`、`projectSha256`、`projectTreeSha256` 与 hash algorithm；
+- title/version/localization 和固定三级嵌套 knowledge；
+- runtime asset 的 ID、kind、可选 entryPath/MIME/尺寸/hash/size，但不包含 `sourcePath`；
+- panorama、按 ID 排序的 spatial、scenes、navigation、products、integrations；
+- 按 fileRef 排序的 authoring source 元数据，但不包含 Blob 本地路径。
+
+新建但尚未选择底图的合法空草稿使用 `panorama.imageAssetId: null`；为兼容既有项目元数据，runtime asset 的可选 `size` 允许为 `0`。
+
+客户端必须以该响应作为生成 ChangeSet 的基线，不能缓存或推导 Workbench 文件布局。不存在项目返回 `404 PROJECT_NOT_FOUND`；authoring source manifest 损坏时返回 `500 AUTHORING_STATE_CORRUPT` 并失败关闭。
+
+### 11.2 GuideAuthoringChangeSet v1
+
+根结构：
+
+```json
+{
+  "contract": "guide-authoring-changeset",
+  "contractVersion": "1.0.0",
+  "projectId": "memory-chip-industry-chain",
+  "expectedRevision": 1,
+  "idempotencyKey": "UUID",
+  "partitions": {}
+}
+```
+
+`expectedRevision` 必须大于等于 1，`partitions` 至少包含一项。v1 不接受 JSON Patch、任意路径或有顺序副作用的 operation list，只支持以下显式语义：
+
+| partition      | v1 语义                                                           |
+| -------------- | ----------------------------------------------------------------- |
+| `profile`      | 定向修改 `title`、`version`，至少一个字段                         |
+| `localization` | `{ "replace": LocalizationConfig }`                               |
+| `knowledge`    | `{ "replace": 完整三级 AuthoringKnowledge }`                      |
+| `assets`       | `{ "append": AuthoringFile[] }`，只增不删、不覆盖                 |
+| `panorama`     | `{ "patch": { imageAssetId?, cameraBounds?, initialViewport? } }` |
+| `spatial`      | category/item 分别使用 `upsert` / `remove` 定向修复               |
+| `scenes`       | `{ "replace": HtmlScenePackage[] }`                               |
+| `navigation`   | `{ "replace": { "routes": ExperienceRoute[] } }`                  |
+| `products`     | `{ "replace": AuthoringProducts }`                                |
+| `integrations` | `{ "replace": ProjectIntegrations }`                              |
+
+同一个 spatial ID 不得同时 upsert 和 remove。更换 panorama image 不会隐式重置 camera 或 spatial。知识、Scene 等完整替换也不会级联删除依赖项；合并后的悬挂引用会作为字段级 blocking issue 返回，由客户端显式协调修改。
+
+新增 runtime assetId 和 authoring source fileRef 必须相对当前项目保持唯一。替换资产的做法是 append 新 ID，再在同一 ChangeSet 中重定向引用；v1 不物理删除旧资产。缺失 hotspot、marker 或 focusRect 不生成虚构坐标：它们进入 `calibrationQueue` / `releaseIssues`，但不阻止保存合法草稿。
+
+### 11.3 校验与 apply
+
+```http
+POST /api/automation/v1/authoring/changesets/validate
+Content-Type: application/json
+
+<GuideAuthoringChangeSet v1>
+```
+
+`validationToken` 绑定 Workbench 版本、完整 ChangeSet、Blob fingerprint、当前 revision、project hash 和 project tree hash。返回同时包含 `baseRevision`、`projectedRevision`、字段级 `issues`、`releaseIssues` 与 `calibrationQueue`。
+
+```http
+POST /api/automation/v1/authoring/changesets/apply
+Content-Type: application/json
+
+{
+  "changeSet": { "…": "GuideAuthoringChangeSet v1" },
+  "validationToken": "validate 返回的 token"
+}
+```
+
+ChangeSet 幂等键在 journal 内按 `guide-authoring-changeset:{UUID}` 独立命名，不与 Bundle v1 的 key 空间冲突。apply 会先查 journal，使成功请求在 revision 已推进后仍可安全回放；成功回放仍复核当前可见 project/tree hash，若项目已被后续修改或破坏则返回 `OPERATION_RECOVERY_REQUIRED`，不会返回已经失真的成功状态。
+
+### 11.4 更新提交与恢复边界
+
+更新事务先在 staging 物化新增文件与目标 project JSON，再计算“当前树 + staging overlay”的目标 hash 并写入 `prepared` journal。运行时文件按 append-only 方式落盘后仍不会被旧 `project.json` 引用；`ProjectRepository.save(expectedRevision, fixedTimestamp)` 是最终语义可见提交。保存前再次刷新磁盘状态并复核 base revision/hash。
+
+进程在新增文件落盘后中断时，同一请求会依据 journal 校验已存在字节、补齐缺失 overlay 并完成 project JSON 提交。任何 base/target/staging/journal 不一致都失败关闭为 `409 OPERATION_RECOVERY_REQUIRED`。新增错误码：
+
+| HTTP | code                      | 含义                                          |
+| ---: | ------------------------- | --------------------------------------------- |
+|  404 | `PROJECT_NOT_FOUND`       | ChangeSet 或 authoring-state 目标不存在       |
+|  409 | `REVISION_CONFLICT`       | expected revision 与当前 revision 不同        |
+|  409 | `ASSET_CONFLICT`          | append-only 目标与已有持久状态冲突            |
+|  500 | `AUTHORING_STATE_CORRUPT` | 稳定读取所需的 authoring source manifest 损坏 |

@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "lastDocSyncRef": "09c9ecc"
+    "lastDocSyncRef": "50da85180fc72f9606cd4176c55a9bad6ef4108a"
   },
   "orchestration": {
     "code_paths": [
@@ -14,17 +14,21 @@
       "src/server/services/asset-integrity.ts",
       "src/server/storage/authoring-*.ts",
       "src/server/workbench-*.ts",
+      "scripts/clean-workbench-build.mjs",
+      "scripts/package-workbench.mjs",
+      "scripts/workbench-build-layout.mjs",
+      "tests/integration/offline-workbench-package.integration.ts",
       "skills/**"
     ],
     "module_summary": "Versioned offline orchestration boundary between a thin agent Skill and the independently evolving Interactive Guide Workbench.",
     "docs": {
       "architecture": {
         "path": "docs/architecture/workbench-skill-offline-orchestration.md",
-        "summary": "Dual-version Workbench-Skill architecture covering intake, capability negotiation, atomic authoring create, revision-bound human approval, offline packaging, trust boundaries, and roadmap."
+        "summary": "Dual-version Workbench-Skill architecture covering intake, capability negotiation, atomic authoring create/update, stable authoring state, revision-bound human approval, verified offline packaging, trust boundaries, and roadmap."
       },
       "authoring_api": {
         "path": "docs/api/automation-v1-authoring.md",
-        "summary": "Stable Automation v1 authoring API for content-addressed blobs, GuideAuthoringBundle validation, atomic creation, idempotency, and crash recovery."
+        "summary": "Stable Automation v1 authoring API for content-addressed blobs, GuideAuthoringBundle creation, GuideAuthoringChangeSet updates, path-free state reads, idempotency, and crash recovery."
       }
     }
   },

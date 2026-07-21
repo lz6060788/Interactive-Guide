@@ -11,7 +11,7 @@
 - 两者独立发布、独立升级，通过版本化 Automation Protocol 和能力握手协作。
 - 离线安装包可以同时携带两个独立制品，但 Skill 不复制 Workbench 的 schema、编译器、运行时或业务规则。
 
-本文描述的完整离线工作流尚未全部实现。当前已具备 Workbench CLI、能力握手、`GuideAuthoringBundle v1`、内容寻址 Blob、项目原子创建、Review Session、人工批准门禁、资产闭包指纹和版本化发布入口；针对已有项目的 ChangeSet、完整离线发行包与最终 ZIP 交付仍是下一阶段工作。
+本文描述的完整离线工作流尚未全部实现。Workbench `0.5.0` 已具备 CLI 与能力握手、`GuideAuthoringBundle v1` 原子创建、`GuideAuthoringChangeSet v1` 原子修改、无路径 authoring-state、内容寻址 Blob、可校验离线 ZIP、Review Session、人工批准门禁、资产闭包指纹和版本化发布入口。当前剩余主任务是薄 Skill 本体、离线安装编排及最终双产物交付闭环。
 
 ## 2. 架构原则
 
@@ -81,7 +81,7 @@ flowchart LR
 
 | 制品                          | 示例版本 | 兼容声明                                                                       | 升级节奏                           |
 | ----------------------------- | -------- | ------------------------------------------------------------------------------ | ---------------------------------- |
-| `interactive-guide-workbench` | `0.4.0`  | 支持的 Automation Protocol、authoring contracts、project schemas、capabilities | 随编辑器、领域模型和运行时迭代     |
+| `interactive-guide-workbench` | `0.5.0`  | 支持的 Automation Protocol、authoring contracts、project schemas、capabilities | 随编辑器、领域模型和运行时迭代     |
 | `interactive-guide-skill`     | `1.x`    | 所需协议范围、契约范围和 capability 集合                                       | 随编排体验、素材收集和错误处理迭代 |
 
 Skill manifest 建议声明：
@@ -91,11 +91,14 @@ Skill manifest 建议声明：
   "skillVersion": "1.0.0",
   "requires": {
     "automationProtocol": "1.x",
-    "authoringContracts": ["guide-authoring-bundle@1.x"],
+    "authoringContracts": ["guide-authoring-bundle@1.x", "guide-authoring-changeset@1.x"],
+    "authoringStateContract": "guide-authoring-state@1.x",
     "capabilities": [
       "revision-bound-review-approval",
       "approval-gated-release",
       "atomic-authoring-create",
+      "atomic-authoring-update",
+      "authoring-state-read",
       "content-addressed-authoring-blobs",
       "versioned-release-api"
     ]
@@ -103,7 +106,7 @@ Skill manifest 建议声明：
 }
 ```
 
-Workbench `0.4.0` 已声明 `guide-authoring-bundle@1.0.0`，支持 creation-only 项目创建。当前仍未声明 ChangeSet；正式 Skill 可以自动创建项目，但针对已有项目的修改必须失败关闭，不能改用内部项目接口。
+Workbench `0.5.0` 已声明 `guide-authoring-bundle@1.0.0`、`guide-authoring-changeset@1.0.0` 与 `guide-authoring-state@1.0.0`。正式 Skill 可以通过同一 Automation v1 边界创建项目或针对当前 revision 定向修改；缺少任一所需契约时必须失败关闭，不能改用内部项目接口。
 
 ### 4.2 兼容规则
 
@@ -123,7 +126,8 @@ interactive-guide-offline-kit/
 ├─ skill/
 │  └─ interactive-guide-skill-<version>/
 ├─ workbench/
-│  └─ interactive-guide-workbench-<version>.tgz
+│  ├─ interactive-guide-workbench-v<version>-<platform>-<arch>-<hash>.zip
+│  └─ interactive-guide-workbench-v<version>-<platform>-<arch>-<hash>.zip.sha256
 ├─ compatibility.json
 ├─ SHA256SUMS
 └─ install.ps1 / install.sh
@@ -131,7 +135,9 @@ interactive-guide-offline-kit/
 
 同包交付不等于代码耦合：安装器把 Workbench 注册为独立可执行程序，Skill 仅保存发现方式和兼容范围。以后可以只替换 Workbench 包；握手通过则无需更新 Skill。若升级产生协议主版本变化，则并行保留旧 Workbench 或升级 Skill，不做静默降级。
 
-Workbench 离线包必须包含预编译 Admin、服务端和 Atlas / Catalog 浏览器运行时，运行制作流程时不得再访问 npm registry、CDN 或远程模板。
+Workbench 离线包由 `npm run package:workbench` 在已安装依赖的构建机上生成，不在打包过程中访问网络。命令先精确清理并重建允许打包的 `dist` 子目录，保留既有 `dist/packages`，再按构建目录白名单组包；陈旧 AI 输出、递归 outputDir、符号链接、路径穿越和大小写碰撞均失败关闭。ZIP 使用自身 SHA-256 作为文件名内容地址，包内记录逐文件 SHA-256，`npm run test:offline-package` 独立执行 clean build、解压、握手、启动和 Atlas/Catalog 构建验收，避免默认单元测试与 coverage 重复执行重型打包。
+
+当前包以平台与架构为维度，包含编译后的 Admin/Server、Atlas/Catalog 构建所需源资源、KingFisher vendor、完整运行时依赖闭包和机器可读 manifest；目标机只需兼容的 Node.js `>=20`，无需 `npm install`。包可从任意 cwd 执行，Workbench 资源相对包根解析，而 `--workspace` 仍相对调用者 cwd 解析。
 
 ## 5. Skill 包结构
 
@@ -202,9 +208,9 @@ Agent 调用 Skill 后，第一阶段必须先向用户索取并盘点素材。�
 - 位置图存在歧义时必须列出具体节点让用户确认，不能按视觉相似度静默猜测。
 - 用户明确声明某项不适用时，仍由 Workbench 校验该功能是否真的可关闭。
 
-## 7. Authoring contract
+## 7. Authoring contracts 与稳定状态
 
-Workbench `0.4.0` 已实现由 Workbench 拥有的 `GuideAuthoringBundle v1` 与原子 apply。它表达“用户提供了什么”，不暴露 `project.json` 的内部存储 shape。完整字段和 HTTP 语义见 [Automation v1 Authoring API](../api/automation-v1-authoring.md)。
+Workbench `0.5.0` 已实现由 Workbench 拥有的 `GuideAuthoringBundle v1`、`GuideAuthoringChangeSet v1`、`GuideAuthoringState v1` 与两阶段原子 apply。它们表达“用户提供或希望修改什么”，不暴露 `project.json` 的内部存储 shape。完整字段和 HTTP 语义见 [Automation v1 Authoring API](../api/automation-v1-authoring.md)。
 
 Bundle 包含：
 
@@ -216,7 +222,7 @@ Bundle 包含：
 - Scene、分享、埋点与产品配置；
 - authoring source 文件；缺失位置由 Workbench 派生为待校准队列。
 
-当前写入流程：
+创建写入流程：
 
 1. `PUT blobs/:sha256`：流式上传并验证内容寻址素材；
 2. `validate`：只读校验 bundle，返回字段级问题、发布问题和校准队列；
@@ -225,13 +231,23 @@ Bundle 包含：
 
 Apply 使用 durable operation journal 记录 `prepared → succeeded`，幂等范围为 `(contract, projectId, idempotencyKey)`。相同 key 与 request hash 重放第一次结果，不增加 revision；相同 key 指向不同请求时返回 `IDEMPOTENCY_KEY_REUSED`。中断恢复必须同时匹配项目 hash 与完整项目文件树 hash，否则失败关闭。
 
-当前限制：
+已有项目修改流程：
+
+1. `GET authoring-state`：读取 revision、project/tree hash、嵌套知识与无路径资产元数据；
+2. 构造只包含明确 partition 语义的 ChangeSet；
+3. `POST changesets/validate`：绑定当前 revision/hash/Blob，返回阻塞问题与校准队列；
+4. `POST changesets/apply`：按 append-only overlay 物化新增文件，以 revision CAS 的 `project.json` 保存作为最终语义可见提交；
+5. 发生中断时以 durable journal 校验 base/target/staging 后恢复，任何矛盾均失败关闭。
+
+约束：
 
 - Bundle v1 固定 `expectedRevision = 0`，只创建 revision 1；
 - `validate` 不持久化项目、项目资产或 operation journal；
 - authoring source 保存在项目的 `authoring-sources/`，不进入发布资产 registry；
 - 缺失 hotspot、marker 或 `focusRect` 不会生成假坐标，而是进入校准队列；
-- 后续针对性修改必须通过尚待实现的版本化 ChangeSet，而不是重新覆盖完整项目。
+- ChangeSet v1 对 knowledge/scenes/navigation/products/integrations 使用显式完整 replacement，对 panorama/spatial 使用定向 patch；不支持 JSON Patch；
+- 资产只允许 append，新 ID 加重定向用于替换，不物理覆盖或删除旧字节；
+- 合并器不隐式级联清理悬挂引用，客户端必须显式协调依赖 partition。
 
 ## 8. 端到端运行时流程
 
@@ -246,7 +262,7 @@ sequenceDiagram
     User-->>Skill: 提供素材或声明不适用项
     Skill->>WB: guide-workbench handshake --json
     WB-->>Skill: protocol / contracts / capabilities / versions
-    Skill->>WB: upload blobs + validate/apply GuideAuthoringBundle
+    Skill->>WB: authoring-state（已有项目）+ upload blobs + validate/apply Bundle 或 ChangeSet
     WB-->>Skill: projectId / revision / calibration queue
     Skill->>WB: start --workspace ... --port auto --json
     WB-->>Skill: uiUrl / apiUrl / instanceId
@@ -304,24 +320,29 @@ Release 必须同时匹配这些值，并在构建前、构建后和最终 commi
 
 ## 10. 当前 Automation v1 基线
 
-| 操作                  | 路径                                                        | 调用者          | 状态                                 |
-| --------------------- | ----------------------------------------------------------- | --------------- | ------------------------------------ |
-| 能力握手              | `GET /api/automation/v1/capabilities`                       | Skill           | 已实现                               |
-| 内容寻址素材          | `PUT /api/automation/v1/authoring/blobs/:sha256`            | Skill           | 已实现，流式校验与幂等写入           |
-| Bundle 校验           | `POST /api/automation/v1/authoring/bundles/validate`        | Skill           | 已实现，只读                         |
-| Bundle 创建           | `POST /api/automation/v1/authoring/bundles/apply`           | Skill           | 已实现，原子 creation-only           |
-| 创建 Review           | `POST /api/automation/v1/projects/:id/review-sessions`      | Skill           | 已实现                               |
-| 读取 Review           | `GET /api/automation/v1/review-sessions/:reviewId`          | Skill / UI      | 已实现                               |
-| 批准 Review           | `POST /api/automation/v1/review-sessions/:reviewId/approve` | 仅 Workbench UI | 已实现，尚未技术隔离调用者           |
-| 原子发布              | `POST /api/automation/v1/projects/:id/releases`             | Skill           | 已实现                               |
-| Authoring ChangeSet   | 待定义                                                      | Skill           | 未实现；已有项目自动修改必须失败关闭 |
-| 制品 ZIP 与校验和交付 | 待定义                                                      | Skill           | 未实现                               |
+| 操作               | 路径                                                        | 调用者          | 状态                                 |
+| ------------------ | ----------------------------------------------------------- | --------------- | ------------------------------------ |
+| 能力握手           | `GET /api/automation/v1/capabilities`                       | Skill           | 已实现                               |
+| 内容寻址素材       | `PUT /api/automation/v1/authoring/blobs/:sha256`            | Skill           | 已实现，流式校验与幂等写入           |
+| Bundle 校验        | `POST /api/automation/v1/authoring/bundles/validate`        | Skill           | 已实现，只读                         |
+| Bundle 创建        | `POST /api/automation/v1/authoring/bundles/apply`           | Skill           | 已实现，原子 creation-only           |
+| Authoring state    | `GET /api/automation/v1/projects/:id/authoring-state`       | Skill           | 已实现，严格无路径稳定投影           |
+| ChangeSet 校验     | `POST /api/automation/v1/authoring/changesets/validate`     | Skill           | 已实现，只读，绑定 revision/hash     |
+| ChangeSet 修改     | `POST /api/automation/v1/authoring/changesets/apply`        | Skill           | 已实现，append-only overlay 原子提交 |
+| 创建 Review        | `POST /api/automation/v1/projects/:id/review-sessions`      | Skill           | 已实现                               |
+| 读取 Review        | `GET /api/automation/v1/review-sessions/:reviewId`          | Skill / UI      | 已实现                               |
+| 批准 Review        | `POST /api/automation/v1/review-sessions/:reviewId/approve` | 仅 Workbench UI | 已实现，尚未技术隔离调用者           |
+| 原子发布           | `POST /api/automation/v1/projects/:id/releases`             | Skill           | 已实现                               |
+| Workbench 离线 ZIP | `npm run package:workbench`                                 | 发布工程        | 已实现，平台化 ZIP、manifest、SHA256 |
+| 最终双产物交付编排 | 待由薄 Skill 串联                                           | Skill           | 未实现                               |
 
 当前 Workbench 基线：
 
-- Workbench `0.4.0`；
+- Workbench `0.5.0`；
 - Automation Protocol `1.0`；
 - GuideAuthoringBundle `1.0.0`；
+- GuideAuthoringChangeSet `1.0.0`；
+- GuideAuthoringState `1.0.0`；
 - Review Session schema `1.0.0`；
 - Release manifest 新版 `1.1.0`，旧 `1.0.0` 仍可读；
 - 双产品、双语、Catalog `focus` 参数与原子不可变发布继续由 Workbench 实现。
@@ -339,6 +360,8 @@ Skill 应按稳定错误码处理，不解析自然语言：
 | `IDEMPOTENCY_KEY_REUSED`                | 不重用旧 key；先确认这是否为新业务操作                   |
 | `OPERATION_RECOVERY_REQUIRED`           | 停止自动写入，保留 workspace 供人工检查，不覆盖项目目录  |
 | `REVISION_CONFLICT`                     | 重新读取项目与 revision，展示差异后重试变更              |
+| `ASSET_CONFLICT`                        | 重新读取 authoring-state，使用新的 append-only ID        |
+| `AUTHORING_STATE_CORRUPT`               | 停止修改并保留 workspace，修复 source manifest 后再读取  |
 | `REVIEW_NOT_RELEASE_READY`              | 引导用户修复返回的字段级问题，不创建假值                 |
 | `ASSET_INTEGRITY_FAILED`                | 显示具体 asset ID，要求重新注册或恢复文件                |
 | `APPROVAL_STALE`                        | 创建新 Review Session，重新人工确认                      |
@@ -373,19 +396,17 @@ Skill 应按稳定错误码处理，不解析自然语言：
 
 发行仓库维护机器可读矩阵，不把“最新版”作为兼容策略：
 
-| Skill      | Automation | Authoring contract           | Workbench                  | 结果                                           |
-| ---------- | ---------- | ---------------------------- | -------------------------- | ---------------------------------------------- |
-| 目标 `1.x` | `1.x`      | `guide-authoring-bundle@1.x` | 满足 capability 的任意版本 | 支持                                           |
-| 目标 `1.x` | `1.x`      | 缺失                         | `0.3.x` 或不兼容实现       | 只允许握手、启动与人工操作；禁止自动 authoring |
-| `1.x`      | `2.x` only | 任意                         | 未来主版本                 | 拒绝并要求升级 Skill                           |
+| Skill      | Automation | Authoring contract               | Workbench                  | 结果                                           |
+| ---------- | ---------- | -------------------------------- | -------------------------- | ---------------------------------------------- |
+| 目标 `1.x` | `1.x`      | Bundle + ChangeSet + State `1.x` | 满足 capability 的任意版本 | 支持创建与定向修改                             |
+| 目标 `1.x` | `1.x`      | 缺失                             | `0.3.x` 或不兼容实现       | 只允许握手、启动与人工操作；禁止自动 authoring |
+| `1.x`      | `2.x` only | 任意                             | 未来主版本                 | 拒绝并要求升级 Skill                           |
 
 ## 13. 后续实施顺序
 
-1. 定义并实现 creation v1 之外的 `GuideAuthoringChangeSet v1`、validate/apply、revision CAS 和幂等恢复语义。
-2. 把浏览器运行时和 Admin 预编译进 Workbench 发布包，完成断网启动验证。
-3. 增加不可变 release ZIP、SHA-256 清单和版本化下载操作。
-4. 技术隔离 UI 批准与 Agent 调用权限，或签发可验证 receipt。
-5. 使用 Skill Creator 创建薄 Skill，只串联上述契约，不搬运 Workbench 逻辑。
-6. 构建 offline release kit，并对 Windows / macOS 的全断网流程做验收。
+1. 使用 Skill Creator 创建薄 Skill，只串联已实现的 Bundle / ChangeSet / State / Review / Release 契约，不搬运 Workbench 逻辑。
+2. 增加不可变 release ZIP、SHA-256 清单和版本化下载操作，供 Skill 直接交付 Atlas 与 Catalog。
+3. 技术隔离 UI 批准与 Agent 调用权限，或签发可验证 receipt。
+4. 组装 Skill + 平台化 Workbench ZIP 的 offline release kit，并对 Windows / macOS 的全断网流程做验收。
 
 完整完成定义是：用户安装离线发行包后，Agent 能收集真实素材、通过稳定契约创建或修改项目、启动 Workbench 供人工修复、等待用户在 UI 中批准，最后交付同一不可变发布中的 Atlas 与 Catalog，而 Workbench 与 Skill 任一方的兼容升级都无需复制或同步另一方的实现代码。
