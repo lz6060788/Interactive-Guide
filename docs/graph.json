@@ -90,6 +90,20 @@
       }
     }
   },
+  "skills": {
+    "code_paths": [
+      "skills/**",
+      "scripts/package-interactive-guide-skill.mjs",
+      "scripts/verify-interactive-guide-skill-package.mjs"
+    ],
+    "module_summary": "Agent orchestration Skills and offline assembly scripts that package the existing Workbench for local authoring, review, and product delivery.",
+    "docs": {
+      "offline_packaging": {
+        "path": "docs/architecture/offline-skill-packaging.md",
+        "summary": "Offline Skill and Workbench separation, dependency-closure assembly, loopback runtime, review gate, and standalone product ZIP delivery."
+      }
+    }
+  },
   "schema": {
     "code_paths": ["src/shared/**"],
     "module_summary": "Shared types, Zod validators, and schema contracts used across server and runtime.",
