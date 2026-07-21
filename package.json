@@ -3,11 +3,16 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "guide-workbench": "./dist/server/workbench-cli.js"
+  },
   "scripts": {
     "dev:server": "tsx watch src/server/index.ts",
     "dev:admin": "cd src/admin && npm run dev",
     "build:server": "tsc -p tsconfig.server.json",
     "build:admin": "cd src/admin && vite build",
+    "build:workbench": "npm run build:server && npm run build:admin",
+    "start:workbench": "node dist/server/workbench-cli.js start --workspace ./data --port auto --json",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "coverage": "c8 --reporter=text --reporter=lcov --exclude='tests/**' --exclude='src/admin/node_modules/**' --exclude='**/*.d.ts' node --import tsx --test \"tests/**/*.test.ts\"",

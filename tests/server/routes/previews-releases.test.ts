@@ -28,11 +28,13 @@ function bootApp(): { app: express.Express; dir: string; cleanup: () => void } {
   app.use(express.json({ limit: '20mb' }))
   app.use('/api', createProjectsRouter(projectService))
   app.use('/api', createAssetsRouter(projectService, assetService))
-  app.use('/api', createPreviewsRouter(projectRepo))
+  app.use('/api', createPreviewsRouter(projectRepo, { dataDir: dir }))
   app.use('/api', createReleasesRouter(projectRepo, releaseRepo))
-  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    res.status(500).json({ error: err.message, code: 'INTERNAL' })
-  })
+  app.use(
+    (err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      res.status(500).json({ error: err.message, code: 'INTERNAL' })
+    },
+  )
   return { app, dir, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) }
 }
 
@@ -66,7 +68,10 @@ test('POST /projects/:id/previews/:product returns a static preview entry that c
   assert.equal(preview.status, 200, JSON.stringify(preview.body))
   assert.equal(preview.body.data.product, 'atlas')
   assert.equal(typeof preview.body.data.sourceRevision, 'number')
-  assert.match(preview.body.data.entryUrl, /\/api\/projects\/p1\/previews\/atlas\/builds\/.+\/index\.html$/)
+  assert.match(
+    preview.body.data.entryUrl,
+    /\/api\/projects\/p1\/previews\/atlas\/builds\/.+\/index\.html$/,
+  )
   assert.match(preview.body.data.downloadUrl, /\/download\.zip$/)
 
   const html = await request(app).get(preview.body.data.entryUrl)
@@ -93,7 +98,10 @@ test('POST /projects/:id/previews/:product returns a static preview entry that c
   assert.equal(download.status, 200)
   assert.match(String(download.headers['content-disposition']), /p1-atlas-0\.1\.0\.zip/)
   const zip = new AdmZip(download.body as Buffer)
-  const entries = zip.getEntries().filter(entry => !entry.isDirectory).map(entry => entry.entryName)
+  const entries = zip
+    .getEntries()
+    .filter(entry => !entry.isDirectory)
+    .map(entry => entry.entryName)
   assert.ok(entries.includes('index.html'))
   assert.ok(entries.includes('app.js'))
   assert.ok(entries.includes('manifest.json'))
@@ -108,7 +116,9 @@ test('POST /projects/:id/releases creates a release whose files can be fetched s
   assert.equal(release.status, 200)
 
   for (const product of ['atlas', 'catalog'] as const) {
-    const html = await request(app).get(`/api/projects/p1/releases/0.1.0/files/${product}/index.html`)
+    const html = await request(app).get(
+      `/api/projects/p1/releases/0.1.0/files/${product}/index.html`,
+    )
     assert.equal(html.status, 200)
     assert.match(String(html.text), /<script src="\.\/app\.js"><\/script>/)
     assert.doesNotMatch(String(html.text), /type="module"/)
@@ -142,7 +152,9 @@ test('preview and release file routes reject path traversal', async () => {
   await createMinimalProject(app)
   await request(app).post('/api/projects/p1/releases')
 
-  const preview = await request(app).get('/api/projects/p1/previews/atlas/builds/build-x/../../secret.txt')
+  const preview = await request(app).get(
+    '/api/projects/p1/previews/atlas/builds/build-x/../../secret.txt',
+  )
   assert.equal(preview.status, 404)
 
   const release = await request(app).get('/api/projects/p1/releases/0.1.0/files/../../secret.txt')

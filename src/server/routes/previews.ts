@@ -11,9 +11,10 @@ import { DraftBuildService, type DraftProduct } from '../services/draft-build-se
 
 export function createPreviewsRouter(
   projects: ProjectRepository = new ProjectRepository(),
+  options: { dataDir?: string } = {},
 ): Router {
   const router = Router()
-  const draft = new DraftBuildService(projects)
+  const draft = new DraftBuildService(projects, options)
 
   router.post('/projects/:id/previews/:product', async (req, res) => {
     const product = String(req.params.product)
