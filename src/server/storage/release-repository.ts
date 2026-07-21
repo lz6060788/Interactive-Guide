@@ -1,21 +1,8 @@
-/**
- * ReleaseRepository — file-system storage for published releases.
- *
- * Layout:
- *   data/releases/{projectId}/{version}/
- *   ├─ release.json
- *   ├─ atlas/
- *   │  ├─ index.html
- *   │  ├─ app.js
- *   │  ├─ manifest.json
- *   │  └─ assets/...
- *   └─ catalog/
- *      └─ (same structure)
- */
+/** Filesystem storage and immutable staging transactions for dual-product releases. */
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AtlasManifest } from '../../products/atlas/contract/atlas-manifest.js'
-import type { CatalogManifest } from '../../products/catalog/contract/catalog-manifest.js'
+import { ProjectIdSchema, ProjectVersionSchema } from '../../domain/project-schema.js'
 
 export interface ReleaseManifest {
   projectId: string
@@ -29,11 +16,50 @@ export interface ReleaseManifest {
   }
 }
 
+export interface ReleaseTransaction {
+  projectId: string
+  version: string
+  stagingDir: string
+  finalDir: string
+  commit(): void
+  rollback(): void
+}
+
+export class InvalidReleasePathError extends Error {
+  constructor(
+    public readonly field: 'projectId' | 'version',
+    public readonly value: string,
+  ) {
+    super(`invalid release ${field}: ${JSON.stringify(value)}`)
+    this.name = 'InvalidReleasePathError'
+  }
+}
+
+export class ReleaseAlreadyExistsError extends Error {
+  constructor(
+    public readonly projectId: string,
+    public readonly version: string,
+  ) {
+    super(`release "${projectId}" version "${version}" already exists`)
+    this.name = 'ReleaseAlreadyExistsError'
+  }
+}
+
+export class ReleaseBuildInProgressError extends Error {
+  constructor(
+    public readonly projectId: string,
+    public readonly version: string,
+  ) {
+    super(`release "${projectId}" version "${version}" is already being built`)
+    this.name = 'ReleaseBuildInProgressError'
+  }
+}
+
 export class ReleaseRepository {
   private readonly root: string
 
   constructor(opts: { dataDir?: string } = {}) {
-    this.root = path.join(opts.dataDir ?? path.resolve('data'), 'releases')
+    this.root = path.resolve(opts.dataDir ?? path.resolve('data'), 'releases')
     fs.mkdirSync(this.root, { recursive: true })
   }
 
@@ -42,16 +68,19 @@ export class ReleaseRepository {
   }
 
   releaseDir(projectId: string, version: string): string {
-    return path.join(this.root, projectId, version)
+    const projectDir = this.projectDir(projectId)
+    assertReleaseVersion(version)
+    return resolveContained(projectDir, version, 'version')
   }
 
   listVersions(projectId: string): string[] {
-    const dir = path.join(this.root, projectId)
-    if (!fs.existsSync(dir)) return []
+    const projectDir = this.projectDir(projectId)
+    if (!fs.existsSync(projectDir)) return []
     return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
+      .readdirSync(projectDir, { withFileTypes: true })
+      .filter(entry => entry.isDirectory() && ProjectVersionSchema.safeParse(entry.name).success)
+      .map(entry => entry.name)
+      .filter(version => this.readRelease(projectId, version) !== null)
       .sort()
   }
 
@@ -59,61 +88,118 @@ export class ReleaseRepository {
     const file = path.join(this.releaseDir(projectId, version), 'release.json')
     if (!fs.existsSync(file)) return null
     try {
-      return JSON.parse(fs.readFileSync(file, 'utf-8')) as ReleaseManifest
+      return JSON.parse(fs.readFileSync(file, 'utf8')) as ReleaseManifest
     } catch {
       return null
     }
   }
 
-  writeRelease(projectId: string, version: string, manifest: ReleaseManifest): void {
-    const dir = this.releaseDir(projectId, version)
-    fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, 'release.json'), JSON.stringify(manifest, null, 2))
-  }
-
-  writeAtlasFiles(projectId: string, version: string, files: { 'index.html': string; 'app.js': string; 'manifest.json': string; assets: Map<string, Buffer> }): void {
-    const dir = path.join(this.releaseDir(projectId, version), 'atlas')
-    fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, 'index.html'), files['index.html'])
-    fs.writeFileSync(path.join(dir, 'app.js'), files['app.js'])
-    fs.writeFileSync(path.join(dir, 'manifest.json'), files['manifest.json'])
-    const assetsDir = path.join(dir, 'assets')
-    fs.mkdirSync(assetsDir, { recursive: true })
-    for (const [name, buf] of files.assets) {
-      const target = path.join(assetsDir, name)
-      fs.mkdirSync(path.dirname(target), { recursive: true })
-      fs.writeFileSync(target, buf)
-    }
-  }
-
-  writeCatalogFiles(projectId: string, version: string, files: { 'index.html': string; 'app.js': string; 'manifest.json': string; assets: Map<string, Buffer> }): void {
-    const dir = path.join(this.releaseDir(projectId, version), 'catalog')
-    fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(path.join(dir, 'index.html'), files['index.html'])
-    fs.writeFileSync(path.join(dir, 'app.js'), files['app.js'])
-    fs.writeFileSync(path.join(dir, 'manifest.json'), files['manifest.json'])
-    const assetsDir = path.join(dir, 'assets')
-    fs.mkdirSync(assetsDir, { recursive: true })
-    for (const [name, buf] of files.assets) {
-      const target = path.join(assetsDir, name)
-      fs.mkdirSync(path.dirname(target), { recursive: true })
-      fs.writeFileSync(target, buf)
-    }
-  }
-
-  /**
-   * Atomically swap a release directory. Writes everything to a sibling
-   * _tmp directory first, then renames into place. Existing release is
-   * preserved if any step fails.
-   */
-  commit(projectId: string, version: string): void {
+  beginRelease(projectId: string, version: string): ReleaseTransaction {
     const finalDir = this.releaseDir(projectId, version)
-    const tmpDir = `${finalDir}__tmp`
-    if (fs.existsSync(tmpDir)) fs.rmSync(tmpDir, { recursive: true, force: true })
-    if (!fs.existsSync(tmpDir)) {
-      throw new Error(`commit: tmp dir ${tmpDir} does not exist — caller must build first`)
+    if (fs.existsSync(finalDir)) throw new ReleaseAlreadyExistsError(projectId, version)
+
+    fs.mkdirSync(path.dirname(finalDir), { recursive: true })
+    const lockPath = `${finalDir}.lock`
+    acquireBuildLock(lockPath, projectId, version)
+    if (fs.existsSync(finalDir)) {
+      fs.rmSync(lockPath, { force: true })
+      throw new ReleaseAlreadyExistsError(projectId, version)
     }
-    if (fs.existsSync(finalDir)) fs.rmSync(finalDir, { recursive: true, force: true })
-    fs.renameSync(tmpDir, finalDir)
+    const stagingDir = path.join(path.dirname(finalDir), `.release-staging-${crypto.randomUUID()}`)
+    try {
+      fs.mkdirSync(stagingDir)
+    } catch (error) {
+      fs.rmSync(lockPath, { force: true })
+      throw error
+    }
+    let finished = false
+
+    return {
+      projectId,
+      version,
+      stagingDir,
+      finalDir,
+      commit() {
+        if (finished) throw new Error('release transaction is already closed')
+        if (fs.existsSync(finalDir)) throw new ReleaseAlreadyExistsError(projectId, version)
+        fs.renameSync(stagingDir, finalDir)
+        finished = true
+        fs.rmSync(lockPath, { force: true })
+      },
+      rollback() {
+        if (finished) return
+        finished = true
+        fs.rmSync(stagingDir, { recursive: true, force: true })
+        fs.rmSync(lockPath, { force: true })
+      },
+    }
   }
+
+  private projectDir(projectId: string): string {
+    if (!ProjectIdSchema.safeParse(projectId).success) {
+      throw new InvalidReleasePathError('projectId', projectId)
+    }
+    return resolveContained(this.root, projectId, 'projectId')
+  }
+}
+
+function acquireBuildLock(lockPath: string, projectId: string, version: string): void {
+  try {
+    const descriptor = fs.openSync(lockPath, 'wx')
+    try {
+      fs.writeFileSync(
+        descriptor,
+        JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }),
+      )
+    } finally {
+      fs.closeSync(descriptor)
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    const ownerPid = readBuildLockPid(lockPath)
+    if (ownerPid !== null && !isProcessAlive(ownerPid)) {
+      fs.rmSync(lockPath, { force: true })
+      acquireBuildLock(lockPath, projectId, version)
+      return
+    }
+    throw new ReleaseBuildInProgressError(projectId, version)
+  }
+}
+
+function readBuildLockPid(lockPath: string): number | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(lockPath, 'utf8')) as { pid?: unknown }
+    return typeof parsed.pid === 'number' && Number.isInteger(parsed.pid) ? parsed.pid : null
+  } catch {
+    return null
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
+  }
+}
+
+function assertReleaseVersion(version: string): void {
+  if (!ProjectVersionSchema.safeParse(version).success) {
+    throw new InvalidReleasePathError('version', version)
+  }
+}
+
+function resolveContained(
+  rootInput: string,
+  segment: string,
+  field: 'projectId' | 'version',
+): string {
+  const root = path.resolve(rootInput)
+  const resolved = path.resolve(root, segment)
+  if (!resolved.startsWith(`${root}${path.sep}`)) {
+    throw new InvalidReleasePathError(field, segment)
+  }
+  return resolved
 }

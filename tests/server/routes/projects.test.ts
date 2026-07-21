@@ -124,6 +124,21 @@ test('PUT /projects/:id/knowledge replaces the knowledge tree', async () => {
   cleanup()
 })
 
+test('PATCH /projects/:id/metadata rejects a release-unsafe version', async () => {
+  const { app, cleanup } = bootApp()
+  await request(app).post('/projects').send({ id: 'p1', title: 'Hello' })
+
+  const res = await request(app)
+    .patch('/projects/p1/metadata')
+    .send({ version: '../escape', expectedRevision: 1 })
+
+  assert.equal(res.status, 400)
+  assert.equal(res.body.code, 'BAD_REQUEST')
+  const current = await request(app).get('/projects/p1')
+  assert.equal(current.body.data.version, '0.1.0')
+  cleanup()
+})
+
 test('PUT /projects/:id/knowledge requires an expected revision', async () => {
   const { app, cleanup } = bootApp()
   await request(app).post('/projects').send({ id: 'p1', title: 'Hello' })

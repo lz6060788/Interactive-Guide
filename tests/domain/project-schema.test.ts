@@ -1,7 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
-import { GuideProjectSchema, SchemaVersionSchema } from '../../src/domain/project-schema.js'
+import {
+  GuideProjectSchema,
+  ProjectIdSchema,
+  ProjectVersionSchema,
+  SchemaVersionSchema,
+} from '../../src/domain/project-schema.js'
 import { createDraftProject } from '../../src/domain/project-normalizer.js'
 
 const base = () => createDraftProject({ id: 'p1', title: 'Test', locale: 'zh-CN' })
@@ -10,6 +15,18 @@ test('SchemaVersionSchema accepts only "3.0.0"', () => {
   assert.equal(SchemaVersionSchema.safeParse('3.0.0').success, true)
   assert.equal(SchemaVersionSchema.safeParse('1.0.0').success, false)
   assert.equal(SchemaVersionSchema.safeParse('2.0.0').success, false)
+})
+
+test('project id and version schemas accept safe release path segments only', () => {
+  assert.equal(ProjectIdSchema.safeParse('memory-chip-industry-chain').success, true)
+  assert.equal(ProjectVersionSchema.safeParse('2026.07.21+en').success, true)
+
+  for (const value of ['.', '..', '../escape', 'nested/path', 'nested\\path', 'NUL', 'CON.txt']) {
+    assert.equal(ProjectVersionSchema.safeParse(value).success, false, value)
+  }
+  for (const value of ['../escape', 'UPPER', 'has space', 'trailing-']) {
+    assert.equal(ProjectIdSchema.safeParse(value).success, false, value)
+  }
 })
 
 test('GuideProjectSchema accepts a fresh draft project with assetId filled in', () => {

@@ -11,6 +11,29 @@ import { SceneProtocolSchema } from './scene-protocol.js'
 
 export const SchemaVersionSchema = z.literal('3.0.0')
 
+const WINDOWS_RESERVED_SEGMENT = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i
+
+export const ProjectIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(
+    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/,
+    'project id must be a lowercase kebab-case path segment',
+  )
+
+export const ProjectVersionSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(
+    /^[A-Za-z0-9](?:[A-Za-z0-9._+-]*[A-Za-z0-9_+-])?$/,
+    'project version must be a safe path segment',
+  )
+  .refine(value => !WINDOWS_RESERVED_SEGMENT.test(value), {
+    message: 'project version must not use a reserved file name',
+  })
+
 export const LocalizedTextSchema = z.record(z.string().min(1), z.string())
 
 export const LocalizationConfigSchema = z.object({
@@ -271,9 +294,9 @@ export const ProjectMetadataSchema = z.object({
 export const GuideProjectSchema = z
   .object({
     schemaVersion: SchemaVersionSchema,
-    id: z.string().min(1),
+    id: ProjectIdSchema,
     title: LocalizedTextSchema,
-    version: z.string().min(1),
+    version: ProjectVersionSchema,
     localization: LocalizationConfigSchema,
     knowledge: IndustryChainSchema,
     assets: AssetRegistrySchema,

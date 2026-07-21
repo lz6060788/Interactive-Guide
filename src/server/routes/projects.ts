@@ -13,14 +13,15 @@ import {
   ProjectValidationError,
   RevisionConflictErrorPublic,
 } from '../services/project-service.js'
-import { GuideProjectSchema } from '../../domain/project-schema.js'
+import {
+  GuideProjectSchema,
+  ProjectIdSchema,
+  ProjectVersionSchema,
+} from '../../domain/project-schema.js'
 import { ProjectNotFoundError } from '../storage/project-repository.js'
 
 const CreateBody = z.object({
-  id: z
-    .string()
-    .min(1)
-    .regex(/^[a-z0-9-]+$/, 'id must be kebab-case'),
+  id: ProjectIdSchema,
   title: z.string().min(1),
   locale: z.string().min(1).optional(),
 })
@@ -28,7 +29,7 @@ const CreateBody = z.object({
 const MetadataBody = z.object({
   title: z.string().min(1).optional(),
   titleLocale: z.string().min(1).optional(),
-  version: z.string().min(1).optional(),
+  version: ProjectVersionSchema.optional(),
   locale: z.string().min(1).optional(),
   expectedRevision: z.number().int().nonnegative(),
 })
@@ -233,10 +234,7 @@ export function createProjectsRouter(projectService: ProjectService): Router {
   return router
 }
 
-function requireExpectedRevision(
-  req: Request,
-  res: Response,
-): number | null {
+function requireExpectedRevision(req: Request, res: Response): number | null {
   const raw = req.header('x-expected-revision') ?? req.query.expectedRevision
   if (raw === undefined) {
     res.status(400).json({ error: 'expectedRevision is required', code: 'BAD_REQUEST' })

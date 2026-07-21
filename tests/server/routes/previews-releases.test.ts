@@ -38,7 +38,10 @@ function bootApp(): { app: express.Express; dir: string; cleanup: () => void } {
   return { app, dir, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) }
 }
 
-async function createMinimalProject(app: express.Express): Promise<void> {
+async function createMinimalProject(
+  app: express.Express,
+  options: { includeEnglishTitle?: boolean } = {},
+): Promise<void> {
   const create = await request(app).post('/api/projects').send({ id: 'p1', title: 'T' })
   const rev1 = create.body.data.metadata.revision
   await request(app)
@@ -48,7 +51,7 @@ async function createMinimalProject(app: express.Express): Promise<void> {
 
   const get1 = await request(app).get('/api/projects/p1')
   const rev2 = get1.body.data.metadata.revision
-  await request(app)
+  const panorama = await request(app)
     .put('/api/projects/p1/panorama')
     .set('x-expected-revision', String(rev2))
     .send({
@@ -59,6 +62,16 @@ async function createMinimalProject(app: express.Express): Promise<void> {
       categories: {},
       items: {},
     })
+  assert.equal(panorama.status, 200, JSON.stringify(panorama.body))
+
+  if (options.includeEnglishTitle !== false) {
+    const english = await request(app).patch('/api/projects/p1/metadata').send({
+      title: 'T',
+      titleLocale: 'en-US',
+      expectedRevision: panorama.body.data.metadata.revision,
+    })
+    assert.equal(english.status, 200, JSON.stringify(english.body))
+  }
 }
 
 test('POST /projects/:id/previews/:product returns a static preview entry that can be fetched', async () => {
@@ -134,6 +147,37 @@ test('POST /projects/:id/releases creates a release whose files can be fetched s
     )
     assert.equal(runtimeModule.status, 404)
   }
+  cleanup()
+})
+
+test('POST /projects/:id/releases rejects a release-incomplete draft before writing files', async () => {
+  const { app, dir, cleanup } = bootApp()
+  await createMinimalProject(app, { includeEnglishTitle: false })
+
+  const release = await request(app).post('/api/projects/p1/releases')
+
+  assert.equal(release.status, 400)
+  assert.equal(release.body.code, 'VALIDATION_FAILED')
+  assert.ok(
+    release.body.issues.some((issue: { code: string }) => issue.code === 'TRANSLATION_MISSING'),
+  )
+  assert.equal(fs.existsSync(path.join(dir, 'releases', 'p1', '0.1.0')), false)
+  cleanup()
+})
+
+test('POST /projects/:id/releases keeps versions immutable', async () => {
+  const { app, dir, cleanup } = bootApp()
+  await createMinimalProject(app)
+  const first = await request(app).post('/api/projects/p1/releases')
+  assert.equal(first.status, 200, JSON.stringify(first.body))
+  const manifestPath = path.join(dir, 'releases', 'p1', '0.1.0', 'release.json')
+  const before = fs.readFileSync(manifestPath)
+
+  const duplicate = await request(app).post('/api/projects/p1/releases')
+
+  assert.equal(duplicate.status, 409)
+  assert.equal(duplicate.body.code, 'RELEASE_EXISTS')
+  assert.deepEqual(fs.readFileSync(manifestPath), before)
   cleanup()
 })
 

@@ -5,8 +5,17 @@ import { Router } from 'express'
 import fs from 'node:fs'
 import path from 'node:path'
 import { ProjectRepository } from '../storage/project-repository.js'
-import { ReleaseRepository } from '../storage/release-repository.js'
-import { ReleaseService, ReleaseValidationError } from '../services/release-service.js'
+import {
+  InvalidReleasePathError,
+  ReleaseAlreadyExistsError,
+  ReleaseBuildInProgressError,
+  ReleaseRepository,
+} from '../storage/release-repository.js'
+import {
+  ReleaseProjectValidationError,
+  ReleaseService,
+  ReleaseValidationError,
+} from '../services/release-service.js'
 
 export function createReleasesRouter(
   projects: ProjectRepository = new ProjectRepository(),
@@ -16,28 +25,34 @@ export function createReleasesRouter(
   const service = new ReleaseService(projects, repo)
 
   router.get('/projects/:id/releases', (req, res) => {
-    const versions = repo.listVersions(String(req.params.id))
-    res.json({ data: versions })
+    try {
+      const versions = repo.listVersions(String(req.params.id))
+      res.json({ data: versions })
+    } catch (error) {
+      if (!mapReleaseError(error, res)) sendUnexpectedReleaseError(res)
+    }
   })
   router.get('/projects/:id/releases/:version', (req, res) => {
-    const manifest = repo.readRelease(String(req.params.id), String(req.params.version))
-    if (!manifest) {
-      res.status(404).json({ error: 'release not found', code: 'NOT_FOUND' })
-      return
+    try {
+      const manifest = repo.readRelease(String(req.params.id), String(req.params.version))
+      if (!manifest) {
+        res.status(404).json({ error: 'release not found', code: 'NOT_FOUND' })
+        return
+      }
+      res.json({ data: manifest })
+    } catch (error) {
+      if (!mapReleaseError(error, res)) sendUnexpectedReleaseError(res)
     }
-    res.json({ data: manifest })
   })
   router.post('/projects/:id/releases', (req, res) => {
     try {
       const result = service.buildRelease(String(req.params.id))
       res.json({ data: result })
     } catch (err) {
-      if (err instanceof ReleaseValidationError) {
-        res.status(400).json({ error: err.message, code: 'VALIDATION_FAILED', failures: err.failures })
-        return
+      if (!mapReleaseError(err, res)) {
+        const msg = (err as Error).message
+        res.status(500).json({ error: msg, code: 'BUILD_FAILED' })
       }
-      const msg = (err as Error).message
-      res.status(500).json({ error: msg, code: 'BUILD_FAILED' })
     }
   })
 
@@ -46,7 +61,17 @@ export function createReleasesRouter(
     const projectId = captures[0] ?? ''
     const version = captures[1] ?? ''
     const relPath = captures[2] ?? ''
-    const releaseDir = repo.releaseDir(projectId, version)
+    let releaseDir: string
+    try {
+      if (!repo.readRelease(projectId, version)) {
+        res.status(404).json({ error: 'release not found', code: 'NOT_FOUND' })
+        return
+      }
+      releaseDir = repo.releaseDir(projectId, version)
+    } catch (error) {
+      mapReleaseError(error, res)
+      return
+    }
     const requestedPath = relPath.replaceAll('\\', '/')
     if (requestedPath.startsWith('/') || requestedPath.includes('..')) {
       res.status(400).json({ error: 'invalid release asset path', code: 'BAD_PATH' })
@@ -67,4 +92,34 @@ export function createReleasesRouter(
   })
 
   return router
+}
+
+function mapReleaseError(error: unknown, res: import('express').Response): boolean {
+  if (error instanceof InvalidReleasePathError) {
+    res.status(400).json({ error: error.message, code: 'BAD_RELEASE_PATH' })
+    return true
+  }
+  if (error instanceof ReleaseAlreadyExistsError) {
+    res.status(409).json({ error: error.message, code: 'RELEASE_EXISTS' })
+    return true
+  }
+  if (error instanceof ReleaseBuildInProgressError) {
+    res.status(409).json({ error: error.message, code: 'RELEASE_IN_PROGRESS' })
+    return true
+  }
+  if (error instanceof ReleaseProjectValidationError) {
+    res.status(400).json({ error: error.message, code: 'VALIDATION_FAILED', issues: error.issues })
+    return true
+  }
+  if (error instanceof ReleaseValidationError) {
+    res
+      .status(400)
+      .json({ error: error.message, code: 'VALIDATION_FAILED', failures: error.failures })
+    return true
+  }
+  return false
+}
+
+function sendUnexpectedReleaseError(res: import('express').Response): void {
+  res.status(500).json({ error: 'release operation failed', code: 'RELEASE_FAILED' })
 }
