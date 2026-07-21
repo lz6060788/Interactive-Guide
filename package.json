@@ -8,6 +8,8 @@
     "dev:admin": "cd src/admin && npm run dev",
     "build:server": "tsc -p tsconfig.server.json",
     "build:admin": "cd src/admin && vite build",
+    "package:offline-skill": "node scripts/package-interactive-guide-skill.mjs",
+    "verify:offline-skill-package": "node scripts/verify-interactive-guide-skill-package.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
     "coverage": "c8 --reporter=text --reporter=lcov --exclude='tests/**' --exclude='src/admin/node_modules/**' --exclude='**/*.d.ts' node --import tsx --test \"tests/**/*.test.ts\"",

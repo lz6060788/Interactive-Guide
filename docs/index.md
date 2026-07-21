@@ -12,11 +12,13 @@ Last sync: Catalog 圆点与场景动画同步 / Atlas 卡片平滑滚动 / revi
 | products/catalog | `src/products/catalog/` | — | — | [Catalog产品](features/独立全景HTML产物方案设计.md) | ✅ |
 | platform | `src/platform/` | — | — | [HTML协议](features/HTML节点通信协议与接入指南.md) | ✅ |
 | admin | `src/admin/` | — | — | [UI流程](features/管理端UI与操作流程设计.md) | ✅ |
+| skills | `skills/` | [离线 Skill 组装架构](architecture/offline-skill-packaging.md) | — | — | ✅ |
 
 ### Development
 
 | Doc | Description |
 |-----|-------------|
+| [离线 Skill 组装架构](architecture/offline-skill-packaging.md) | Skill 编排层、Workbench 构建闭包、回环运行时与双产物交付边界 (2026-07-21) |
 | [Catalog 与 Atlas 运行时动效修复设计](superpowers/specs/2026-07-15-runtime-motion-polish-design.md) | Catalog marker 正圆与场景统一时间线、Atlas 卡片平滑居中滚动 (2026-07-15) |
 | [双产品 HTML 标题与资料来源文案设计](superpowers/specs/2026-07-15-product-title-source-copy-design.md) | Atlas/Catalog HTML 标题使用项目标题，共用资料来源默认文案去除机构名称 (2026-07-15) |
 | [Catalog 聚焦框固定圆角设计](superpowers/specs/2026-07-15-catalog-focus-radius-design.md) | Catalog 运行时与实时预览统一 12px 聚焦框圆角，保留 pill 主题行为 (2026-07-15) |
