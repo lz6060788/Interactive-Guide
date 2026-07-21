@@ -25,6 +25,7 @@ import { createProjectsRouter } from './routes/projects.js'
 import { createAssetsRouter } from './routes/assets.js'
 import { createReleasesRouter } from './routes/releases.js'
 import { createPreviewsRouter } from './routes/previews.js'
+import { createAutomationRouter } from './routes/automation.js'
 
 // Middleware
 import { errorHandler } from './middleware/error-handler.js'
@@ -48,6 +49,7 @@ app.use(express.json({ limit: '50mb' }))
 
 // API routes
 app.use('/api', healthRouter)
+app.use('/api', createAutomationRouter())
 app.use('/api', createProjectsRouter(projectService))
 app.use('/api', createAssetsRouter(projectService, assetService))
 app.use('/api', createReleasesRouter(projectRepo, releaseRepo))

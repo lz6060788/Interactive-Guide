@@ -123,3 +123,55 @@ test('PUT /projects/:id/knowledge replaces the knowledge tree', async () => {
   assert.equal(res.status, 200)
   cleanup()
 })
+
+test('PUT /projects/:id/knowledge requires an expected revision', async () => {
+  const { app, cleanup } = bootApp()
+  await request(app).post('/projects').send({ id: 'p1', title: 'Hello' })
+  const knowledge = {
+    stages: [
+      { key: 'upstream', label: { 'en-US': 'Upstream' }, order: 1, categories: [] },
+      { key: 'midstream', label: { 'en-US': 'Midstream' }, order: 2, categories: [] },
+      { key: 'downstream', label: { 'en-US': 'Downstream' }, order: 3, categories: [] },
+    ],
+    items: {},
+  }
+
+  const res = await request(app).put('/projects/p1/knowledge').send(knowledge)
+
+  assert.equal(res.status, 400)
+  assert.equal(res.body.code, 'BAD_REQUEST')
+  cleanup()
+})
+
+test('PUT /projects/:id/knowledge rejects a stale revision without overwriting the project', async () => {
+  const { app, cleanup } = bootApp()
+  const created = await request(app).post('/projects').send({ id: 'p1', title: 'Hello' })
+  const originalKnowledge = created.body.data.knowledge
+  const advanced = await request(app)
+    .patch('/projects/p1/metadata')
+    .send({ title: 'Advanced', expectedRevision: 1 })
+  assert.equal(advanced.status, 200)
+  assert.equal(advanced.body.data.metadata.revision, 2)
+  const knowledge = {
+    stages: [
+      { key: 'upstream', label: { 'en-US': 'Upstream' }, order: 1, categories: [] },
+      { key: 'midstream', label: { 'en-US': 'Midstream' }, order: 2, categories: [] },
+      { key: 'downstream', label: { 'en-US': 'Downstream' }, order: 3, categories: [] },
+    ],
+    items: {},
+  }
+
+  const res = await request(app)
+    .put('/projects/p1/knowledge')
+    .set('x-expected-revision', '1')
+    .send(knowledge)
+
+  assert.equal(res.status, 409)
+  assert.equal(res.body.code, 'REVISION_CONFLICT')
+  assert.equal(res.body.currentRevision, 2)
+
+  const current = await request(app).get('/projects/p1')
+  assert.equal(current.body.data.metadata.revision, 2)
+  assert.deepEqual(current.body.data.knowledge, originalKnowledge)
+  cleanup()
+})

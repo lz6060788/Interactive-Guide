@@ -1,10 +1,10 @@
 /**
  * Project routes — the new HTTP surface for GuideProject 2.0.
  *
- * Each PATCH/PUT route requires `expectedRevision` in the request body
- * (or a query parameter for backward compat with the legacy `/guides`
- * routes that Phase 7 will remove). The router maps field-level updates
- * to ProjectService methods.
+ * Every mutation is revision locked. Metadata and localization carry
+ * `expectedRevision` in the request body; section PUT routes use the
+ * `x-expected-revision` header with a query fallback for older clients.
+ * The router maps field-level updates to ProjectService methods.
  */
 import express, { Router, type Request, type Response, type NextFunction } from 'express'
 import { z } from 'zod'
@@ -121,14 +121,14 @@ export function createProjectsRouter(projectService: ProjectService): Router {
   router.put(
     '/projects/:id/knowledge',
     handle((req, res) => {
-      const proj = requireExpectedRevision(req, res, projectService.get(String(req.params.id)))
-      if (!proj) return
+      const expectedRevision = requireExpectedRevision(req, res)
+      if (expectedRevision === null) return
       const parsed = GuideProjectSchema.shape.knowledge.safeParse(req.body)
       if (!parsed.success) return badRequest(res, parsed.error.issues)
       const project = projectService.updateKnowledge(
         String(req.params.id),
         parsed.data,
-        proj.metadata.revision,
+        expectedRevision,
       )
       res.json({ data: project })
     }),
@@ -137,14 +137,14 @@ export function createProjectsRouter(projectService: ProjectService): Router {
   router.put(
     '/projects/:id/panorama',
     handle((req, res) => {
-      const proj = requireExpectedRevision(req, res, projectService.get(String(req.params.id)))
-      if (!proj) return
+      const expectedRevision = requireExpectedRevision(req, res)
+      if (expectedRevision === null) return
       const parsed = GuideProjectSchema.shape.panorama.safeParse(req.body)
       if (!parsed.success) return badRequest(res, parsed.error.issues)
       const project = projectService.updatePanorama(
         String(req.params.id),
         parsed.data,
-        proj.metadata.revision,
+        expectedRevision,
       )
       res.json({ data: project })
     }),
@@ -153,14 +153,14 @@ export function createProjectsRouter(projectService: ProjectService): Router {
   router.put(
     '/projects/:id/scenes',
     handle((req, res) => {
-      const proj = requireExpectedRevision(req, res, projectService.get(String(req.params.id)))
-      if (!proj) return
+      const expectedRevision = requireExpectedRevision(req, res)
+      if (expectedRevision === null) return
       const parsed = GuideProjectSchema.shape.scenes.safeParse(req.body)
       if (!parsed.success) return badRequest(res, parsed.error.issues)
       const project = projectService.updateScenes(
         String(req.params.id),
         parsed.data,
-        proj.metadata.revision,
+        expectedRevision,
       )
       res.json({ data: project })
     }),
@@ -169,14 +169,14 @@ export function createProjectsRouter(projectService: ProjectService): Router {
   router.put(
     '/projects/:id/navigation',
     handle((req, res) => {
-      const proj = requireExpectedRevision(req, res, projectService.get(String(req.params.id)))
-      if (!proj) return
+      const expectedRevision = requireExpectedRevision(req, res)
+      if (expectedRevision === null) return
       const parsed = GuideProjectSchema.shape.navigation.safeParse(req.body)
       if (!parsed.success) return badRequest(res, parsed.error.issues)
       const project = projectService.updateNavigation(
         String(req.params.id),
         parsed.data,
-        proj.metadata.revision,
+        expectedRevision,
       )
       res.json({ data: project })
     }),
@@ -185,14 +185,14 @@ export function createProjectsRouter(projectService: ProjectService): Router {
   router.put(
     '/projects/:id/products/atlas',
     handle((req, res) => {
-      const proj = requireExpectedRevision(req, res, projectService.get(String(req.params.id)))
-      if (!proj) return
+      const expectedRevision = requireExpectedRevision(req, res)
+      if (expectedRevision === null) return
       const parsed = GuideProjectSchema.shape.products.shape.atlas.safeParse(req.body)
       if (!parsed.success) return badRequest(res, parsed.error.issues)
       const project = projectService.updateAtlasConfig(
         String(req.params.id),
         parsed.data,
-        proj.metadata.revision,
+        expectedRevision,
       )
       res.json({ data: project })
     }),
@@ -201,14 +201,14 @@ export function createProjectsRouter(projectService: ProjectService): Router {
   router.put(
     '/projects/:id/products/catalog',
     handle((req, res) => {
-      const proj = requireExpectedRevision(req, res, projectService.get(String(req.params.id)))
-      if (!proj) return
+      const expectedRevision = requireExpectedRevision(req, res)
+      if (expectedRevision === null) return
       const parsed = GuideProjectSchema.shape.products.shape.catalog.safeParse(req.body)
       if (!parsed.success) return badRequest(res, parsed.error.issues)
       const project = projectService.updateCatalogConfig(
         String(req.params.id),
         parsed.data,
-        proj.metadata.revision,
+        expectedRevision,
       )
       res.json({ data: project })
     }),
@@ -217,14 +217,14 @@ export function createProjectsRouter(projectService: ProjectService): Router {
   router.put(
     '/projects/:id/integrations',
     handle((req, res) => {
-      const proj = requireExpectedRevision(req, res, projectService.get(String(req.params.id)))
-      if (!proj) return
+      const expectedRevision = requireExpectedRevision(req, res)
+      if (expectedRevision === null) return
       const parsed = GuideProjectSchema.shape.integrations.safeParse(req.body)
       if (!parsed.success) return badRequest(res, parsed.error.issues)
       const project = projectService.updateIntegrations(
         String(req.params.id),
         parsed.data,
-        proj.metadata.revision,
+        expectedRevision,
       )
       res.json({ data: project })
     }),
@@ -234,15 +234,23 @@ export function createProjectsRouter(projectService: ProjectService): Router {
 }
 
 function requireExpectedRevision(
-  _req: Request,
+  req: Request,
   res: Response,
-  project: { metadata: { revision: number } } | undefined,
-): { metadata: { revision: number } } | null {
-  if (!project) {
-    res.status(404).json({ error: 'project not found', code: 'NOT_FOUND' })
+): number | null {
+  const raw = req.header('x-expected-revision') ?? req.query.expectedRevision
+  if (raw === undefined) {
+    res.status(400).json({ error: 'expectedRevision is required', code: 'BAD_REQUEST' })
     return null
   }
-  return project
+  const expectedRevision = Number(raw)
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+    res.status(400).json({
+      error: 'expectedRevision must be a non-negative integer',
+      code: 'BAD_REQUEST',
+    })
+    return null
+  }
+  return expectedRevision
 }
 
 export function mapServiceError(err: unknown, res: Response): boolean {
