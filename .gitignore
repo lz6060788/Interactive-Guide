@@ -10,11 +10,14 @@ data/publish/*
 !data/publish/.gitkeep
 !data/packages/**/current/package.json
 
-.claude
+.claude/
+!.claude/settings.json
+!.claude/skills/
+!.claude/memory/
 .agents
 .playwright-cli
 /data
-docs
+tmp/
 *.png
 *.mp4
 *.html

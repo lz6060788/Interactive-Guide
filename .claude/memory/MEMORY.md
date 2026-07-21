@@ -1,0 +1,3 @@
+- [Build Pipeline Failures](build-pipeline-failures.md) — Common build failure modes, recovery strategies, and diagnostic steps for the six-stage pipeline
+- [AI Provider Issues](ai-provider-issues.md) — DashScope API failure patterns, retry behavior, cache layer, and prompt construction
+- [Typecheck & Lint Gates](typecheck-lint-gates.md) — Pre-commit hook configuration, ESLint rules, and common fix patterns for code quality gates

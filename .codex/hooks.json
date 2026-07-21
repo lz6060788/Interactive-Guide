@@ -1,0 +1,35 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd D:/workspace/git/Interactive-Guide && f=$(jq -r '.tool_input.file_path // .tool_response.filePath' 2>/dev/null); if echo \"$f\" | grep -qE '\\.(ts|tsx)$'; then npx tsc --noEmit 2>&1 | tail -1 | grep -q '^$' && echo '{\"systemMessage\": \"Typecheck: PASS\"}' || echo '{\"systemMessage\": \"Typecheck: FAILED — fix type errors\"}'; fi",
+            "timeout": 60,
+            "statusMessage": "Typechecking after file write..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd D:/workspace/git/Interactive-Guide && npx tsc --noEmit 2>&1 | tail -1 | grep -q '^$' && echo '{\"systemMessage\": \"Typecheck: PASS\"}' || echo '{\"systemMessage\": \"Typecheck: FAILED — fix type errors before committing\"}'",
+            "timeout": 60,
+            "statusMessage": "Running typecheck..."
+          },
+          {
+            "type": "command",
+            "command": "cd D:/workspace/git/Interactive-Guide && npx eslint src/ tests/ --max-warnings 0 > /dev/null 2>&1 && echo '{\"systemMessage\": \"Lint: PASS\"}' || echo '{\"systemMessage\": \"Lint: FAILED — fix lint errors before committing\"}'",
+            "timeout": 60,
+            "statusMessage": "Running ESLint..."
+          }
+        ]
+      }
+    ]
+  }
+}

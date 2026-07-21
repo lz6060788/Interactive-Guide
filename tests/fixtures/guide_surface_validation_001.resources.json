@@ -1,0 +1,74 @@
+{
+  "$schema": "internal://interactive-guide/test-fixture/v1",
+  "projectId": "guide_surface_validation_001",
+  "title": "商业航天",
+  "version": "1.0.0",
+  "frozenAt": "2026-06-30",
+  "purpose": "Source-of-truth for asset hashes and sample structure. Phase 7 must not delete data/workspace/ until the new dual-product fixtures replace these.",
+  "assets": [
+    {
+      "path": "nodes/root.jfif",
+      "kind": "image",
+      "size": 1682177,
+      "sha256": "66852813d6a8f31bd37cd4c714063df6135efa05148e4aaabefebfe99c618efa",
+      "role": "panorama"
+    },
+    {
+      "path": "nodes/rocket.html",
+      "kind": "html-bundle",
+      "size": 158375,
+      "sha256": "63aa15b6159b029d08b27536eaeb068aa0e0e3036947c86fbc900599fc18563d",
+      "role": "scene:rocket",
+      "entryPath": "index.html",
+      "linkedAssets": [
+        "nodes/images/BumpMap.jpg",
+        "nodes/images/Clouds.png",
+        "nodes/images/ColorMap.jpg",
+        "nodes/images/lroc_color_2k.jpg"
+      ]
+    },
+    {
+      "path": "edges/edge-root-to-rocket.mp4",
+      "kind": "video",
+      "size": 2377583,
+      "sha256": "398c6052763aa4e5617ae25d8e3acecebc99c470b3cd0def3ef67c2067e5c75c",
+      "role": "transition:panorama->rocket"
+    },
+    {
+      "path": "edges/rocket.mp4",
+      "kind": "video",
+      "size": 2377583,
+      "sha256": "398c6052763aa4e5617ae25d8e3acecebc99c470b3cd0def3ef67c2067e5c75c",
+      "role": "transition:duplicate-of-edge-root-to-rocket",
+      "note": "Same bytes as edge-root-to-rocket.mp4. Catalog references rocket.mp4."
+    },
+    {
+      "path": "nodes/images/BumpMap.jpg",
+      "kind": "image",
+      "size": 168290,
+      "sha256": "80205a888446142c39594d6fbcd1b92f22428d3e8ca0f9b0df078c9a97033df0",
+      "role": "scene:rocket:asset"
+    },
+    {
+      "path": "nodes/images/Clouds.png",
+      "kind": "image",
+      "size": 1794520,
+      "sha256": "c20a5fe8046d2d6b9ee19f1f7fe4fdd4d7c9d3c3c7424a3d16a95003da02e444",
+      "role": "scene:rocket:asset"
+    },
+    {
+      "path": "nodes/images/ColorMap.jpg",
+      "kind": "image",
+      "size": 483779,
+      "sha256": "bedf5fcb5a89e1ce6e96ca7384f38e282055db72a571131f0691a61d16620c22",
+      "role": "scene:rocket:asset"
+    },
+    {
+      "path": "nodes/images/lroc_color_2k.jpg",
+      "kind": "image",
+      "size": 457942,
+      "sha256": "f7130a1822681fa7512d7dcfd40db8c10b9ba4f06777910348698260ed7a2170",
+      "role": "scene:rocket:asset"
+    }
+  ]
+}
