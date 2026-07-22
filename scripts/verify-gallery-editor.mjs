@@ -18,6 +18,26 @@ const browser = await chromium.launch({
 })
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } })
 const browserErrors = []
+const captureImageScroll = image =>
+  image.evaluate(
+    element =>
+      new Promise(resolve => {
+        if (element.dataset.motion === 'scrolling') {
+          resolve('scrolling')
+          return
+        }
+        const observer = new MutationObserver(() => {
+          if (element.dataset.motion !== 'scrolling') return
+          observer.disconnect()
+          resolve('scrolling')
+        })
+        observer.observe(element, { attributes: true, attributeFilter: ['data-motion'] })
+        setTimeout(() => {
+          observer.disconnect()
+          resolve(element.dataset.motion ?? 'missing')
+        }, 1500)
+      }),
+  )
 page.on('console', message => {
   if (message.type() === 'error') browserErrors.push(message.text())
 })
@@ -87,10 +107,18 @@ try {
     .getByTestId('gallery-structure-panel')
     .locator('[data-testid^="gallery-item-"]')
     .filter({ hasText: '射频电源' })
+  const activeImage = page.getByTestId('gallery-active-image')
+  const imageScrollMotion = captureImageScroll(activeImage)
   await radioRow.getByRole('button', { name: /射频电源/ }).click()
+  assert.equal(await imageScrollMotion, 'scrolling', 'left image did not use scroll motion')
   await page.waitForTimeout(900)
   assert.equal(await radioRow.getAttribute('data-active'), 'true')
   assert.equal(await page.getByLabel('节点标题').inputValue(), '射频电源')
+  assert.equal(await activeImage.getAttribute('data-motion'), 'idle')
+  assert.equal(
+    await activeImage.getAttribute('data-direction'),
+    'forward',
+  )
   await page.waitForTimeout(900)
   assert.equal(
     await radioRow.getAttribute('data-active'),
@@ -98,6 +126,38 @@ try {
     'selection jumped back after preview sync',
   )
   assert.equal(await page.getByLabel('节点标题').inputValue(), '射频电源')
+
+  const listScrollMotion = captureImageScroll(activeImage)
+  await page.getByTestId('gallery-detail-list').evaluate(list => {
+    const target = list.querySelector('[data-item-id="item-003"]')
+    if (!(target instanceof HTMLElement)) throw new Error('item-003 is missing from detail list')
+    const listRect = list.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    list.scrollTo({
+      top:
+        list.scrollTop +
+        targetRect.top +
+        targetRect.height / 2 -
+        (listRect.top + listRect.height / 2),
+      behavior: 'auto',
+    })
+  })
+  assert.equal(await listScrollMotion, 'scrolling', 'right list did not drive image scroll')
+  await page.waitForTimeout(500)
+  assert.equal(
+    await page
+      .getByTestId('gallery-detail-list')
+      .getByTestId('gallery-item-item-003')
+      .getAttribute('data-active'),
+    'true',
+  )
+  assert.equal(await activeImage.getAttribute('alt'), '运动控制系统')
+  assert.equal(await activeImage.getAttribute('data-direction'), 'forward')
+  assert.equal(
+    await page.getByTestId('gallery-image-panel').locator('img').count(),
+    1,
+    'image scroll introduced multiple visible image elements',
+  )
 
   const temporaryCategoryTitle = `自动验收二级节点-${Date.now()}`
   await page.getByTestId('gallery-add-category').click()
@@ -126,6 +186,7 @@ try {
       squarePreview: true,
       centeredHint: true,
       horizontalCategoryTabs: true,
+      imageMotion: 'vertical-scroll',
       stableSelection: '射频电源',
       categoryCrud: true,
       itemCrud: true,

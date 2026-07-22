@@ -17,6 +17,8 @@ export interface GallerySelection {
   itemId: string
 }
 
+export type GalleryImageScrollDirection = 'forward' | 'backward'
+
 export interface GallerySceneOptions {
   root: HTMLElement
   manifest: ResolvedGalleryManifest
@@ -101,8 +103,9 @@ export class GalleryScene {
       height: '70%',
       objectFit: 'contain',
       opacity: '0',
-      transform: 'translateZ(0) scale(1)',
-      transition: `opacity ${this.manifest.config.interaction.itemTransitionMs}ms ease`,
+      transform: 'translate3d(0,0,0)',
+      transition: 'none',
+      willChange: 'transform',
       filter: 'drop-shadow(0 16px 28px rgba(0,0,0,.34))',
       zIndex: '1',
     })
@@ -233,9 +236,26 @@ export class GalleryScene {
       candidate.categories.some(category => category.id === item.categoryId),
     )
     if (!stage) return
-    this.selection = { stageKey: stage.key, categoryId: item.categoryId, itemId }
+    if (itemId === this.selection.itemId) {
+      if (center) this.centerItem(itemId)
+      return
+    }
+    const next = { stageKey: stage.key, categoryId: item.categoryId, itemId }
+    const direction = resolveGalleryImageScrollDirection(
+      this.manifest,
+      this.selection.itemId,
+      itemId,
+    )
+    if (
+      next.stageKey !== this.selection.stageKey ||
+      next.categoryId !== this.selection.categoryId
+    ) {
+      this.transitionTo(next, direction === 'forward')
+      return
+    }
+    this.selection = next
     this.syncActiveStyles()
-    this.showImage(item)
+    this.showImage(item, false, direction)
     if (center) this.centerItem(itemId)
     this.onSelectionChange?.(this.getSelection())
   }
@@ -394,14 +414,22 @@ export class GalleryScene {
     }
   }
 
-  private showImage(item: ResolvedGalleryItemEntry, immediate = false): void {
+  private showImage(
+    item: ResolvedGalleryItemEntry,
+    immediate = false,
+    direction: GalleryImageScrollDirection = 'forward',
+  ): void {
     if (!this.image) return
     const image = this.image
     const token = ++this.imageToken
     const url = this.resolveAssetUrl(item.image.url)
-    const swap = () => {
+    const commitImage = () => {
       if (token !== this.imageToken || !this.image) return
       image.alt = item.title
+      image.dataset.motion = 'idle'
+      image.dataset.direction = direction
+      image.style.transition = 'none'
+      image.style.transform = 'translate3d(0,0,0)'
       image.onload = () => {
         if (token === this.imageToken) image.style.opacity = '1'
       }
@@ -411,13 +439,51 @@ export class GalleryScene {
       image.src = url
       if (image.complete && image.naturalWidth > 0) image.style.opacity = '1'
     }
-    if (immediate || !image.src) {
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+    if (immediate || !image.src || reduced) {
       image.style.opacity = '0'
-      swap()
+      commitImage()
       return
     }
-    image.style.opacity = '0'
-    window.setTimeout(swap, Math.max(30, this.manifest.config.interaction.itemTransitionMs))
+
+    const preloader = new Image()
+    preloader.onload = () => {
+      if (token !== this.imageToken || !this.image) return
+      const duration = Math.max(180, this.manifest.config.interaction.itemTransitionMs)
+      const exitMs = Math.max(80, Math.round(duration * 0.44))
+      const enterMs = Math.max(100, duration - exitMs)
+      const exitY = direction === 'forward' ? '-118%' : '118%'
+      const enterY = direction === 'forward' ? '118%' : '-118%'
+      image.dataset.motion = 'scrolling'
+      image.dataset.direction = direction
+      image.style.opacity = '1'
+      image.style.transition = `transform ${exitMs}ms cubic-bezier(.4,0,.8,.35)`
+      image.style.transform = `translate3d(0,${exitY},0)`
+
+      window.setTimeout(() => {
+        if (token !== this.imageToken || !this.image) return
+        image.style.transition = 'none'
+        image.alt = item.title
+        image.src = url
+        image.style.transform = `translate3d(0,${enterY},0)`
+        void image.offsetHeight
+        requestAnimationFrame(() => {
+          if (token !== this.imageToken || !this.image) return
+          image.style.transition = `transform ${enterMs}ms cubic-bezier(.16,.84,.26,1)`
+          image.style.transform = 'translate3d(0,0,0)'
+          window.setTimeout(() => {
+            if (token !== this.imageToken || !this.image) return
+            image.dataset.motion = 'idle'
+          }, enterMs)
+        })
+      }, exitMs)
+    }
+    preloader.onerror = () => {
+      if (token !== this.imageToken || !this.image) return
+      image.dataset.motion = 'error'
+      image.style.opacity = '0'
+    }
+    preloader.src = url
   }
 
   private centerItem(itemId: string): void {
@@ -516,6 +582,26 @@ export function resolveGallerySelection(
     category?.itemIds.map(id => manifest.items.find(candidate => candidate.id === id)).find(Boolean)
   if (!stage || !category || !item) throw new Error('Gallery manifest has no selectable item')
   return { stageKey: stage.key, categoryId: category.id, itemId: item.id }
+}
+
+export function resolveGalleryImageScrollDirection(
+  manifest: ResolvedGalleryManifest,
+  currentItemId: string,
+  nextItemId: string,
+): GalleryImageScrollDirection {
+  const orderedItemIds = manifest.stages
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .flatMap(stage =>
+      stage.categories
+        .slice()
+        .sort((a, b) => a.order - b.order)
+        .flatMap(category => category.itemIds),
+    )
+  const currentIndex = orderedItemIds.indexOf(currentItemId)
+  const nextIndex = orderedItemIds.indexOf(nextItemId)
+  if (currentIndex < 0 || nextIndex < 0) return 'forward'
+  return nextIndex >= currentIndex ? 'forward' : 'backward'
 }
 
 function createImageMask(position: 'top' | 'bottom'): HTMLDivElement {

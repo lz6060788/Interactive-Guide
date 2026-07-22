@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: Gallery 1:1 预览、Catalog/Gallery 提示居中与二级分类横向滚动验收 (2026-07-22)
+Last sync: Gallery 单图片纵向滚动实验与右侧列表同步验收 (2026-07-22)
 
 ### Modules
 
