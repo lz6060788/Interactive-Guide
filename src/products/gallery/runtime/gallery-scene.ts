@@ -170,7 +170,10 @@ export class GalleryScene {
       textShadow: '0 1px 8px rgba(0,0,0,.46)',
       pointerEvents: 'none',
     })
-    styleCenteredRuntimeHint(hint, Boolean(atlasUrl))
+    styleCenteredRuntimeHint(
+      hint,
+      Boolean(atlasUrl) || this.manifest.localization.supportedLocales.length > 1,
+    )
 
     this.root.appendChild(this.contentLayer)
     this.root.appendChild(this.stageTabs)

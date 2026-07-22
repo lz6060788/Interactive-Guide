@@ -6,6 +6,7 @@ import type {
   GuideProject,
   HtmlScenePackage,
   IndustryChain,
+  LocalizationConfig,
   PanoramaModel,
 } from '@domain/project-types'
 import { apiFetch } from '../../lib/api-client'
@@ -27,6 +28,19 @@ export function useUpdateGalleryConfig(projectId: string) {
       apiFetch<GuideProject>(`/projects/${projectId}/products/gallery`, {
         method: 'PUT',
         body: input.gallery,
+        expectedRevision: input.expectedRevision,
+      }),
+    onSuccess: project => queryClient.setQueryData(projectKey(projectId), project),
+  })
+}
+
+export function useUpdateGalleryLocalization(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { localization: LocalizationConfig; expectedRevision: number }) =>
+      apiFetch<GuideProject>(`/projects/${projectId}/localization`, {
+        method: 'PUT',
+        body: { ...input.localization, expectedRevision: input.expectedRevision },
         expectedRevision: input.expectedRevision,
       }),
     onSuccess: project => queryClient.setQueryData(projectKey(projectId), project),

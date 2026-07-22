@@ -13,7 +13,8 @@ import type {
   IndustryStageKey,
   PanoramaModel,
 } from '@domain/project-types'
-import { setLocalizedText } from '@domain/localization'
+import { INITIAL_SUPPORTED_LOCALES, setLocalizedText } from '@domain/localization'
+import { resolveGalleryFocusItemId } from '@products/gallery/runtime/gallery-focus'
 import { ApiError } from '../../../lib/api-client'
 import { useGlobalShortcuts } from '../../../hooks/useGlobalShortcuts'
 import { ContentLocaleSwitcher } from '../../projects/ContentLocaleSwitcher'
@@ -25,6 +26,7 @@ import {
   useUpdateGalleryAtlasConfig,
   useUpdateGalleryConfig,
   useUpdateGalleryKnowledge,
+  useUpdateGalleryLocalization,
   useUpdateGalleryNavigation,
   useUpdateGalleryPanorama,
   useUpdateGalleryScenes,
@@ -49,6 +51,7 @@ function nextId(prefix: string): string {
 export function GalleryEditor({ projectId, onStateChange }: GalleryEditorProps): JSX.Element {
   const projectQuery = useGalleryProject(projectId)
   const updateGallery = useUpdateGalleryConfig(projectId)
+  const updateLocalization = useUpdateGalleryLocalization(projectId)
   const updateKnowledge = useUpdateGalleryKnowledge(projectId)
   const updatePanorama = useUpdateGalleryPanorama(projectId)
   const updateAtlas = useUpdateGalleryAtlasConfig(projectId)
@@ -63,6 +66,7 @@ export function GalleryEditor({ projectId, onStateChange }: GalleryEditorProps):
   const [selection, setSelection] = useState<GalleryEditorSelection>(null)
   const [activeStageKey, setActiveStageKey] = useState<IndustryStageKey>('upstream')
   const [galleryDirty, setGalleryDirty] = useState(false)
+  const [localizationDirty, setLocalizationDirty] = useState(false)
   const [knowledgeDirty, setKnowledgeDirty] = useState(false)
   const [panoramaDirty, setPanoramaDirty] = useState(false)
   const [atlasDirty, setAtlasDirty] = useState(false)
@@ -78,12 +82,14 @@ export function GalleryEditor({ projectId, onStateChange }: GalleryEditorProps):
   useEffect(() => {
     if (!projectQuery.data || hydrated.current === projectId) return
     const project = projectQuery.data
-    const initial = firstItemLocation(project)
+    const focus = new URLSearchParams(window.location.search).get('focus') ?? undefined
+    const initial = focusedItemLocation(project, focus) ?? firstItemLocation(project)
     setDraft(project)
     draftRef.current = project
     setSelection(initial ? { kind: 'item', id: initial.itemId } : null)
     setActiveStageKey(initial?.stageKey ?? project.knowledge.stages[0].key)
     setGalleryDirty(false)
+    setLocalizationDirty(false)
     setKnowledgeDirty(false)
     setPanoramaDirty(false)
     setAtlasDirty(false)
@@ -93,7 +99,13 @@ export function GalleryEditor({ projectId, onStateChange }: GalleryEditorProps):
   }, [projectId, projectQuery.data])
 
   const dirty =
-    galleryDirty || knowledgeDirty || panoramaDirty || atlasDirty || navigationDirty || scenesDirty
+    galleryDirty ||
+    localizationDirty ||
+    knowledgeDirty ||
+    panoramaDirty ||
+    atlasDirty ||
+    navigationDirty ||
+    scenesDirty
   useEffect(() => {
     if (draft) onStateChange?.({ dirty, revision: draft.metadata.revision })
   }, [dirty, draft, onStateChange])
@@ -205,6 +217,14 @@ export function GalleryEditor({ projectId, onStateChange }: GalleryEditorProps):
     setError(null)
     let current = currentDraft
     try {
+      if (localizationDirty) {
+        const saved = await updateLocalization.mutateAsync({
+          localization: current.localization,
+          expectedRevision: current.metadata.revision,
+        })
+        current = { ...current, localization: saved.localization, metadata: saved.metadata }
+        setLocalizationDirty(false)
+      }
       if (knowledgeDirty) {
         const saved = await updateKnowledge.mutateAsync({
           knowledge: current.knowledge,
@@ -278,12 +298,14 @@ export function GalleryEditor({ projectId, onStateChange }: GalleryEditorProps):
     atlasDirty,
     galleryDirty,
     knowledgeDirty,
+    localizationDirty,
     navigationDirty,
     panoramaDirty,
     scenesDirty,
     updateAtlas,
     updateGallery,
     updateKnowledge,
+    updateLocalization,
     updateNavigation,
     updatePanorama,
     updateScenes,
@@ -351,6 +373,7 @@ export function GalleryEditor({ projectId, onStateChange }: GalleryEditorProps):
   const selectedItemId = itemIdForSelection(draft, selection) ?? ''
   const isSaving =
     updateGallery.isPending ||
+    updateLocalization.isPending ||
     updateKnowledge.isPending ||
     updatePanorama.isPending ||
     updateAtlas.isPending ||
@@ -369,6 +392,33 @@ export function GalleryEditor({ projectId, onStateChange }: GalleryEditorProps):
           ? { kind: 'category', id: category.id }
           : null,
     )
+  }
+
+  const enableLocale = (nextLocale: string) => {
+    setDraft(current => {
+      if (!current || current.localization.supportedLocales.includes(nextLocale)) return current
+      const stageLabels = fixedStageLabels(nextLocale)
+      const next: GuideProject = {
+        ...current,
+        localization: {
+          ...current.localization,
+          supportedLocales: [...current.localization.supportedLocales, nextLocale],
+        },
+        knowledge: stageLabels
+          ? {
+              ...current.knowledge,
+              stages: current.knowledge.stages.map(stage => ({
+                ...stage,
+                label: setLocalizedText(stage.label, nextLocale, stageLabels[stage.key]),
+              })) as GuideProject['knowledge']['stages'],
+            }
+          : current.knowledge,
+      }
+      draftRef.current = next
+      return next
+    })
+    setLocalizationDirty(true)
+    if (fixedStageLabels(nextLocale)) setKnowledgeDirty(true)
   }
 
   const addCategory = () => {
@@ -586,7 +636,9 @@ export function GalleryEditor({ projectId, onStateChange }: GalleryEditorProps):
         <ContentLocaleSwitcher
           locale={locale}
           supportedLocales={draft.localization.supportedLocales}
+          availableLocales={INITIAL_SUPPORTED_LOCALES}
           onChange={setRequestedLocale}
+          onEnableLocale={enableLocale}
         />
       </Flex>
       <GalleryToolbar
@@ -662,6 +714,24 @@ function firstItemLocation(
       const itemId = category.itemIds.find(id => Boolean(project.knowledge.items[id]))
       if (itemId) return { stageKey: stage.key, itemId }
     }
+  }
+  return undefined
+}
+
+function focusedItemLocation(
+  project: GuideProject,
+  focus: string | undefined,
+): { stageKey: IndustryStageKey; itemId: string } | undefined {
+  const itemId = resolveGalleryFocusItemId(Object.values(project.knowledge.items), focus)
+  if (!itemId) return undefined
+  const stage = stageForItem(project, itemId)
+  return stage ? { stageKey: stage.key, itemId } : undefined
+}
+
+function fixedStageLabels(locale: string): Record<IndustryStageKey, string> | undefined {
+  if (locale === 'zh-CN') return { upstream: '上游', midstream: '中游', downstream: '下游' }
+  if (locale === 'en-US') {
+    return { upstream: 'Upstream', midstream: 'Midstream', downstream: 'Downstream' }
   }
   return undefined
 }
