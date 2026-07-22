@@ -2,20 +2,33 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
+import { GALLERY_VALIDATION_ENGLISH, requireGalleryEnglish } from './gallery-validation-english.mjs'
 
-const [workbookPath, imageDirectory, projectId = 'semiconductor-equipment-gallery'] = process.argv.slice(2)
+const [workbookPath, imageDirectory, projectId = 'semiconductor-equipment-gallery'] =
+  process.argv.slice(2)
 if (!workbookPath || !imageDirectory) {
-  throw new Error('usage: node scripts/import-gallery-validation.mjs <workbook.xlsx> <image-directory> [project-id]')
+  throw new Error(
+    'usage: node scripts/import-gallery-validation.mjs <workbook.xlsx> <image-directory> [project-id]',
+  )
 }
 if (!/^[a-z0-9-]+$/.test(projectId)) throw new Error('project-id must be kebab-case')
 
 const targetRoot = path.resolve('data', 'projects', projectId)
 const projectsRoot = path.resolve('data', 'projects')
-if (!targetRoot.startsWith(`${projectsRoot}${path.sep}`)) throw new Error('target project escapes data/projects')
+if (!targetRoot.startsWith(`${projectsRoot}${path.sep}`))
+  throw new Error('target project escapes data/projects')
 if (fs.existsSync(targetRoot)) throw new Error(`target project already exists: ${targetRoot}`)
 
 const rows = readFirstWorksheet(path.resolve(workbookPath))
-const expectedHeaders = ['一级', '二级', '三级节点', '第三级节点描述', '三级节点简要介绍', '公司标的', '分类路径']
+const expectedHeaders = [
+  '一级',
+  '二级',
+  '三级节点',
+  '第三级节点描述',
+  '三级节点简要介绍',
+  '公司标的',
+  '分类路径',
+]
 if (JSON.stringify(rows[0]) !== JSON.stringify(expectedHeaders)) {
   throw new Error(`unexpected workbook headers: ${JSON.stringify(rows[0])}`)
 }
@@ -61,13 +74,23 @@ const stages = stageOrder.map((stageKey, stageIndex) => {
   const categoryNames = [...new Set(stageRecords.map(mapping => mapping.category))]
   return {
     key: stageKey,
-    label: { 'zh-CN': stageRecords[0]?.stage ?? ['上游', '中游', '下游'][stageIndex] },
+    label: {
+      'zh-CN': stageRecords[0]?.stage ?? ['上游', '中游', '下游'][stageIndex],
+      'en-US': requireGalleryEnglish(GALLERY_VALIDATION_ENGLISH.stages, stageKey, 'stage label'),
+    },
     order: stageIndex + 1,
     categories: categoryNames.map((categoryName, categoryIndex) => {
       const categoryId = `category-${stageKey}-${String(categoryIndex + 1).padStart(2, '0')}`
       return {
         id: categoryId,
-        title: { 'zh-CN': categoryName },
+        title: {
+          'zh-CN': categoryName,
+          'en-US': requireGalleryEnglish(
+            GALLERY_VALIDATION_ENGLISH.categories,
+            categoryName,
+            'category title',
+          ),
+        },
         order: categoryIndex,
         itemIds: stageRecords
           .filter(mapping => mapping.category === categoryName)
@@ -104,14 +127,19 @@ for (const mapping of mappings) {
   }
   const id = itemId(mapping.sourceRow)
   const categoryId = categoryIdByPath.get(`${stageKey}/${mapping.category}`)
-  const categoryItems = stages
-    .flatMap(stage => stage.categories)
-    .find(category => category.id === categoryId)?.itemIds ?? []
+  const categoryItems =
+    stages.flatMap(stage => stage.categories).find(category => category.id === categoryId)
+      ?.itemIds ?? []
+  const english = requireGalleryEnglish(
+    GALLERY_VALIDATION_ENGLISH.items,
+    mapping.item,
+    'item content',
+  )
   items[id] = {
     id,
     categoryId,
-    title: { 'zh-CN': mapping.item },
-    description: { 'zh-CN': mapping.description },
+    title: { 'zh-CN': mapping.item, 'en-US': english.title },
+    description: { 'zh-CN': mapping.description, 'en-US': english.description },
     order: categoryItems.indexOf(id),
   }
   panoramaItems[id] = { marker: { x: 0.5, y: 0.5 } }
@@ -137,9 +165,12 @@ for (const mapping of mappings) {
 const project = {
   schemaVersion: '4.0.0',
   id: projectId,
-  title: { 'zh-CN': '半导体设备产业链 Gallery 验收' },
+  title: {
+    'zh-CN': '半导体设备产业链 Gallery 验收',
+    'en-US': GALLERY_VALIDATION_ENGLISH.projectTitle,
+  },
   version: '0.1.0',
-  localization: { defaultLocale: 'zh-CN', supportedLocales: ['zh-CN'] },
+  localization: { defaultLocale: 'zh-CN', supportedLocales: ['zh-CN', 'en-US'] },
   knowledge: { stages, items },
   assets: { byId: assets },
   panorama: {
@@ -160,16 +191,26 @@ const project = {
       chrome: {},
       interaction: { wheelZoom: true, dragPan: true, pinchZoom: true, resetCameraEnabled: true },
       categoryIds: stages.flatMap(stage => stage.categories.map(category => category.id)),
-      hintText: { 'zh-CN': '拖动或缩放探索全景图' },
+      hintText: {
+        'zh-CN': '拖动或缩放探索全景图',
+        'en-US': GALLERY_VALIDATION_ENGLISH.hints.atlas,
+      },
     },
     catalog: {
       enabled: true,
       viewport: { width: 375, height: 808 },
       theme: { listDensity: 'comfortable', focusVariant: 'rect' },
       chrome: {},
-      interaction: { listActivation: 'center-nearest', markerActivation: true, viewportAnimationMs: 360 },
+      interaction: {
+        listActivation: 'center-nearest',
+        markerActivation: true,
+        viewportAnimationMs: 360,
+      },
       stageOrder,
-      hintText: { 'zh-CN': '点击或滑动文字查看简介' },
+      hintText: {
+        'zh-CN': '点击或滑动文字查看简介',
+        'en-US': GALLERY_VALIDATION_ENGLISH.hints.catalog,
+      },
     },
     gallery: {
       enabled: true,
@@ -181,9 +222,16 @@ const project = {
         accentColor: '#60a5fa',
       },
       chrome: {},
-      interaction: { listActivation: 'center-nearest', itemTransitionMs: 220, categoryTransitionMs: 320 },
+      interaction: {
+        listActivation: 'center-nearest',
+        itemTransitionMs: 220,
+        categoryTransitionMs: 320,
+      },
       stageOrder,
-      hintText: { 'zh-CN': '点击或滑动文字切换节点图片' },
+      hintText: {
+        'zh-CN': '点击或滑动文字切换节点图片',
+        'en-US': GALLERY_VALIDATION_ENGLISH.hints.gallery,
+      },
       itemImageAssetIds,
     },
   },
@@ -212,7 +260,11 @@ fs.writeFileSync(
       exactMatches: mappings.filter(mapping => mapping.match === 'exact').length,
       aliases: mappings
         .filter(mapping => mapping.match === 'explicit-alias')
-        .map(mapping => ({ sourceRow: mapping.sourceRow, item: mapping.item, imageFile: mapping.imageFile })),
+        .map(mapping => ({
+          sourceRow: mapping.sourceRow,
+          item: mapping.item,
+          imageFile: mapping.imageFile,
+        })),
       missing: [],
       unclaimed: [],
       mappings: mappings.map(mapping => ({
@@ -228,7 +280,9 @@ fs.writeFileSync(
   )}\n`,
 )
 
-console.log(JSON.stringify({ projectId, targetRoot, rows: mappings.length, images: sourceImages.length }))
+console.log(
+  JSON.stringify({ projectId, targetRoot, rows: mappings.length, images: sourceImages.length }),
+)
 
 function itemId(sourceRow) {
   return `item-${String(sourceRow - 1).padStart(3, '0')}`
@@ -241,7 +295,8 @@ function required(value, cell) {
 
 function readPngDimensions(buffer, filename) {
   const signature = buffer.subarray(0, 8).toString('hex')
-  if (signature !== '89504e470d0a1a0a' || buffer.length < 24) throw new Error(`invalid PNG: ${filename}`)
+  if (signature !== '89504e470d0a1a0a' || buffer.length < 24)
+    throw new Error(`invalid PNG: ${filename}`)
   return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }
 }
 
@@ -261,7 +316,7 @@ function readFirstWorksheet(filename) {
       const value = /<v>([\s\S]*?)<\/v>/.exec(cellMatch[2])?.[1] ?? ''
       if (!address) continue
       const column = columnIndex(address)
-      row[column] = /\bt="s"/.test(cellMatch[1]) ? shared[Number(value)] ?? '' : decodeXml(value)
+      row[column] = /\bt="s"/.test(cellMatch[1]) ? (shared[Number(value)] ?? '') : decodeXml(value)
     }
     return Array.from({ length: 7 }, (_, index) => row[index] ?? '')
   })

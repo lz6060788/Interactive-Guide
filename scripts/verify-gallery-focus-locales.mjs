@@ -31,15 +31,27 @@ page.on('console', message => {
 try {
   const focusedRuntimeUrl = new URL(runtimeUrl)
   focusedRuntimeUrl.searchParams.set('focus', '射频电源')
+  focusedRuntimeUrl.searchParams.set('lang', 'en-US')
   await page.goto(focusedRuntimeUrl.toString(), { waitUntil: 'networkidle' })
   const activeEntry = page.getByTestId('gallery-item-item-002')
   await activeEntry.waitFor()
-  assert.equal(await activeEntry.getAttribute('data-active'), 'true')
+  await page.waitForTimeout(800)
+  const activeItemId = await page
+    .locator('[data-testid^="gallery-item-"][data-active="true"]')
+    .getAttribute('data-item-id')
+  assert.equal(activeItemId, 'item-002')
   const activeImage = page.getByTestId('gallery-active-image')
-  assert.equal(await activeImage.getAttribute('alt'), '射频电源')
+  assert.equal(await activeImage.getAttribute('alt'), 'RF Power Supplies')
   assert.ok(
     await activeImage.evaluate(image => image.naturalWidth > 0),
     'focused image did not load',
+  )
+  assert.equal(
+    await page
+      .getByTestId('runtime-locale-switcher')
+      .locator('button[data-locale="en-US"]')
+      .getAttribute('aria-pressed'),
+    'true',
   )
   await page.screenshot({ path: screenshotPath, fullPage: true })
 
@@ -47,13 +59,11 @@ try {
   focusedEditorUrl.searchParams.set('focus', '射频电源')
   await page.goto(focusedEditorUrl.toString(), { waitUntil: 'networkidle' })
   await page.getByTestId('gallery-toolbar').waitFor()
-  await page.getByRole('button', { name: '启用 English' }).click()
+  await page.getByRole('button', { name: 'English' }).click()
   const titleField = page.getByLabel('节点标题')
   await titleField.waitFor()
-  assert.equal(await titleField.inputValue(), '', 'English item title should start empty')
-  await titleField.fill('RF Power Supply')
-  assert.equal(await titleField.inputValue(), 'RF Power Supply')
-  assert.equal(await page.getByTestId('gallery-dirty').count(), 1)
+  assert.equal(await titleField.inputValue(), 'RF Power Supplies')
+  assert.equal(await page.getByTestId('gallery-dirty').textContent(), 'all synced')
 
   assert.deepEqual(errors, [])
   console.log(
@@ -61,7 +71,7 @@ try {
       runtimeFocus: 'item-002',
       editorFocus: 'item-002',
       englishEditing: true,
-      persisted: false,
+      persisted: true,
       screenshotPath,
     }),
   )

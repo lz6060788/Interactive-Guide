@@ -81,12 +81,12 @@
       "implementation_plan": {
         "path": "docs/plans/2026-07-22-gallery-product-workbench-implementation.md",
         "summary": "Handles Gallery design including vertical motion, stable focus, and i18n.",
-        "signature": "291063621e4eb909"
+        "signature": "eda57049abedc09a"
       },
       "real_data_acceptance": {
         "path": "docs/development/gallery-real-data-acceptance-2026-07-22.md",
         "summary": "Validates Gallery using real nodes, vertical motion, focus, and i18n.",
-        "signature": "b85f0e55759c7ec4"
+        "signature": "9c992a0995f8c607"
       }
     }
   },

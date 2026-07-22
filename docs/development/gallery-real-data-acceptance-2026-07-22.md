@@ -1,7 +1,7 @@
 # Gallery 真实数据与产物验收记录
 
 > 日期：2026-07-22  
-> 状态：自动化与本地浏览器验收通过，纵向滚动方案已确认并合入主线
+> 状态：自动化与本地浏览器验收通过，纵向滚动与完整中英文内容已合入主线
 > 项目：`semiconductor-equipment-gallery`
 
 ## 1. 验收输入
@@ -15,15 +15,15 @@
 
 ## 2. 数据映射结果
 
-| 项目 | 结果 |
-|------|------|
-| 三级节点 | 29 |
-| PNG 图片 | 29 |
-| 精确同名映射 | 28 |
-| 显式别名映射 | 1 |
-| 缺失图片 | 0 |
-| 重复占用 | 0 |
-| 无主图片 | 0 |
+| 项目         | 结果 |
+| ------------ | ---- |
+| 三级节点     | 29   |
+| PNG 图片     | 29   |
+| 精确同名映射 | 28   |
+| 显式别名映射 | 1    |
+| 缺失图片     | 0    |
+| 重复占用     | 0    |
+| 无主图片     | 0    |
 
 唯一别名：工作簿第 8 行的“掩模版”绑定到 `掩模板.png`。导入器没有启用通用模糊匹配。
 
@@ -46,8 +46,9 @@
 
 最近一次验收产物：
 
-- `data/draft-builds/semiconductor-equipment-gallery/gallery-1784694092793-1/gallery/index.html`
-- `data/draft-builds/semiconductor-equipment-gallery/gallery-1784694092793-1/gallery/gallery-acceptance.png`
+- 项目修订：`52`
+- 预览构建：`gallery-1784711993499-52`
+- 入口：`/api/projects/semiconductor-equipment-gallery/previews/gallery/builds/gallery-1784711993499-52/index.html`
 
 ## 4. 浏览器验收
 
@@ -59,18 +60,19 @@
 4. 上述三个状态的可见图片元素数量均为 1。
 5. 真实项目未设置 Atlas 链接，Gallery 右下角没有 Atlas 按钮。
 6. 页面无运行时脚本错误；唯一 404 为静态测试服务器未提供 `favicon.ico`，不属于产品资源。
-7. 以 `?focus=射频电源` 打开最新预览产物，初始化节点为稳定 ID `item-002`，左图替代文本和实际加载图片均为“射频电源”。
+7. 以 `?focus=射频电源&lang=en-US` 打开最新预览产物，初始化节点稳定保持为 `item-002`，左图替代文本和实际加载图片均为“RF Power Supplies”；首次列表布局不会再把选择回写为首项。
+8. 英文产物显示 `Upstream / Midstream / Downstream`、英文二级分类、29 个英文节点标题与描述以及英文底部提示；左下角 `中 / EN` 切换器正确标记当前语言。
 
 ## 5. 自动化与构建结果
 
-| 检查 | 结果 |
-|------|------|
-| `npm test` | 206/206 通过 |
-| 管理端 Vitest | 32/32 通过 |
-| `npm run typecheck` | 通过 |
-| `npm run build:server` | 通过 |
-| `npm run build:admin` | 通过 |
-| `npm run lint` | 0 error；7 个既有 warning |
+| 检查                   | 结果                      |
+| ---------------------- | ------------------------- |
+| `npm test`             | 206/206 通过              |
+| 管理端 Vitest          | 32/32 通过                |
+| `npm run typecheck`    | 通过                      |
+| `npm run build:server` | 通过                      |
+| `npm run build:admin`  | 通过                      |
+| `npm run lint`         | 0 error；7 个既有 warning |
 
 新增用例覆盖 Gallery 编译、缺图失败、双语解析、URL ID/任意已维护语言标题聚焦、跨阶段选择派生、编辑器结构能力、单语产物隐藏语言入口和双语产物语言切换，以及预览在外部切换三级节点时复用已挂载场景、不回跳首项。
 
@@ -96,15 +98,15 @@
 6. 中栏 Gallery 预览容器宽高差不超过 1px，实际为 1:1；底部提示的几何中心与运行时容器中心重合。
 7. 将二级分类栏约束到 120px 后仍产生横向溢出，计算样式为 `overflow-x: auto`、`scrollbar-width: none`，真实鼠标纵向滚轮可驱动横向位移；恢复宽度后布局位置和高度不变。
 8. Catalog 与 Gallery 共用的运行时 chrome 单元测试验证：提示左右安全区严格对称、WebKit/Firefox/旧 Edge 滚动条均隐藏、激活二级分类自动滚动到可视区。
-9. 以 `?focus=射频电源` 打开工作台，属性栏直接初始化为稳定节点 `item-002`；点击“+ English”后该节点英文标题为空，可录入 `RF Power Supply`，工作台进入未保存状态。验收过程未点击保存，真实项目仍保持仅中文配置。
+9. 以 `?focus=射频电源` 打开工作台，属性栏直接初始化为稳定节点 `item-002`；切换到 English 后显示已持久化标题 `RF Power Supplies`，工具栏保持 `all synced`。
 
 ## 7. 语言说明
 
-真实工作簿没有英文列。为遵守“不生成合成数据、不伪造翻译”的项目规则，验收项目仅声明 `zh-CN`。
+真实工作簿没有英文列。本次按产品验收要求为验证项目人工维护了完整英文内容，并将 `supportedLocales` 设置为 `zh-CN / en-US`。覆盖范围包括项目标题、3 个固定阶段、10 个二级分类、29 个三级节点标题与描述，以及 Atlas、Catalog、Gallery 的底部提示；覆盖审计结果为 `MISSING=0`。
 
-Gallery 工作台会为仅中文项目显示“+ English”：启用后只确定性补入固定阶段标签 `Upstream / Midstream / Downstream`，分类、节点和底部提示保持空白等待业务录入；项目英文标题和分享文案在项目设置页维护。保存时先写入语言配置，再按修订号写入英文内容。发布门禁仍要求所有已启用语言完整，避免把不完整英文产物误发布。
+英文映射集中维护在 `scripts/gallery-validation-english.mjs`。`scripts/import-gallery-validation.mjs` 在重新导入同一批真实数据时会直接生成双语项目，并对缺失映射快速失败；`scripts/apply-gallery-validation-english.mjs` 用乐观修订锁为既有验证项目补齐相同内容，且在第一次写入前校验分类与节点的精确覆盖。
 
-独立产物在启用两种及以上语言时显示左下角 `中 / EN` 切换器，并保留当前 `focus`；`focus` 可使用稳定节点 ID、中文标题或英文标题，标题匹配在选择 `lang` 之前完成。跨语言标题聚焦和双语 Manifest 由自动化用例验证，工作台英文空白录入态由真实浏览器验证。
+Gallery 工作台对其他仅中文项目仍显示“+ English”：启用时只确定性补入固定阶段标签，业务内容保持空白等待人工录入。独立产物在启用两种及以上语言时显示左下角 `中 / EN` 切换器并保留当前 `focus`；`focus` 可使用稳定节点 ID、中文标题或英文标题，标题匹配在选择 `lang` 之前完成。
 
 ## 8. 图片纵向滚动主线验收
 

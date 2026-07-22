@@ -31,14 +31,14 @@ Gallery 的目标不是复制一套 Catalog，而是在共享结构化浏览能�
 
 ### 1.2 产品边界
 
-| 能力 | Atlas | Catalog | Gallery |
-|------|-------|---------|---------|
-| 主展示介质 | 全景场景 | 全景图 | 单节点透明图片 |
-| 三级节点聚焦 | 场景/热点调度 | `focusRect` 镜头调度 | 切换绑定图片 |
-| 三级结构列表 | 否 | 是 | 是 |
-| 位置编辑 | 热点/标注 | 聚焦框 | 不需要 |
-| 节点图片绑定 | 否 | 否 | 必须一对一 |
-| 独立 HTML 产物 | 是 | 是 | 是 |
+| 能力           | Atlas         | Catalog              | Gallery        |
+| -------------- | ------------- | -------------------- | -------------- |
+| 主展示介质     | 全景场景      | 全景图               | 单节点透明图片 |
+| 三级节点聚焦   | 场景/热点调度 | `focusRect` 镜头调度 | 切换绑定图片   |
+| 三级结构列表   | 否            | 是                   | 是             |
+| 位置编辑       | 热点/标注     | 聚焦框               | 不需要         |
+| 节点图片绑定   | 否            | 否                   | 必须一对一     |
+| 独立 HTML 产物 | 是            | 是                   | 是             |
 
 ### 1.3 非目标
 
@@ -98,24 +98,24 @@ Catalog 与 Gallery 应共享以下纯逻辑/表现能力，避免两套交互�
 
 ```ts
 interface GalleryProductConfig {
-  enabled: boolean;
-  viewport: ProductViewportConfig;
-  chrome: StructuredChromeConfig;
-  stageOrder: IndustryStage[];
-  hintText: LocalizedText;
-  atlasLaunchUrl?: string;
-  itemImageAssetIds: Record<string, string>;
+  enabled: boolean
+  viewport: ProductViewportConfig
+  chrome: StructuredChromeConfig
+  stageOrder: IndustryStage[]
+  hintText: LocalizedText
+  atlasLaunchUrl?: string
+  itemImageAssetIds: Record<string, string>
   interaction: {
-    listActivation: 'center-nearest';
-    itemTransitionMs: number;
-    categoryTransitionMs: number;
-  };
+    listActivation: 'center-nearest'
+    itemTransitionMs: number
+    categoryTransitionMs: number
+  }
   theme: {
-    background: string;
-    text: string;
-    accent: string;
-    listDensity: 'compact' | 'comfortable';
-  };
+    background: string
+    text: string
+    accent: string
+    listDensity: 'compact' | 'comfortable'
+  }
 }
 ```
 
@@ -394,16 +394,16 @@ Gallery 校验至少覆盖：
 
 ## 10. 主要改动范围
 
-| 模块 | 预计改动 |
-|------|----------|
-| `src/domain` | GuideProject 4.0、Gallery schema/defaults/normalizer/validators/migration |
-| `src/products/gallery` | contract、compiler、runtime、styles、tests |
-| `src/products/catalog` | 共享结构化浏览接入、条件 Atlas 入口 |
-| `src/product-shell` | Gallery browser entry、产品注册表、打包与静态校验 |
-| `src/server` | Gallery 预览/导出、三产品原子发布、Release Manifest 1.1 |
-| `src/admin` | 首页入口、Gallery editor、图片绑定与实时预览 |
-| `data/projects` | 真实验收项目及受管理资源，不保留外部绝对路径 |
-| `docs` | 架构、产品能力、验收结果与索引同步 |
+| 模块                   | 预计改动                                                                  |
+| ---------------------- | ------------------------------------------------------------------------- |
+| `src/domain`           | GuideProject 4.0、Gallery schema/defaults/normalizer/validators/migration |
+| `src/products/gallery` | contract、compiler、runtime、styles、tests                                |
+| `src/products/catalog` | 共享结构化浏览接入、条件 Atlas 入口                                       |
+| `src/product-shell`    | Gallery browser entry、产品注册表、打包与静态校验                         |
+| `src/server`           | Gallery 预览/导出、三产品原子发布、Release Manifest 1.1                   |
+| `src/admin`            | 首页入口、Gallery editor、图片绑定与实时预览                              |
+| `data/projects`        | 真实验收项目及受管理资源，不保留外部绝对路径                              |
+| `docs`                 | 架构、产品能力、验收结果与索引同步                                        |
 
 ## 11. 风险与控制
 
@@ -441,13 +441,15 @@ Gallery 校验至少覆盖：
 - Gallery 工作台中栏预览已固定为 1:1；Catalog/Gallery 底部提示统一按运行时容器居中，不再受右下角入口的单侧留白影响。
 - Catalog/Gallery 二级分类栏均支持无可见滚动条的横向浏览；触控横滑、触控板/鼠标纵向滚轮转横向滚动和激活项自动显露使用同一共享实现，不改变现有字号、间距与布局高度。
 - Gallery 的 `focus` 初始化已统一为稳定 ID 解析：产物和工作台均可接受节点 ID、中文标题或英文标题；标题匹配在本地化前遍历已维护语言，语言切换不会改变当前节点。
+- Gallery 首次挂载会以即时滚动将右侧列表定位到 URL 指定节点，并在程序化滚动结束前暂停中心项回写；后续交互继续使用平滑定位，因此较长英文描述不会再把初始选择重置到分类首项。
 - Gallery 工作台已增加“+ English”启用入口和语言配置修订保存；固定阶段英文标签由领域契约补齐，业务标题、描述和提示保持空白待真实录入。启用双语的独立产物会显示左下角 `中 / EN` 切换器，仅中文产物不显示。
 - 真实验收项目 `semiconductor-equipment-gallery` 已由指定 Excel 和 29 张透明 PNG 生成，29 个节点与 29 张图片一一绑定。
 - 数据导入产生 28 个精确同名映射和 1 个显式别名映射：表格“掩模版”对应“掩模板.png”；不存在缺图、重复占用或无主图片。
+- 验收项目已人工补齐项目标题、3 个阶段、10 个分类、29 个节点标题与描述及三产品底部提示的英文内容，`supportedLocales` 为 `zh-CN / en-US`，完整性审计为零缺失；导入器与增量补齐脚本共享同一份显式英文映射并对未匹配内容快速失败。
 - 根测试 206/206、管理端测试 32/32 通过；根与管理端类型检查、Server/Admin 生产构建通过。
 - 浏览器验收确认 URL 聚焦、节点点击、阶段切换、图片/列表/URL 同步、单图可见和无链接时隐藏 Atlas 入口均符合预期；工作台另完成“射频电源”稳定选择以及二/三级节点创建、改名、保存、删除、再次保存的真实链路验收。
 
-真实数据仅提供中文字段，因此验收项目的 `supportedLocales` 仍为 `zh-CN`，未伪造英文翻译；Gallery 的跨语言标题聚焦、双语编译/本地化和运行时语言切换由自动化用例验证，工作台英文启用与空白录入态由真实浏览器验证。
+最新真实产物构建自项目修订 52。浏览器以 `?focus=射频电源&lang=en-US` 验证稳定选中 `item-002`、显示 `RF Power Supplies`、英文语言按钮激活且图片加载成功；工作台切换 English 后显示相同持久化内容并保持 `all synced`。
 
 ## 14. 已采纳的展示效果：左图纵向滚动
 

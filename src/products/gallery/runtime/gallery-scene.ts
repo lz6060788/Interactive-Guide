@@ -45,6 +45,7 @@ export class GalleryScene {
   private transitionToken = 0
   private imageToken = 0
   private suppressScrollSelection = false
+  private releaseScrollSuppression: (() => void) | null = null
   private releaseCategoryWheel: (() => void) | null = null
 
   constructor(options: GallerySceneOptions) {
@@ -175,7 +176,7 @@ export class GalleryScene {
     })
     styleCenteredRuntimeHint(
       hint,
-      Boolean(atlasUrl) || this.manifest.localization.supportedLocales.length > 1,
+      Boolean(atlasUrl) || (this.manifest.localization?.supportedLocales.length ?? 0) > 1,
     )
 
     this.root.appendChild(this.contentLayer)
@@ -192,12 +193,15 @@ export class GalleryScene {
       this.root.appendChild(button)
     }
     this.render(false)
+    this.centerItem(this.selection.itemId, 'auto')
   }
 
   destroy(): void {
     if (this.scrollFrame !== null) cancelAnimationFrame(this.scrollFrame)
     this.transitionToken += 1
     this.imageToken += 1
+    this.releaseScrollSuppression?.()
+    this.releaseScrollSuppression = null
     this.detailList?.removeEventListener('scroll', this.handleScroll)
     this.releaseCategoryWheel?.()
     this.releaseCategoryWheel = null
@@ -489,24 +493,35 @@ export class GalleryScene {
     preloader.src = url
   }
 
-  private centerItem(itemId: string): void {
+  private centerItem(itemId: string, behavior: ScrollBehavior = 'smooth'): void {
     if (!this.detailList) return
     const entry = this.detailById.get(itemId)
     if (!entry) return
+
+    this.releaseScrollSuppression?.()
     this.suppressScrollSelection = true
-    const listRect = this.detailList.getBoundingClientRect()
+    const list = this.detailList
+    const listRect = list.getBoundingClientRect()
     const entryRect = entry.getBoundingClientRect()
-    this.detailList.scrollTo({
+    let timer: number | null = null
+    const release = () => {
+      if (this.releaseScrollSuppression !== release) return
+      if (timer !== null) window.clearTimeout(timer)
+      list.removeEventListener('scrollend', release)
+      this.suppressScrollSelection = false
+      this.releaseScrollSuppression = null
+    }
+    this.releaseScrollSuppression = release
+    list.addEventListener('scrollend', release, { once: true })
+    list.scrollTo({
       top:
-        this.detailList.scrollTop +
+        list.scrollTop +
         entryRect.top +
         entryRect.height / 2 -
         (listRect.top + listRect.height / 2),
-      behavior: 'smooth',
+      behavior,
     })
-    window.setTimeout(() => {
-      this.suppressScrollSelection = false
-    }, 260)
+    timer = window.setTimeout(release, behavior === 'auto' ? 120 : 800)
   }
 
   private readonly handleScroll = (): void => {
