@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: Gallery 工作台主题、选中稳定性、结构 CRUD 与真实产物验收 (2026-07-22)
+Last sync: Gallery 1:1 预览、Catalog/Gallery 提示居中与二级分类横向滚动验收 (2026-07-22)
 
 ### Modules
 

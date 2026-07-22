@@ -80,11 +80,11 @@
     "docs": {
       "implementation_plan": {
         "path": "docs/plans/2026-07-22-gallery-product-workbench-implementation.md",
-        "summary": "Confirmed Gallery product contract, synchronized single-image runtime, shared-theme editor with category/item CRUD, atomic release integration, and real Excel/image acceptance plan."
+        "summary": "Confirmed Gallery product contract, synchronized single-image runtime, 1:1 shared-theme editor preview with category/item CRUD, shared structured chrome, atomic release integration, and real Excel/image acceptance plan."
       },
       "real_data_acceptance": {
         "path": "docs/development/gallery-real-data-acceptance-2026-07-22.md",
-        "summary": "Acceptance evidence for the 29-node semiconductor equipment workbook, 29 transparent PNG mappings, standalone bundle, stable editor selection, structure CRUD, and browser synchronization checks."
+        "summary": "Acceptance evidence for the 29-node semiconductor equipment workbook, 29 transparent PNG mappings, standalone bundle, stable editor selection, structure CRUD, square preview, centered hints, horizontal category tabs, and browser synchronization checks."
       }
     }
   },

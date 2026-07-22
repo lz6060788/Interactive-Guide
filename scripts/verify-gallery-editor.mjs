@@ -36,6 +36,53 @@ try {
     'Gallery toolbar still uses the old dark UI',
   )
 
+  const previewRect = await page.getByTestId('gallery-preview-frame').boundingBox()
+  assert.ok(previewRect, 'Gallery preview frame is missing')
+  assert.ok(
+    Math.abs(previewRect.width - previewRect.height) <= 1,
+    `Gallery preview is not square: ${previewRect.width} × ${previewRect.height}`,
+  )
+
+  const [hintRect, previewRootRect] = await Promise.all([
+    page.getByTestId('gallery-hint').boundingBox(),
+    page.getByTestId('gallery-live-preview').boundingBox(),
+  ])
+  assert.ok(hintRect && previewRootRect, 'Gallery hint or runtime root is missing')
+  assert.ok(
+    Math.abs(hintRect.x + hintRect.width / 2 - (previewRootRect.x + previewRootRect.width / 2)) <=
+      1,
+    'Gallery hint is not centered in the runtime',
+  )
+
+  const categoryTabs = page.getByTestId('gallery-category-tabs')
+  const previousCategoryWidth = await categoryTabs.evaluate(element => {
+    const previous = element.style.width
+    element.style.width = '120px'
+    element.scrollLeft = 0
+    return previous
+  })
+  await categoryTabs.hover()
+  await page.mouse.wheel(0, 48)
+  await page.waitForTimeout(100)
+  const horizontalTabResult = await categoryTabs.evaluate(element => {
+    return {
+      overflowX: getComputedStyle(element).overflowX,
+      scrollbarWidth: getComputedStyle(element).scrollbarWidth,
+      overflowed: element.scrollWidth > element.clientWidth,
+      moved: element.scrollLeft > 0,
+    }
+  })
+  await categoryTabs.evaluate(
+    (element, width) => (element.style.width = width),
+    previousCategoryWidth,
+  )
+  assert.deepEqual(horizontalTabResult, {
+    overflowX: 'auto',
+    scrollbarWidth: 'none',
+    overflowed: true,
+    moved: true,
+  })
+
   const radioRow = page
     .getByTestId('gallery-structure-panel')
     .locator('[data-testid^="gallery-item-"]')
@@ -76,6 +123,9 @@ try {
     JSON.stringify({
       ok: true,
       toolbarBackground,
+      squarePreview: true,
+      centeredHint: true,
+      horizontalCategoryTabs: true,
       stableSelection: '射频电源',
       categoryCrud: true,
       itemCrud: true,

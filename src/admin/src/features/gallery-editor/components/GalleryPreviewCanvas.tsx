@@ -77,7 +77,6 @@ export function GalleryPreviewCanvas({
     }
   }, [locale, onSelectItem, project])
 
-  const ratio = project.products.gallery.viewport.width / project.products.gallery.viewport.height
   const selectedItem = project.knowledge.items[selectedItemId]
 
   return (
@@ -101,11 +100,11 @@ export function GalleryPreviewCanvas({
       </HStack>
       <Flex flex="1" minH="0" align="center" justify="center" p="5">
         <Box
+          data-testid="gallery-preview-frame"
           position="relative"
           w="100%"
-          maxW={`calc((100vh - 190px) * ${ratio})`}
-          style={{ aspectRatio: String(ratio) }}
-          minH="320px"
+          maxW="calc(100vh - 190px)"
+          style={{ aspectRatio: '1 / 1' }}
           maxH="calc(100vh - 190px)"
           borderRadius="lg"
           overflow="hidden"

@@ -78,6 +78,7 @@ describe('GalleryPreviewCanvas', () => {
     )
 
     const contentLayer = await screen.findByTestId('gallery-content-layer')
+    expect(screen.getByTestId('gallery-preview-frame')).toHaveStyle({ aspectRatio: '1 / 1' })
     expect(screen.getByTestId('gallery-item-item-vacuum')).toHaveAttribute('data-active', 'true')
 
     rerender(

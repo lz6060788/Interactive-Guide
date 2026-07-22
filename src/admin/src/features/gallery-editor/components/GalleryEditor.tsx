@@ -701,7 +701,7 @@ function locationReferencesRemovedNodes(
 ): boolean {
   return (
     location.kind === 'panorama' &&
-    (categoryIds.has(location.categoryId) ||
+    (Boolean(location.categoryId && categoryIds.has(location.categoryId)) ||
       Boolean(location.itemId && itemIds.has(location.itemId)))
   )
 }

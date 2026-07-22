@@ -6,6 +6,11 @@ import type {
   ResolvedCatalogStageEntry as CatalogStageEntry,
 } from '../contract/catalog-manifest.js'
 import { createCatalogAtlasLaunchButton } from './catalog-atlas-launch.js'
+import {
+  configureHorizontalTabs,
+  revealHorizontalTab,
+  styleCenteredRuntimeHint,
+} from '../../contracts/structured-runtime-chrome.js'
 
 export interface CatalogSceneSelection {
   stageKey: CatalogStageEntry['key']
@@ -88,6 +93,7 @@ export class CatalogScene {
   private displayedGeometry: SceneGeometry | null = null
   private resizeObserver: ResizeObserver | null = null
   private resizeFallbackWindow: Window | null = null
+  private releaseCategoryWheel: (() => void) | null = null
 
   constructor(options: CatalogSceneOptions) {
     this.root = options.root
@@ -179,12 +185,9 @@ export class CatalogScene {
       display: 'flex',
       alignItems: 'center',
       gap: '10px',
-      overflowX: 'auto',
-      overflowY: 'hidden',
       padding: '0 4px',
-      scrollbarWidth: 'none',
-      whiteSpace: 'nowrap',
     })
+    this.releaseCategoryWheel = configureHorizontalTabs(this.categoryTabs)
     this.detailList = document.createElement('aside')
     this.detailList.dataset.testid = 'catalog-scene-detail-list'
     Object.assign(this.detailList.style, {
@@ -208,21 +211,20 @@ export class CatalogScene {
     this.detailList.addEventListener('pointermove', event => this.handleDetailPointerMove(event))
     this.detailList.addEventListener('pointerup', event => this.handleDetailPointerUp(event))
     this.detailList.addEventListener('pointercancel', event => this.handleDetailPointerUp(event))
+    const atlasLaunchUrl = this.manifest.config.atlasLaunchUrl?.trim()
     const hint = document.createElement('div')
     hint.dataset.testid = 'catalog-scene-hint'
     hint.textContent = this.manifest.config.hintText ?? ''
     Object.assign(hint.style, {
       position: 'absolute',
-      left: '24px',
-      right: '64px',
       bottom: '18px',
       zIndex: '8',
-      textAlign: 'center',
       fontSize: '14px',
       color: 'rgba(255,255,255,.68)',
       textShadow: '0 1px 8px rgba(0,0,0,.46)',
       pointerEvents: 'none',
     })
+    styleCenteredRuntimeHint(hint, Boolean(atlasLaunchUrl))
     if (this.editor) this.mountEditorControls()
     this.root.appendChild(this.original)
     this.root.appendChild(this.dimmed)
@@ -234,7 +236,6 @@ export class CatalogScene {
     this.root.appendChild(this.categoryTabs)
     this.root.appendChild(this.detailList)
     this.root.appendChild(hint)
-    const atlasLaunchUrl = this.manifest.config.atlasLaunchUrl?.trim()
     if (atlasLaunchUrl) {
       this.root.appendChild(
         createCatalogAtlasLaunchButton({
@@ -249,6 +250,8 @@ export class CatalogScene {
 
   destroy(): void {
     this.stopObservingRuntimeSize()
+    this.releaseCategoryWheel?.()
+    this.releaseCategoryWheel = null
     if (this.focusAnimationFrame !== null) cancelAnimationFrame(this.focusAnimationFrame)
     if (this.listCenterFrame !== null) cancelAnimationFrame(this.listCenterFrame)
     this.focusAnimationFrame = null
@@ -411,6 +414,7 @@ export class CatalogScene {
     if (!this.categoryTabs) return
     this.categoryTabs.innerHTML = ''
     const categories = [...(stage?.categories ?? [])].sort((a, b) => a.order - b.order)
+    let activeButton: HTMLButtonElement | null = null
     categories.forEach((c, index) => {
       if (index > 0) {
         const divider = document.createElement('span')
@@ -428,6 +432,7 @@ export class CatalogScene {
       b.textContent = c.title
       const active = c.id === this.selection.categoryId
       Object.assign(b.style, {
+        flex: '0 0 auto',
         padding: '0',
         border: '0',
         background: 'transparent',
@@ -436,11 +441,14 @@ export class CatalogScene {
         lineHeight: '18px',
         fontWeight: active ? '500' : '400',
         cursor: 'pointer',
+        whiteSpace: 'nowrap',
         textShadow: '0 1px 2px rgba(0,0,0,.4)',
       })
+      if (active) activeButton = b
       b.addEventListener('click', () => this.selectCategory(c.id))
       this.categoryTabs!.appendChild(b)
     })
+    revealHorizontalTab(activeButton)
   }
   private renderFocus(item: CatalogItemEntry | null, g: SceneGeometry): void {
     if (!this.focusWindow) return

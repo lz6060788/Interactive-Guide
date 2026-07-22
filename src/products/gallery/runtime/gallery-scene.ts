@@ -5,6 +5,11 @@ import type {
   ResolvedGalleryStageEntry,
 } from '../contract/gallery-manifest.js'
 import { createCatalogAtlasLaunchButton } from '../../catalog/runtime/catalog-atlas-launch.js'
+import {
+  configureHorizontalTabs,
+  revealHorizontalTab,
+  styleCenteredRuntimeHint,
+} from '../../contracts/structured-runtime-chrome.js'
 
 export interface GallerySelection {
   stageKey: ResolvedGalleryStageEntry['key']
@@ -38,6 +43,7 @@ export class GalleryScene {
   private transitionToken = 0
   private imageToken = 0
   private suppressScrollSelection = false
+  private releaseCategoryWheel: (() => void) | null = null
 
   constructor(options: GallerySceneOptions) {
     this.root = options.root
@@ -147,34 +153,29 @@ export class GalleryScene {
       display: 'flex',
       alignItems: 'center',
       gap: '10px',
-      overflowX: 'auto',
-      overflowY: 'hidden',
       padding: '0 4px',
-      scrollbarWidth: 'none',
-      whiteSpace: 'nowrap',
     })
+    this.releaseCategoryWheel = configureHorizontalTabs(this.categoryTabs)
 
+    const atlasUrl = this.manifest.config.atlasLaunchUrl?.trim()
     const hint = document.createElement('div')
     hint.dataset.testid = 'gallery-hint'
     hint.textContent = this.manifest.config.hintText ?? ''
     Object.assign(hint.style, {
       position: 'absolute',
-      left: '24px',
-      right: '64px',
       bottom: '18px',
       zIndex: '8',
-      textAlign: 'center',
       fontSize: '14px',
       color: 'rgba(255,255,255,.68)',
       textShadow: '0 1px 8px rgba(0,0,0,.46)',
       pointerEvents: 'none',
     })
+    styleCenteredRuntimeHint(hint, Boolean(atlasUrl))
 
     this.root.appendChild(this.contentLayer)
     this.root.appendChild(this.stageTabs)
     this.root.appendChild(this.categoryTabs)
     this.root.appendChild(hint)
-    const atlasUrl = this.manifest.config.atlasLaunchUrl?.trim()
     if (atlasUrl) {
       const button = createCatalogAtlasLaunchButton({
         url: atlasUrl,
@@ -192,6 +193,8 @@ export class GalleryScene {
     this.transitionToken += 1
     this.imageToken += 1
     this.detailList?.removeEventListener('scroll', this.handleScroll)
+    this.releaseCategoryWheel?.()
+    this.releaseCategoryWheel = null
     this.root.innerHTML = ''
     this.detailById.clear()
     this.image = this.stageTabs = this.categoryTabs = this.detailList = this.contentLayer = null
@@ -301,6 +304,7 @@ export class GalleryScene {
     this.categoryTabs.innerHTML = ''
     const stage = this.currentStage()
     const categories = stage?.categories.slice().sort((a, b) => a.order - b.order) ?? []
+    let activeButton: HTMLButtonElement | null = null
     categories.forEach((category, index) => {
       if (index > 0) {
         const divider = document.createElement('span')
@@ -317,9 +321,11 @@ export class GalleryScene {
       button.dataset.testid = `gallery-category-tab-${category.id}`
       button.textContent = category.title
       styleCategoryButton(button, category.id === this.selection.categoryId)
+      if (category.id === this.selection.categoryId) activeButton = button
       button.addEventListener('click', () => this.selectCategory(category.id))
       this.categoryTabs!.appendChild(button)
     })
+    revealHorizontalTab(activeButton)
   }
 
   private renderDetailList(): void {
@@ -552,6 +558,7 @@ function styleStageButton(button: HTMLButtonElement, active: boolean): void {
 
 function styleCategoryButton(button: HTMLButtonElement, active: boolean): void {
   Object.assign(button.style, {
+    flex: '0 0 auto',
     padding: '0',
     border: '0',
     background: 'transparent',
@@ -560,6 +567,7 @@ function styleCategoryButton(button: HTMLButtonElement, active: boolean): void {
     lineHeight: '18px',
     fontWeight: active ? '500' : '400',
     cursor: 'pointer',
+    whiteSpace: 'nowrap',
     textShadow: '0 1px 2px rgba(0,0,0,.4)',
   })
 }
