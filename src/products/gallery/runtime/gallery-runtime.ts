@@ -3,6 +3,7 @@ import type {
   ResolvedGalleryItemEntry,
 } from '../contract/gallery-manifest.js'
 import { GalleryScene, type GallerySelection } from './gallery-scene.js'
+import { resolveGalleryFocusItemId } from './gallery-focus.js'
 
 export type GalleryEvent =
   | { type: 'itemselect'; itemId: string }
@@ -73,9 +74,6 @@ export function resolveGalleryInitialItem(
   manifest: ResolvedGalleryManifest,
   focus: string | undefined,
 ): ResolvedGalleryItemEntry | undefined {
-  const normalized = focus?.trim().normalize('NFC')
-  if (!normalized) return undefined
-  return manifest.items.find(
-    item => item.id === normalized || item.title.trim().normalize('NFC') === normalized,
-  )
+  const itemId = resolveGalleryFocusItemId(manifest.items, focus)
+  return itemId ? manifest.items.find(item => item.id === itemId) : undefined
 }

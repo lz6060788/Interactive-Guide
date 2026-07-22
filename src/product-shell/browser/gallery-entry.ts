@@ -7,6 +7,8 @@ import { resolveGalleryManifest } from '../../products/contracts/manifest-locali
 import { createShellFrame } from './shared/shell-frame.js'
 import { loadManifest } from './shared/browser-runtime-entry.js'
 import { openAtlasWithF10 } from './shared/f10-atlas-launcher.js'
+import { resolveGalleryFocusItemId } from '../../products/gallery/runtime/gallery-focus.js'
+import { mountRuntimeLocaleSwitcher } from './shared/runtime-locale-switcher.js'
 
 export async function bootstrapGalleryProduct(
   app: HTMLElement,
@@ -17,15 +19,16 @@ export async function bootstrapGalleryProduct(
     search: window.location.search,
     navigatorLanguages: navigator.languages,
   })
-  const manifest = resolveGalleryManifest(sourceManifest, locale)
   const focus = new URLSearchParams(window.location.search).get('focus') ?? undefined
+  const focusItemId = resolveGalleryFocusItemId(sourceManifest.items, focus)
+  const manifest = resolveGalleryManifest(sourceManifest, locale)
   document.documentElement.lang = locale
   document.title = manifest.projectTitle
-  const { runtimeMount } = createShellFrame(app)
+  const { shell, runtimeMount } = createShellFrame(app)
   const assets = new AssetLoader()
   const f10 = new F10HostAdapter()
   const runtime = new GalleryRuntime({
-    initialFocus: focus,
+    initialFocus: focusItemId,
     resolveAssetUrl: url => assets.resolveUrl(url),
     listeners: [
       event => {
@@ -42,4 +45,14 @@ export async function bootstrapGalleryProduct(
   })
   runtime.loadManifest(manifest)
   runtime.mount(runtimeMount)
+  mountRuntimeLocaleSwitcher({
+    root: shell,
+    locale,
+    supportedLocales: sourceManifest.localization.supportedLocales,
+    onChange: nextLocale => {
+      const url = new URL(window.location.href)
+      url.searchParams.set('lang', nextLocale)
+      window.location.assign(url.toString())
+    },
+  })
 }

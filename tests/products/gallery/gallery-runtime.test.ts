@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { ResolvedGalleryManifest } from '../../../src/products/gallery/contract/gallery-manifest.js'
+import { resolveGalleryFocusItemId } from '../../../src/products/gallery/runtime/gallery-focus.js'
 import { resolveGalleryInitialItem } from '../../../src/products/gallery/runtime/gallery-runtime.js'
 import {
   resolveGalleryImageScrollDirection,
@@ -56,6 +57,18 @@ function manifest(): ResolvedGalleryManifest {
 test('Gallery URL focus accepts stable item id and localized title', () => {
   assert.equal(resolveGalleryInitialItem(manifest(), 'item-lithography')?.id, 'item-lithography')
   assert.equal(resolveGalleryInitialItem(manifest(), ' 光刻设备 ')?.id, 'item-lithography')
+})
+
+test('Gallery URL focus resolves titles from every supported language before localization', () => {
+  const items = [
+    {
+      id: 'item-rf-power',
+      title: { 'zh-CN': '射频电源', 'en-US': 'RF Power Supply' },
+    },
+  ]
+  assert.equal(resolveGalleryFocusItemId(items, '射频电源'), 'item-rf-power')
+  assert.equal(resolveGalleryFocusItemId(items, ' RF Power Supply '), 'item-rf-power')
+  assert.equal(resolveGalleryFocusItemId(items, 'item-rf-power'), 'item-rf-power')
 })
 
 test('Gallery selection derives the owning stage and category from an item id', () => {
