@@ -11,7 +11,8 @@ function localize(value: unknown, locale: string): LocalizedText | undefined {
 /** Deterministically upgrades the persisted 2.0 shape without inventing translations. */
 export function migrateGuideProject(raw: unknown): GuideProject {
   const source = raw as LegacyProject
-  if (source?.schemaVersion === '3.0.0') return source as GuideProject
+  if (source?.schemaVersion === '4.0.0') return source as GuideProject
+  if (source?.schemaVersion === '3.0.0') return migrateV3ToV4(source)
   if (source?.schemaVersion !== '2.0.0') {
     throw new Error(`unsupported GuideProject schemaVersion "${String(source?.schemaVersion)}"`)
   }
@@ -56,5 +57,30 @@ export function migrateGuideProject(raw: unknown): GuideProject {
     next.integrations.share.description = localize(next.integrations.share.description, locale)
   }
   if (next.metadata) next.metadata.schemaVersion = '3.0.0'
+  return migrateV3ToV4(next)
+}
+
+function migrateV3ToV4(source: LegacyProject): GuideProject {
+  const next = JSON.parse(JSON.stringify(source)) as LegacyProject
+  next.schemaVersion = '4.0.0'
+  next.products = next.products ?? {}
+  next.products.gallery = next.products.gallery ?? {
+    enabled: false,
+    viewport: { width: 375, height: 808 },
+    theme: { listDensity: 'comfortable' },
+    chrome: {},
+    interaction: {
+      listActivation: 'center-nearest',
+      itemTransitionMs: 220,
+      categoryTransitionMs: 320,
+    },
+    stageOrder: ['upstream', 'midstream', 'downstream'],
+    hintText: {
+      'zh-CN': '点击或滑动文字切换节点图片',
+      'en-US': 'Tap or swipe through the list to change images',
+    },
+    itemImageAssetIds: {},
+  }
+  if (next.metadata) next.metadata.schemaVersion = '4.0.0'
   return next as GuideProject
 }

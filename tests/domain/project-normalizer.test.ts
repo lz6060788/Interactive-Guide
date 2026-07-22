@@ -83,6 +83,7 @@ test('createDraftProject returns a shape-valid project with revision 1', () => {
   assert.equal(draft.localization.defaultLocale, 'en-US')
   assert.deepEqual(draft.localization.supportedLocales, ['en-US', 'zh-CN'])
   assert.equal(draft.metadata.revision, 1)
-  assert.equal(draft.metadata.schemaVersion, '3.0.0')
+  assert.equal(draft.metadata.schemaVersion, '4.0.0')
+  assert.equal(draft.products.gallery.enabled, false)
   assert.equal(draft.knowledge.stages.length, 3)
 })

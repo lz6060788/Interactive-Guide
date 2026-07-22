@@ -1,4 +1,4 @@
-export type ProductShellProduct = 'atlas' | 'catalog'
+export type ProductShellProduct = 'atlas' | 'catalog' | 'gallery'
 
 export interface ProductShellFiles {
   'index.html': string

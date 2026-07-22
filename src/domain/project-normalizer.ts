@@ -19,6 +19,7 @@ import { PROJECT_DEFAULTS } from '../config/project-defaults.js'
 import type {
   AtlasProductConfig,
   CatalogProductConfig,
+  GalleryProductConfig,
   GuideProject,
   IndustryCategory,
   IndustryItem,
@@ -45,7 +46,7 @@ export function normalizeProject(
   // metadata defaults
   next.metadata = {
     ...next.metadata,
-    schemaVersion: '3.0.0',
+    schemaVersion: '4.0.0',
     updatedAt: now,
   }
   if (!next.metadata.createdAt) {
@@ -114,6 +115,7 @@ export function normalizeProject(
   // product defaults
   next.products.atlas = normalizeAtlas(next.products.atlas)
   next.products.catalog = normalizeCatalog(next.products.catalog)
+  next.products.gallery = normalizeGallery(next.products.gallery)
 
   return next
 }
@@ -137,6 +139,23 @@ function normalizeCatalog(config: CatalogProductConfig): CatalogProductConfig {
         PROJECT_DEFAULTS.products.catalog.viewportAnimationMs,
     },
     hintText: config.hintText ?? { ...PROJECT_DEFAULTS.products.catalog.hintText },
+  }
+}
+
+function normalizeGallery(config: GalleryProductConfig): GalleryProductConfig {
+  return {
+    ...config,
+    viewport: withViewportDefaults(config.viewport),
+    interaction: {
+      ...config.interaction,
+      itemTransitionMs:
+        config.interaction.itemTransitionMs ?? PROJECT_DEFAULTS.products.gallery.itemTransitionMs,
+      categoryTransitionMs:
+        config.interaction.categoryTransitionMs ??
+        PROJECT_DEFAULTS.products.gallery.categoryTransitionMs,
+    },
+    hintText: config.hintText ?? { ...PROJECT_DEFAULTS.products.gallery.hintText },
+    itemImageAssetIds: { ...config.itemImageAssetIds },
   }
 }
 
@@ -167,7 +186,7 @@ export function createDraftProject(input: {
   const now = new Date().toISOString()
   const defaultLocale = input.locale ?? 'zh-CN'
   return {
-    schemaVersion: '3.0.0',
+    schemaVersion: '4.0.0',
     id: input.id,
     title: { [defaultLocale]: input.title },
     version: '0.1.0',
@@ -232,13 +251,27 @@ export function createDraftProject(input: {
         stageOrder: ['upstream', 'midstream', 'downstream'],
         hintText: { ...PROJECT_DEFAULTS.products.catalog.hintText },
       },
+      gallery: {
+        enabled: false,
+        viewport: { width: 375, height: 808 },
+        theme: { listDensity: 'comfortable' },
+        chrome: {},
+        interaction: {
+          listActivation: 'center-nearest',
+          itemTransitionMs: PROJECT_DEFAULTS.products.gallery.itemTransitionMs,
+          categoryTransitionMs: PROJECT_DEFAULTS.products.gallery.categoryTransitionMs,
+        },
+        stageOrder: ['upstream', 'midstream', 'downstream'],
+        hintText: { ...PROJECT_DEFAULTS.products.gallery.hintText },
+        itemImageAssetIds: {},
+      },
     },
     integrations: {},
     metadata: {
       createdAt: now,
       updatedAt: now,
       revision: 1,
-      schemaVersion: '3.0.0',
+      schemaVersion: '4.0.0',
     },
   }
 }

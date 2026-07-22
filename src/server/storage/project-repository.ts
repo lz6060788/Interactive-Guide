@@ -147,7 +147,7 @@ export class ProjectRepository {
         revision: nextRevision,
         updatedAt: now,
         createdAt: existing?.metadata.createdAt ?? project.metadata.createdAt ?? now,
-        schemaVersion: '3.0.0',
+        schemaVersion: '4.0.0',
       },
     }
     this.writeToDisk(next)

@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { ExperienceNavigationSchema } from './experience-navigation.js'
 import { SceneProtocolSchema } from './scene-protocol.js'
 
-export const SchemaVersionSchema = z.literal('3.0.0')
+export const SchemaVersionSchema = z.literal('4.0.0')
 
 export const LocalizedTextSchema = z.record(z.string().min(1), z.string())
 
@@ -240,6 +240,29 @@ export const CatalogProductConfigSchema = z.object({
   atlasLaunchUrl: z.string().url().optional(),
 })
 
+export const GalleryThemeSchema = z.object({
+  listDensity: z.enum(['compact', 'comfortable']),
+  accentColor: z.string().optional(),
+  backgroundColor: z.string().optional(),
+  textColor: z.string().optional(),
+})
+
+export const GalleryProductConfigSchema = z.object({
+  enabled: z.boolean(),
+  viewport: ProductViewportConfigSchema,
+  theme: GalleryThemeSchema,
+  chrome: ProductChromeConfigSchema,
+  interaction: z.object({
+    listActivation: z.literal('center-nearest'),
+    itemTransitionMs: z.number().int().nonnegative(),
+    categoryTransitionMs: z.number().int().nonnegative(),
+  }),
+  stageOrder: z.tuple([IndustryStageKeySchema, IndustryStageKeySchema, IndustryStageKeySchema]),
+  hintText: LocalizedTextSchema.optional(),
+  atlasLaunchUrl: z.string().url().optional(),
+  itemImageAssetIds: z.record(z.string().min(1), z.string().min(1)),
+})
+
 export const AnalyticsConfigSchema = z.object({
   enabled: z.boolean(),
   provider: z.literal('weblog'),
@@ -283,6 +306,7 @@ export const GuideProjectSchema = z
     products: z.object({
       atlas: AtlasProductConfigSchema,
       catalog: CatalogProductConfigSchema,
+      gallery: GalleryProductConfigSchema,
     }),
     integrations: ProjectIntegrationsSchema,
     metadata: ProjectMetadataSchema,

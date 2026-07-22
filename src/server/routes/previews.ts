@@ -17,7 +17,7 @@ export function createPreviewsRouter(
 
   router.post('/projects/:id/previews/:product', async (req, res) => {
     const product = String(req.params.product)
-    if (product !== 'atlas' && product !== 'catalog') {
+    if (!isDraftProduct(product)) {
       res.status(400).json({ error: `unknown product "${product}"`, code: 'BAD_PRODUCT' })
       return
     }
@@ -42,7 +42,7 @@ export function createPreviewsRouter(
 
   router.get('/projects/:id/previews/:product/builds/:buildId/download.zip', (req, res) => {
     const product = String(req.params.product)
-    if (product !== 'atlas' && product !== 'catalog') {
+    if (!isDraftProduct(product)) {
       res.status(400).json({ error: `unknown product "${product}"`, code: 'BAD_PRODUCT' })
       return
     }
@@ -87,7 +87,7 @@ export function createPreviewsRouter(
     const product = captures[1] ?? ''
     const buildId = captures[2] ?? ''
     const relPath = captures[3] ?? ''
-    if (product !== 'atlas' && product !== 'catalog') {
+    if (!isDraftProduct(product)) {
       res.status(400).json({ error: `unknown product "${product}"`, code: 'BAD_PRODUCT' })
       return
     }
@@ -144,4 +144,8 @@ function resolveDraftProductDir(
 function safeFilenamePart(value: string): string {
   const safe = value.replace(/[^A-Za-z0-9._-]+/g, '-')
   return safe || 'project'
+}
+
+function isDraftProduct(product: string): product is DraftProduct {
+  return product === 'atlas' || product === 'catalog' || product === 'gallery'
 }

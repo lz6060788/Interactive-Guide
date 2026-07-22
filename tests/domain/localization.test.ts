@@ -43,7 +43,8 @@ test('migrateGuideProject wraps legacy text without inventing translations', () 
   legacy.products.catalog.hintText = legacy.products.catalog.hintText['zh-CN']
 
   const migrated = migrateGuideProject(legacy)
-  assert.equal(migrated.schemaVersion, '3.0.0')
+  assert.equal(migrated.schemaVersion, '4.0.0')
+  assert.equal(migrated.products.gallery.enabled, false)
   assert.deepEqual(migrated.title, { 'zh-CN': '旧项目' })
   assert.deepEqual(migrated.localization.supportedLocales, ['zh-CN', 'en-US'])
   assert.equal(migrated.title['en-US'], undefined)

@@ -5,6 +5,10 @@ import type {
   CatalogManifest,
   ResolvedCatalogManifest,
 } from '../catalog/contract/catalog-manifest.js'
+import type {
+  GalleryManifest,
+  ResolvedGalleryManifest,
+} from '../gallery/contract/gallery-manifest.js'
 
 export interface ManifestLocalizationOptions {
   /** Draft previews may render incomplete translations; released runtimes remain strict by default. */
@@ -36,9 +40,7 @@ function resolveIntegrations(
       ? {
           share: {
             ...share,
-            ...(share.title
-              ? { title: resolveText(share.title, 'integrations.share.title') }
-              : {}),
+            ...(share.title ? { title: resolveText(share.title, 'integrations.share.title') } : {}),
             ...(share.description
               ? { description: resolveText(share.description, 'integrations.share.description') }
               : {}),
@@ -67,10 +69,7 @@ export function resolveAtlasManifest(
         : {}),
       ...(category.description
         ? {
-            description: resolveText(
-              category.description,
-              `categories.${category.id}.description`,
-            ),
+            description: resolveText(category.description, `categories.${category.id}.description`),
           }
         : {}),
     })),
@@ -145,4 +144,46 @@ export function resolveCatalogManifest(
     },
     integrations: resolveIntegrations(manifest.integrations, locale, options),
   } as unknown as ResolvedCatalogManifest
+}
+
+export function resolveGalleryManifest(
+  manifest: GalleryManifest,
+  locale: LocaleCode,
+  options: ManifestLocalizationOptions = {},
+): ResolvedGalleryManifest {
+  const resolveText = (value: LocalizedText | undefined, path: string) =>
+    text(value, locale, path, options)
+  return {
+    ...manifest,
+    locale,
+    projectTitle: resolveText(manifest.projectTitle, 'projectTitle'),
+    stages: manifest.stages.map(stage => ({
+      ...stage,
+      label: resolveText(stage.label, `stages.${stage.key}.label`),
+      categories: stage.categories.map(category => ({
+        ...category,
+        title: resolveText(category.title, `categories.${category.id}.title`),
+        ...(category.description
+          ? {
+              description: resolveText(
+                category.description,
+                `categories.${category.id}.description`,
+              ),
+            }
+          : {}),
+      })),
+    })),
+    items: manifest.items.map(item => ({
+      ...item,
+      title: resolveText(item.title, `items.${item.id}.title`),
+      description: resolveText(item.description, `items.${item.id}.description`),
+    })),
+    config: {
+      ...manifest.config,
+      ...(manifest.config.hintText
+        ? { hintText: resolveText(manifest.config.hintText, 'config.hintText') }
+        : {}),
+    },
+    integrations: resolveIntegrations(manifest.integrations, locale, options),
+  } as unknown as ResolvedGalleryManifest
 }

@@ -215,6 +215,22 @@ export function createProjectsRouter(projectService: ProjectService): Router {
   )
 
   router.put(
+    '/projects/:id/products/gallery',
+    handle((req, res) => {
+      const proj = requireExpectedRevision(req, res, projectService.get(String(req.params.id)))
+      if (!proj) return
+      const parsed = GuideProjectSchema.shape.products.shape.gallery.safeParse(req.body)
+      if (!parsed.success) return badRequest(res, parsed.error.issues)
+      const project = projectService.updateGalleryConfig(
+        String(req.params.id),
+        parsed.data,
+        proj.metadata.revision,
+      )
+      res.json({ data: project })
+    }),
+  )
+
+  router.put(
     '/projects/:id/integrations',
     handle((req, res) => {
       const proj = requireExpectedRevision(req, res, projectService.get(String(req.params.id)))

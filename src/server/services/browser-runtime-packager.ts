@@ -25,11 +25,10 @@ export function buildBrowserRuntimeBundle(options: {
         path.resolve('src'),
         'product-shell',
         'browser',
-        options.product === 'atlas' ? 'atlas-entry.ts' : 'catalog-entry.ts',
+        PRODUCT_RUNTIME[options.product].entry,
       ),
   )
-  const bootstrapExport =
-    options.product === 'atlas' ? 'bootstrapAtlasProduct' : 'bootstrapCatalogProduct'
+  const bootstrapExport = PRODUCT_RUNTIME[options.product].bootstrap
   const bootstrapSource = buildBootstrapSource(
     entrySourcePath,
     bootstrapExport,
@@ -84,6 +83,12 @@ export function buildBrowserRuntimeBundle(options: {
 
   assertEs5Syntax(appJs, options.product)
   return { appJs: `${appJs}\n` }
+}
+
+const PRODUCT_RUNTIME: Record<ProductShellProduct, { entry: string; bootstrap: string }> = {
+  atlas: { entry: 'atlas-entry.ts', bootstrap: 'bootstrapAtlasProduct' },
+  catalog: { entry: 'catalog-entry.ts', bootstrap: 'bootstrapCatalogProduct' },
+  gallery: { entry: 'gallery-entry.ts', bootstrap: 'bootstrapGalleryProduct' },
 }
 
 export function assertEs5Syntax(source: string, label = 'browser runtime'): void {

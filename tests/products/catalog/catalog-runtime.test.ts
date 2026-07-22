@@ -193,8 +193,8 @@ test('CatalogRuntime.loadManifest + mount creates the complete catalog scene', a
   assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-scene-stage-tabs'))
   assert.ok(sceneChildren.some(child => child.dataset.testid === 'catalog-scene-detail-list'))
   assert.ok(
-    sceneChildren.some(child => child.dataset.testid === 'catalog-atlas-launch'),
-    'legacy-compatible Atlas entry remains visible before a URL is configured',
+    !sceneChildren.some(child => child.dataset.testid === 'catalog-atlas-launch'),
+    'Atlas entry is absent until a complete URL is configured',
   )
   rt.destroy()
 })
@@ -382,9 +382,7 @@ test('CatalogRuntime aligns the focus crop with the same panorama coordinates as
   assert.ok(
     Math.abs(Number.parseFloat(connector?.style.left ?? '') - expectedConnectorLeft) < 0.001,
   )
-  assert.ok(
-    Math.abs(Number.parseFloat(connector?.style.top ?? '') - expectedConnectorTop) < 0.001,
-  )
+  assert.ok(Math.abs(Number.parseFloat(connector?.style.top ?? '') - expectedConnectorTop) < 0.001)
   rt.destroy()
 })
 

@@ -78,10 +78,21 @@ export class AssetService {
     if (next.panorama.assetId === assetId) {
       next.panorama = { ...next.panorama, assetId: '' }
     }
-    next.scenes = next.scenes.filter((s) => s.assetId !== assetId)
-    next.navigation.routes = next.navigation.routes.map((r) =>
+    next.scenes = next.scenes.filter(s => s.assetId !== assetId)
+    next.navigation.routes = next.navigation.routes.map(r =>
       r.transition?.assetId === assetId ? { ...r, transition: undefined } : r,
     )
+    next.products = {
+      ...next.products,
+      gallery: {
+        ...next.products.gallery,
+        itemImageAssetIds: Object.fromEntries(
+          Object.entries(next.products.gallery.itemImageAssetIds).filter(
+            ([, boundAssetId]) => boundAssetId !== assetId,
+          ),
+        ),
+      },
+    }
     this.saveBumped(project, next, expectedRevision)
   }
 
@@ -113,7 +124,11 @@ export class AssetService {
     return this.assets.absoluteHtmlBundleFilePathFor(projectId, assetId, filePath)
   }
 
-  private register(projectId: string, reg: RegisterResult, options: RegisterAssetOptions): AssetDefinition {
+  private register(
+    projectId: string,
+    reg: RegisterResult,
+    options: RegisterAssetOptions,
+  ): AssetDefinition {
     const project = this.projects.get(projectId)
     if (project.assets.byId[reg.definition.id]) {
       throw new AssetConflictError(reg.definition.id)

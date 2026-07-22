@@ -3,7 +3,7 @@ import path from 'node:path'
 import { ProjectRepository } from '../storage/project-repository.js'
 import { buildStaticProduct } from './static-product-builder.js'
 
-export type DraftProduct = 'atlas' | 'catalog'
+export type DraftProduct = 'atlas' | 'catalog' | 'gallery'
 
 export interface DraftBuildResult {
   product: DraftProduct

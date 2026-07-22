@@ -91,11 +91,7 @@ export function ProjectListPage(): JSX.Element {
                 刷新
               </HStack>
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setShowForm((v) => !v)}
-            >
+            <Button variant="primary" size="sm" onClick={() => setShowForm(v => !v)}>
               <HStack gap="1.5">
                 {showForm ? null : <Plus size={14} />}
                 {showForm ? '取消' : '新建项目'}
@@ -109,13 +105,7 @@ export function ProjectListPage(): JSX.Element {
         <Container maxW="960px">
           <Stack gap="1.5" mb="6">
             <Text className="eyebrow">Project Index</Text>
-            <Heading
-              as="h1"
-              size="2xl"
-              fontWeight="400"
-              letterSpacing="-0.01em"
-              color="ink"
-            >
+            <Heading as="h1" size="2xl" fontWeight="400" letterSpacing="-0.01em" color="ink">
               Projects
             </Heading>
           </Stack>
@@ -128,7 +118,7 @@ export function ProjectListPage(): JSX.Element {
               shadow="xs"
               data-testid="create-project-form"
               as="form"
-              onSubmit={(e) => void handleCreate(e)}
+              onSubmit={e => void handleCreate(e)}
             >
               <Card.Header borderBottomWidth="1px" borderColor="border" py="3" px="4">
                 <Stack gap="0.5">
@@ -146,7 +136,7 @@ export function ProjectListPage(): JSX.Element {
                     </Field.Label>
                     <Input
                       value={newId}
-                      onChange={(e) => setNewId(e.target.value)}
+                      onChange={e => setNewId(e.target.value)}
                       placeholder="kebab-case, e.g. rocket"
                       fontFamily="mono"
                       size="sm"
@@ -159,7 +149,7 @@ export function ProjectListPage(): JSX.Element {
                     </Field.Label>
                     <Input
                       value={newTitle}
-                      onChange={(e) => setNewTitle(e.target.value)}
+                      onChange={e => setNewTitle(e.target.value)}
                       placeholder="商业航天样例"
                       size="sm"
                     />
@@ -172,12 +162,7 @@ export function ProjectListPage(): JSX.Element {
                   </Alert.Root>
                 )}
                 <Flex justify="flex-end">
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    size="md"
-                    loading={create.isPending}
-                  >
+                  <Button type="submit" variant="primary" size="md" loading={create.isPending}>
                     {create.isPending ? '创建中…' : '创建并进入 Atlas Editor'}
                   </Button>
                 </Flex>
@@ -191,11 +176,7 @@ export function ProjectListPage(): JSX.Element {
               <Alert.Title fontSize="13px">
                 加载失败：{(projectsQuery.error as Error).message}
               </Alert.Title>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void projectsQuery.refetch()}
-              >
+              <Button variant="secondary" size="sm" onClick={() => void projectsQuery.refetch()}>
                 重试
               </Button>
             </Alert.Root>
@@ -230,7 +211,7 @@ export function ProjectListPage(): JSX.Element {
                   whiteSpace="pre-wrap"
                   wordBreak="break-all"
                 >
-{`curl -X POST http://localhost:8788/api/projects \\
+                  {`curl -X POST http://localhost:8788/api/projects \\
   -H 'content-type: application/json' \\
   -d '{"id":"rocket","title":"商业航天样例"}'`}
                 </Box>
@@ -263,11 +244,7 @@ export function ProjectListPage(): JSX.Element {
               }
             : undefined
         }
-        leftExtras={
-          <Text color="ink.faint">
-            {projectsQuery.data?.length ?? 0} projects
-          </Text>
-        }
+        leftExtras={<Text color="ink.faint">{projectsQuery.data?.length ?? 0} projects</Text>}
       />
     </Flex>
   )
@@ -275,13 +252,7 @@ export function ProjectListPage(): JSX.Element {
 
 function ProjectListTable({ rows }: { rows: ListEntry[] }): JSX.Element {
   return (
-    <Card.Root
-      bg="bg.raised"
-      borderColor="border"
-      shadow="xs"
-      overflow="hidden"
-      p="0"
-    >
+    <Card.Root bg="bg.raised" borderColor="border" shadow="xs" overflow="hidden" p="0">
       <Box overflowX="auto">
         <Table.Root variant="line" size="sm" minW="860px" tableLayout="fixed">
           <colgroup>
@@ -290,7 +261,7 @@ function ProjectListTable({ rows }: { rows: ListEntry[] }): JSX.Element {
             <col style={{ width: 96 }} />
             <col style={{ width: 196 }} />
             <col style={{ width: 72 }} />
-            <col style={{ width: 210 }} />
+            <col style={{ width: 300 }} />
           </colgroup>
           <Table.Header className="ui-chrome">
             <Table.Row bg="bg.sunken">
@@ -303,7 +274,7 @@ function ProjectListTable({ rows }: { rows: ListEntry[] }): JSX.Element {
             </Table.Row>
           </Table.Header>
           <Table.Body>
-            {rows.map((project) => (
+            {rows.map(project => (
               <Table.Row
                 key={project.id}
                 data-testid={`project-row-${project.id}`}
@@ -329,13 +300,7 @@ function ProjectListTable({ rows }: { rows: ListEntry[] }): JSX.Element {
                 </ProjectCell>
                 <ProjectCell>
                   <HStack gap="2" justify="flex-end">
-                    <Button
-                      asChild
-                      size="sm"
-                      variant="secondary"
-                      colorPalette="brand"
-                      minW="76px"
-                    >
+                    <Button asChild size="sm" variant="secondary" colorPalette="brand" minW="76px">
                       <RouterLink
                         to={`/projects/${project.id}/atlas-editor`}
                         data-testid={`project-open-atlas-${project.id}`}
@@ -344,19 +309,22 @@ function ProjectListTable({ rows }: { rows: ListEntry[] }): JSX.Element {
                         Atlas
                       </RouterLink>
                     </Button>
-                    <Button
-                      asChild
-                      size="sm"
-                      variant="secondary"
-                      colorPalette="accent"
-                      minW="82px"
-                    >
+                    <Button asChild size="sm" variant="secondary" colorPalette="accent" minW="82px">
                       <RouterLink
                         to={`/projects/${project.id}/catalog-editor`}
                         data-testid={`project-open-catalog-${project.id}`}
                         aria-label={`打开 ${project.title} 的 Catalog 编辑器`}
                       >
                         Catalog
+                      </RouterLink>
+                    </Button>
+                    <Button asChild size="sm" variant="secondary" colorPalette="blue" minW="78px">
+                      <RouterLink
+                        to={`/projects/${project.id}/gallery-editor`}
+                        data-testid={`project-open-gallery-${project.id}`}
+                        aria-label={`打开 ${project.title} 的 Gallery 编辑器`}
+                      >
+                        Gallery
                       </RouterLink>
                     </Button>
                   </HStack>
@@ -388,15 +356,7 @@ function ProjectColumnHeader(props: React.ComponentProps<typeof Table.ColumnHead
 }
 
 function ProjectCell(props: React.ComponentProps<typeof Table.Cell>): JSX.Element {
-  return (
-    <Table.Cell
-      px="4"
-      py="3.5"
-      verticalAlign="middle"
-      whiteSpace="nowrap"
-      {...props}
-    />
-  )
+  return <Table.Cell px="4" py="3.5" verticalAlign="middle" whiteSpace="nowrap" {...props} />
 }
 
 function SkeletonTable({ rows = 4 }: { rows?: number }): JSX.Element {

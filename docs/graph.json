@@ -70,6 +70,24 @@
       }
     }
   },
+  "gallery": {
+    "code_paths": [
+      "src/products/gallery/**",
+      "src/admin/src/features/gallery-editor/**",
+      "src/product-shell/browser/gallery-entry.ts"
+    ],
+    "module_summary": "Gallery is the image-based structured industry-chain product: Catalog-compatible navigation with one synchronized image per third-level item, a shared-theme workbench with category/item CRUD, and a standalone bundle.",
+    "docs": {
+      "implementation_plan": {
+        "path": "docs/plans/2026-07-22-gallery-product-workbench-implementation.md",
+        "summary": "Confirmed Gallery product contract, synchronized single-image runtime, shared-theme editor with category/item CRUD, atomic release integration, and real Excel/image acceptance plan."
+      },
+      "real_data_acceptance": {
+        "path": "docs/development/gallery-real-data-acceptance-2026-07-22.md",
+        "summary": "Acceptance evidence for the 29-node semiconductor equipment workbook, 29 transparent PNG mappings, standalone bundle, stable editor selection, structure CRUD, and browser synchronization checks."
+      }
+    }
+  },
   "schema": {
     "code_paths": ["src/shared/**"],
     "module_summary": "Shared types, Zod validators, and schema contracts used across server and runtime.",

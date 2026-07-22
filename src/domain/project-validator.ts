@@ -54,6 +54,7 @@ export function validateDraftProject(project: GuideProject): ValidationResult {
   checkItemCategoryOwnership(project, issues)
   checkOrdering(project, issues)
   checkAssetReferences(project, issues)
+  checkGalleryImages(project, issues, false)
   checkSceneReferences(project, issues)
   checkRouteReferences(project, issues)
   checkSpatialRanges(project, issues)
@@ -75,6 +76,7 @@ export function validateReleaseProject(project: GuideProject): ValidationResult 
   checkPanoramaAssetBound(project, issues)
   checkCalibrationCompleteness(project, issues)
   checkAtlasCategoryCoverage(project, issues)
+  checkGalleryImages(project, issues, true)
   checkTranslations(project, issues, project.localization.supportedLocales)
   return { ok: issues.length === 0, issues }
 }
@@ -184,6 +186,9 @@ function checkTranslations(
   }
   if (project.products.catalog.hintText) {
     fields.push({ path: 'products.catalog.hintText', value: project.products.catalog.hintText })
+  }
+  if (project.products.gallery.hintText) {
+    fields.push({ path: 'products.gallery.hintText', value: project.products.gallery.hintText })
   }
   if (project.integrations.share?.title) {
     fields.push({ path: 'integrations.share.title', value: project.integrations.share.title })
@@ -396,6 +401,42 @@ function checkAssetReferences(project: GuideProject, issues: ValidationIssue[]):
         code: 'ASSET_KIND_MISMATCH',
         path: `navigation.routes.${route.id}.transition.assetId`,
         message: `route "${route.id}" transition must be a video asset, got "${asset.kind}"`,
+      })
+    }
+  }
+}
+
+function checkGalleryImages(
+  project: GuideProject,
+  issues: ValidationIssue[],
+  requireComplete: boolean,
+): void {
+  const bindings = project.products.gallery.itemImageAssetIds
+  for (const [itemId, assetId] of Object.entries(bindings)) {
+    if (!project.knowledge.items[itemId]) {
+      issues.push({
+        code: 'GALLERY_ITEM_NOT_FOUND',
+        path: `products.gallery.itemImageAssetIds.${itemId}`,
+        message: `gallery image binding references unknown item "${itemId}"`,
+      })
+      continue
+    }
+    const asset = project.assets.byId[assetId]
+    if (!asset || asset.kind !== 'image') {
+      issues.push({
+        code: 'GALLERY_IMAGE_INVALID',
+        path: `products.gallery.itemImageAssetIds.${itemId}`,
+        message: `gallery item "${itemId}" must reference a registered image asset`,
+      })
+    }
+  }
+  if (!requireComplete || !project.products.gallery.enabled) return
+  for (const itemId of Object.keys(project.knowledge.items)) {
+    if (!bindings[itemId]) {
+      issues.push({
+        code: 'GALLERY_IMAGE_MISSING',
+        path: `products.gallery.itemImageAssetIds.${itemId}`,
+        message: `gallery release requires an image for item "${itemId}"`,
       })
     }
   }

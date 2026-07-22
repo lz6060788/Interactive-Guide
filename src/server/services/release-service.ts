@@ -27,7 +27,10 @@ export class ReleaseService {
     this.releases = releases
   }
 
-  buildRelease(projectId: string, now: () => string = () => new Date().toISOString()): ReleaseBuildResult {
+  buildRelease(
+    projectId: string,
+    now: () => string = () => new Date().toISOString(),
+  ): ReleaseBuildResult {
     const project = this.projects.get(projectId)
     const version = project.version
     const finalDir = this.releases.releaseDir(projectId, version)
@@ -51,8 +54,20 @@ export class ReleaseService {
         productDir: path.join(tmpDir, 'catalog'),
         now,
       })
+      if (project.products.gallery.enabled) {
+        buildStaticProduct({
+          project,
+          projects: this.projects,
+          product: 'gallery',
+          productDir: path.join(tmpDir, 'gallery'),
+          now,
+        })
+      }
 
-      const report = validateRelease(tmpDir)
+      const report = validateRelease(
+        tmpDir,
+        project.products.gallery.enabled ? ['atlas', 'catalog', 'gallery'] : ['atlas', 'catalog'],
+      )
       if (!report.ok) {
         throw new ReleaseValidationError(report.failures)
       }
@@ -60,12 +75,15 @@ export class ReleaseService {
       const releaseManifest: ReleaseManifest = {
         projectId,
         projectVersion: project.version,
-        schemaVersion: '1.0.0',
+        schemaVersion: '1.1.0',
         generatedAt: now(),
         sourceRevision: project.metadata.revision,
         products: {
           atlas: { entry: 'atlas/index.html', manifest: 'atlas/manifest.json' },
           catalog: { entry: 'catalog/index.html', manifest: 'catalog/manifest.json' },
+          ...(project.products.gallery.enabled
+            ? { gallery: { entry: 'gallery/index.html', manifest: 'gallery/manifest.json' } }
+            : {}),
         },
       }
       fs.writeFileSync(path.join(tmpDir, 'release.json'), JSON.stringify(releaseManifest, null, 2))
@@ -80,12 +98,11 @@ export class ReleaseService {
       throw err
     }
   }
-
 }
 
 export class ReleaseValidationError extends Error {
   constructor(public readonly failures: ValidationReport['failures']) {
-    super(`release validation failed: ${failures.map((f) => f.message).join('; ')}`)
+    super(`release validation failed: ${failures.map(f => f.message).join('; ')}`)
     this.name = 'ReleaseValidationError'
   }
 }

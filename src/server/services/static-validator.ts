@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { AtlasManifest } from '../../products/atlas/contract/atlas-manifest.js'
 import type { CatalogManifest } from '../../products/catalog/contract/catalog-manifest.js'
+import type { GalleryManifest } from '../../products/gallery/contract/gallery-manifest.js'
 import { assertEs5Syntax } from './browser-runtime-packager.js'
 import type { ProductShellProduct } from './product-shell.js'
 
@@ -21,15 +22,15 @@ export interface ValidationReport {
   failures: ValidationFailure[]
 }
 
-const FORBIDDEN_PATTERNS = [
-  /\/api\//,
-  /\bworkspace\b/,
-  /^\/workspace\//,
-]
+const FORBIDDEN_PATTERNS = [/\/api\//, /\bworkspace\b/, /^\/workspace\//]
 
 const ABSOLUTE_PATH_PATTERN = /^(?:[A-Za-z]:[\\/]|\/)/
 
-function checkString(label: string, value: string | undefined, failures: ValidationFailure[]): void {
+function checkString(
+  label: string,
+  value: string | undefined,
+  failures: ValidationFailure[],
+): void {
   if (!value) return
   for (const re of FORBIDDEN_PATTERNS) {
     if (re.test(value)) {
@@ -52,7 +53,11 @@ function checkAssetFile(
   const rel = url.replace(/^\.\//, '')
   const abs = path.join(productDir, rel)
   if (!fs.existsSync(abs)) {
-    failures.push({ code: 'MISSING_FILE', message: `manifest asset missing on disk: ${url}`, file: abs })
+    failures.push({
+      code: 'MISSING_FILE',
+      message: `manifest asset missing on disk: ${url}`,
+      file: abs,
+    })
   }
   void baseDir
 }
@@ -79,9 +84,21 @@ function checkCatalogManifest(manifest: CatalogManifest, productDir: string): Va
   return failures
 }
 
-export function validateRelease(releaseDir: string): ValidationReport {
+function checkGalleryManifest(manifest: GalleryManifest, productDir: string): ValidationFailure[] {
   const failures: ValidationFailure[] = []
-  for (const product of ['atlas', 'catalog'] as const) {
+  for (const item of manifest.items) {
+    checkString(`items[${item.id}].image.url`, item.image.url, failures)
+    checkAssetFile(productDir, productDir, item.image.url, failures)
+  }
+  return failures
+}
+
+export function validateRelease(
+  releaseDir: string,
+  products: readonly ProductShellProduct[] = ['atlas', 'catalog'],
+): ValidationReport {
+  const failures: ValidationFailure[] = []
+  for (const product of products) {
     const productDir = path.join(releaseDir, product)
     failures.push(...validateProduct(productDir, product).failures)
   }
@@ -98,10 +115,17 @@ export function validateProduct(
   const manifestFile = path.join(productDir, 'manifest.json')
 
   if (!fs.existsSync(indexFile)) {
-    failures.push({ code: 'MISSING_FILE', message: `${product} entry html missing`, file: indexFile })
+    failures.push({
+      code: 'MISSING_FILE',
+      message: `${product} entry html missing`,
+      file: indexFile,
+    })
   } else {
     const html = fs.readFileSync(indexFile, 'utf8')
-    if (/type\s*=\s*["']module["']/i.test(html) || !/<script\s+src=["']\.\/app\.js["']><\/script>/i.test(html)) {
+    if (
+      /type\s*=\s*["']module["']/i.test(html) ||
+      !/<script\s+src=["']\.\/app\.js["']><\/script>/i.test(html)
+    ) {
       failures.push({
         code: 'BAD_HTML',
         message: `${product} index.html must load ./app.js as a classic script`,
@@ -136,10 +160,13 @@ export function validateProduct(
       const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as
         | AtlasManifest
         | CatalogManifest
+        | GalleryManifest
       failures.push(
         ...(product === 'atlas'
           ? checkAtlasManifest(manifest as AtlasManifest, productDir)
-          : checkCatalogManifest(manifest as CatalogManifest, productDir)),
+          : product === 'catalog'
+            ? checkCatalogManifest(manifest as CatalogManifest, productDir)
+            : checkGalleryManifest(manifest as GalleryManifest, productDir)),
       )
     } catch (error) {
       failures.push({

@@ -17,8 +17,8 @@ import type { ExperienceNavigationSchema, ExperienceNavigation } from './experie
 
 // ─── Primitives ──────────────────────────────────────────────
 
-export type SchemaVersion = '3.0.0'
-export type ReleaseSchemaVersion = '1.0.0'
+export type SchemaVersion = '4.0.0'
+export type ReleaseSchemaVersion = '1.0.0' | '1.1.0'
 
 export type LocaleCode = string
 export type LocalizedText = Partial<Record<LocaleCode, string>>
@@ -228,6 +228,13 @@ export interface CatalogTheme {
   maskOpacity?: number
 }
 
+export interface GalleryTheme {
+  listDensity: 'compact' | 'comfortable'
+  accentColor?: string
+  backgroundColor?: string
+  textColor?: string
+}
+
 export interface AtlasProductConfig {
   enabled: true
   viewport: ProductViewportConfig
@@ -257,6 +264,23 @@ export interface CatalogProductConfig {
   hintText?: LocalizedText
   /** Complete URL of the separately released Atlas bundle, opened from Catalog through F10. */
   atlasLaunchUrl?: string
+}
+
+export interface GalleryProductConfig {
+  enabled: boolean
+  viewport: ProductViewportConfig
+  theme: GalleryTheme
+  chrome: ProductChromeConfig
+  interaction: {
+    listActivation: 'center-nearest'
+    itemTransitionMs: number
+    categoryTransitionMs: number
+  }
+  stageOrder: [IndustryStageKey, IndustryStageKey, IndustryStageKey]
+  hintText?: LocalizedText
+  atlasLaunchUrl?: string
+  /** One image asset per third-level industry item. */
+  itemImageAssetIds: Record<string, string>
 }
 
 // ─── Integrations & Metadata ────────────────────────────────
@@ -307,6 +331,7 @@ export interface GuideProject {
   products: {
     atlas: AtlasProductConfig
     catalog: CatalogProductConfig
+    gallery: GalleryProductConfig
   }
 
   integrations: ProjectIntegrations

@@ -92,8 +92,13 @@ export function CatalogAuthoringCanvas({
   useEffect(() => {
     const host = atlasButtonHostRef.current
     if (!asset || !host) return
+    const url = project.products.catalog.atlasLaunchUrl?.trim()
+    if (!url) {
+      host.replaceChildren()
+      return
+    }
     const button = createCatalogAtlasLaunchButton({
-      url: project.products.catalog.atlasLaunchUrl?.trim(),
+      url,
       onLaunch: url => window.open(url, '_blank', 'noopener,noreferrer'),
     })
     host.replaceChildren(button)

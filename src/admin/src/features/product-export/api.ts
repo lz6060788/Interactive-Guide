@@ -1,6 +1,6 @@
 import { apiFetch } from '../../lib/api-client'
 
-export type ExportProduct = 'atlas' | 'catalog'
+export type ExportProduct = 'atlas' | 'catalog' | 'gallery'
 
 export interface ProductBuild {
   product: ExportProduct

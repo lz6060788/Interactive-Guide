@@ -145,6 +145,17 @@ export class ProjectService {
     }))
   }
 
+  updateGalleryConfig(
+    projectId: string,
+    gallery: GuideProject['products']['gallery'],
+    expectedRevision: number,
+  ): GuideProject {
+    return this.patch(projectId, expectedRevision, project => ({
+      ...project,
+      products: { ...project.products, gallery },
+    }))
+  }
+
   updateIntegrations(
     projectId: string,
     integrations: GuideProject['integrations'],

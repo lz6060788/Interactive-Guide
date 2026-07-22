@@ -20,12 +20,13 @@ import type { CatalogManifest } from '../../products/catalog/contract/catalog-ma
 export interface ReleaseManifest {
   projectId: string
   projectVersion: string
-  schemaVersion: '1.0.0'
+  schemaVersion: '1.0.0' | '1.1.0'
   generatedAt: string
   sourceRevision: number
   products: {
     atlas: { entry: string; manifest: string }
     catalog: { entry: string; manifest: string }
+    gallery?: { entry: string; manifest: string }
   }
 }
 
@@ -50,8 +51,8 @@ export class ReleaseRepository {
     if (!fs.existsSync(dir)) return []
     return fs
       .readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
-      .map((e) => e.name)
+      .filter(e => e.isDirectory())
+      .map(e => e.name)
       .sort()
   }
 
@@ -71,7 +72,16 @@ export class ReleaseRepository {
     fs.writeFileSync(path.join(dir, 'release.json'), JSON.stringify(manifest, null, 2))
   }
 
-  writeAtlasFiles(projectId: string, version: string, files: { 'index.html': string; 'app.js': string; 'manifest.json': string; assets: Map<string, Buffer> }): void {
+  writeAtlasFiles(
+    projectId: string,
+    version: string,
+    files: {
+      'index.html': string
+      'app.js': string
+      'manifest.json': string
+      assets: Map<string, Buffer>
+    },
+  ): void {
     const dir = path.join(this.releaseDir(projectId, version), 'atlas')
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(path.join(dir, 'index.html'), files['index.html'])
@@ -86,7 +96,16 @@ export class ReleaseRepository {
     }
   }
 
-  writeCatalogFiles(projectId: string, version: string, files: { 'index.html': string; 'app.js': string; 'manifest.json': string; assets: Map<string, Buffer> }): void {
+  writeCatalogFiles(
+    projectId: string,
+    version: string,
+    files: {
+      'index.html': string
+      'app.js': string
+      'manifest.json': string
+      assets: Map<string, Buffer>
+    },
+  ): void {
     const dir = path.join(this.releaseDir(projectId, version), 'catalog')
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(path.join(dir, 'index.html'), files['index.html'])

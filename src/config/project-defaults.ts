@@ -41,6 +41,14 @@ export const PROJECT_DEFAULTS = {
       },
       viewportAnimationMs: 360,
     },
+    gallery: {
+      hintText: {
+        'zh-CN': '点击或滑动文字切换节点图片',
+        'en-US': 'Tap or swipe through the list to change images',
+      },
+      itemTransitionMs: 220,
+      categoryTransitionMs: 320,
+    },
   },
 } as const
 

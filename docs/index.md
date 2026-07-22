@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: Catalog 圆点与场景动画同步 / Atlas 卡片平滑滚动 / revision 21 双预览验收 (2026-07-15)
+Last sync: Gallery 工作台主题、选中稳定性、结构 CRUD 与真实产物验收 (2026-07-22)
 
 ### Modules
 
@@ -10,6 +10,7 @@ Last sync: Catalog 圆点与场景动画同步 / Atlas 卡片平滑滚动 / revi
 | server | `src/server/` | [后端架构](architecture/后端详细设计方案.md) | — | [构建任务流](architecture/构建任务流与目录结构设计.md) | ✅ |
 | products/atlas | `src/products/atlas/` | [运行时](architecture/运行时渲染架构与扩展设计.md) | — | [Atlas产品](features/独立全景HTML产物方案设计.md) | ✅ |
 | products/catalog | `src/products/catalog/` | — | — | [Catalog产品](features/独立全景HTML产物方案设计.md) | ✅ |
+| products/gallery | `src/products/gallery/` | — | [Gallery 产品与工作台方案](plans/2026-07-22-gallery-product-workbench-implementation.md) | [Gallery 真实数据验收](development/gallery-real-data-acceptance-2026-07-22.md) | ✅ |
 | platform | `src/platform/` | — | — | [HTML协议](features/HTML节点通信协议与接入指南.md) | ✅ |
 | admin | `src/admin/` | — | — | [UI流程](features/管理端UI与操作流程设计.md) | ✅ |
 
@@ -17,6 +18,7 @@ Last sync: Catalog 圆点与场景动画同步 / Atlas 卡片平滑滚动 / revi
 
 | Doc | Description |
 |-----|-------------|
+| [Gallery 真实数据与产物验收记录](development/gallery-real-data-acceptance-2026-07-22.md) | 半导体设备 29 节点 / 29 PNG 映射、工作台主题与结构 CRUD、独立产物与浏览器验收 (2026-07-22) |
 | [Catalog 与 Atlas 运行时动效修复设计](superpowers/specs/2026-07-15-runtime-motion-polish-design.md) | Catalog marker 正圆与场景统一时间线、Atlas 卡片平滑居中滚动 (2026-07-15) |
 | [双产品 HTML 标题与资料来源文案设计](superpowers/specs/2026-07-15-product-title-source-copy-design.md) | Atlas/Catalog HTML 标题使用项目标题，共用资料来源默认文案去除机构名称 (2026-07-15) |
 | [Catalog 聚焦框固定圆角设计](superpowers/specs/2026-07-15-catalog-focus-radius-design.md) | Catalog 运行时与实时预览统一 12px 聚焦框圆角，保留 pill 主题行为 (2026-07-15) |
@@ -63,6 +65,7 @@ Last sync: Catalog 圆点与场景动画同步 / Atlas 卡片平滑滚动 / revi
 
 | Doc | Date |
 |-----|------|
+| [Gallery 图片目录型产品与工作台实施方案](plans/2026-07-22-gallery-product-workbench-implementation.md) | 2026-07-22 |
 | [ES5 独立产物导出实施计划](plans/2026-07-15-es5-standalone-export-implementation.md) | 2026-07-15 |
 | [重构后续修复与体验恢复计划](plans/2026-07-03-post-refactor-remediation-plan.md) | 2026-07-03 |
 | [双产品架构重构方案](plans/2026-06-29-双产品架构重构方案.md) | 2026-06-29 |

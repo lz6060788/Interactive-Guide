@@ -234,12 +234,15 @@ export class CatalogScene {
     this.root.appendChild(this.categoryTabs)
     this.root.appendChild(this.detailList)
     this.root.appendChild(hint)
-    this.root.appendChild(
-      createCatalogAtlasLaunchButton({
-        url: this.manifest.config.atlasLaunchUrl?.trim(),
-        onLaunch: url => this.onAtlasLaunch?.(url),
-      }),
-    )
+    const atlasLaunchUrl = this.manifest.config.atlasLaunchUrl?.trim()
+    if (atlasLaunchUrl) {
+      this.root.appendChild(
+        createCatalogAtlasLaunchButton({
+          url: atlasLaunchUrl,
+          onLaunch: url => this.onAtlasLaunch?.(url),
+        }),
+      )
+    }
     this.render()
     this.observeRuntimeSize()
   }

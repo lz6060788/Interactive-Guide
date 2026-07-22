@@ -5,7 +5,10 @@ import os from 'node:os'
 import path from 'node:path'
 import AdmZip from 'adm-zip'
 import { ProjectRepository } from '../../../src/server/storage/project-repository.js'
-import { AssetRepository, AssetValidationError } from '../../../src/server/storage/asset-repository.js'
+import {
+  AssetRepository,
+  AssetValidationError,
+} from '../../../src/server/storage/asset-repository.js'
 import { AssetService } from '../../../src/server/services/asset-service.js'
 import { createDraftProject } from '../../../src/domain/project-normalizer.js'
 
@@ -21,7 +24,12 @@ test('AssetRepository.registerImage writes file and returns definition', () => {
   const project = createDraftProject({ id: 'p1', title: 'T' })
   project.panorama.assetId = 'asset-pano'
   projects.save(project, { expectedRevision: 0 })
-  const r = repo.registerImage('p1', { id: 'asset-pano', bytes: Buffer.from('hello'), mimeType: 'image/jpeg', extension: 'jpg' })
+  const r = repo.registerImage('p1', {
+    id: 'asset-pano',
+    bytes: Buffer.from('hello'),
+    mimeType: 'image/jpeg',
+    extension: 'jpg',
+  })
   assert.equal(r.definition.kind, 'image')
   assert.match(r.definition.sha256!, /^[a-f0-9]{64}$/)
   assert.equal(r.definition.size, 5)
@@ -56,7 +64,10 @@ test('AssetRepository.registerHtmlBundle rejects zip without index.html', () => 
   const zip = new AdmZip()
   zip.addFile('main.html', Buffer.from('x'))
   const bytes = zip.toBuffer()
-  assert.throws(() => repo.registerHtmlBundle('p1', { id: 'scene-rocket', bytes }), AssetValidationError)
+  assert.throws(
+    () => repo.registerHtmlBundle('p1', { id: 'scene-rocket', bytes }),
+    AssetValidationError,
+  )
   cleanup()
 })
 
@@ -219,7 +230,7 @@ test('AssetService.registerImage rejects duplicate asset id', () => {
   cleanup()
 })
 
-test('AssetService.remove cleans up asset and references in scenes / routes', () => {
+test('AssetService.remove cleans up asset and references in scenes / routes / Gallery', () => {
   const { dir, cleanup } = tmpDataDir()
   const projects = new ProjectRepository({ dataDir: dir })
   const repo = new AssetRepository(projects, { dataDir: dir })
@@ -248,6 +259,7 @@ test('AssetService.remove cleans up asset and references in scenes / routes', ()
     to: { kind: 'scene', sceneId: 'scene-x' },
     transition: { kind: 'video', assetId: 'asset-pano', onFailure: 'cut' },
   })
+  p.products.gallery.itemImageAssetIds['item-x'] = 'asset-pano'
   const r2 = projects.save(p, { expectedRevision: 2 })
   if (r2.conflict) throw new Error('expected save 2')
   service.remove('p1', 'asset-pano', r2.revision)
@@ -255,5 +267,6 @@ test('AssetService.remove cleans up asset and references in scenes / routes', ()
   assert.equal(after.assets.byId['asset-pano'], undefined)
   assert.equal(after.scenes.length, 0)
   assert.equal(after.navigation.routes[0].transition, undefined)
+  assert.equal(after.products.gallery.itemImageAssetIds['item-x'], undefined)
   cleanup()
 })

@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { GuideProject } from '../../domain/project-types.js'
 import { compileAtlas } from '../../products/atlas/compiler/atlas-compiler.js'
 import { compileCatalog } from '../../products/catalog/compiler/catalog-compiler.js'
+import { compileGallery } from '../../products/gallery/compiler/gallery-compiler.js'
 import { ProjectRepository } from '../storage/project-repository.js'
 import { buildAssetClosure, computeReferencedAssetIds } from './asset-closure.js'
 import { buildBrowserRuntimeBundle } from './browser-runtime-packager.js'
@@ -17,7 +18,7 @@ export interface StaticProductBuildResult {
   report: ValidationReport
 }
 
-/** Build one complete, self-contained Atlas or Catalog directory. */
+/** Build one complete, self-contained product directory. */
 export function buildStaticProduct(options: {
   project: GuideProject
   projects: ProjectRepository
@@ -27,7 +28,7 @@ export function buildStaticProduct(options: {
 }): StaticProductBuildResult {
   const now = options.now ?? (() => new Date().toISOString())
   const { project, projects, product, productDir } = options
-  if (!project.panorama.assetId) {
+  if (product !== 'gallery' && !project.panorama.assetId) {
     throw new Error(`project "${project.id}" has no panorama bound; cannot build ${product}`)
   }
 
@@ -39,11 +40,10 @@ export function buildStaticProduct(options: {
       ('sceneId' in route.from && sceneAssetIds.has(route.from.sceneId))
     if (reachable && route.transition?.assetId) transitionAssetIds.add(route.transition.assetId)
   }
-  const referencedAssetIds = computeReferencedAssetIds(
-    project.panorama.assetId,
-    sceneAssetIds,
-    transitionAssetIds,
-  )
+  const referencedAssetIds =
+    product === 'gallery'
+      ? new Set(Object.values(project.products.gallery.itemImageAssetIds))
+      : computeReferencedAssetIds(project.panorama.assetId, sceneAssetIds, transitionAssetIds)
   if (project.integrations.share?.imageAssetId) {
     referencedAssetIds.add(project.integrations.share.imageAssetId)
   }
@@ -52,10 +52,13 @@ export function buildStaticProduct(options: {
     assets: project.assets.byId,
     referencedAssetIds,
   })
-  const manifest =
+  const compiled =
     product === 'atlas'
-      ? compileAtlas(project, closure, now).manifest
-      : compileCatalog(project, closure, now).manifest
+      ? compileAtlas(project, closure, now)
+      : product === 'catalog'
+        ? compileCatalog(project, closure, now)
+        : compileGallery(project, closure, now)
+  const manifest = compiled.manifest
 
   fs.mkdirSync(productDir, { recursive: true })
   const runtime = buildBrowserRuntimeBundle({ product })
@@ -69,7 +72,7 @@ export function buildStaticProduct(options: {
   fs.writeFileSync(path.join(productDir, 'app.js'), shell['app.js'])
   const manifestPath = path.join(productDir, 'manifest.json')
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2))
-  copyReferencedAssets(project, projects, assets, productDir)
+  copyReferencedAssets(project, projects, compiled.assets ?? assets, productDir)
 
   const report = validateProduct(productDir, product)
   if (!report.ok) {

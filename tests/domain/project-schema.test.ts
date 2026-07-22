@@ -6,8 +6,9 @@ import { createDraftProject } from '../../src/domain/project-normalizer.js'
 
 const base = () => createDraftProject({ id: 'p1', title: 'Test', locale: 'zh-CN' })
 
-test('SchemaVersionSchema accepts only "3.0.0"', () => {
-  assert.equal(SchemaVersionSchema.safeParse('3.0.0').success, true)
+test('SchemaVersionSchema accepts only "4.0.0"', () => {
+  assert.equal(SchemaVersionSchema.safeParse('4.0.0').success, true)
+  assert.equal(SchemaVersionSchema.safeParse('3.0.0').success, false)
   assert.equal(SchemaVersionSchema.safeParse('1.0.0').success, false)
   assert.equal(SchemaVersionSchema.safeParse('2.0.0').success, false)
 })
