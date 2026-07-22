@@ -80,13 +80,13 @@
     "docs": {
       "implementation_plan": {
         "path": "docs/plans/2026-07-22-gallery-product-workbench-implementation.md",
-        "summary": "Handles Gallery design including stable focus, bilingual authoring, and release.",
-        "signature": "5756897dd97534d8"
+        "summary": "Handles Gallery design including vertical motion, stable focus, and i18n.",
+        "signature": "291063621e4eb909"
       },
       "real_data_acceptance": {
         "path": "docs/development/gallery-real-data-acceptance-2026-07-22.md",
-        "summary": "Validates Gallery using 29 real nodes, URL focus, and bilingual editing.",
-        "signature": "af81c7287e7a6f7b"
+        "summary": "Validates Gallery using real nodes, vertical motion, focus, and i18n.",
+        "signature": "b85f0e55759c7ec4"
       }
     }
   },

@@ -1,6 +1,6 @@
 ## Docs Index
 
-Last sync: Gallery 跨语言 focus、英文启用编辑与产物语言切换验收 (2026-07-22)
+Last sync: Gallery 纵向滚动正式合入主线，跨语言 focus 与英文编辑验收 (2026-07-22)
 
 ### Modules
 
@@ -18,7 +18,7 @@ Last sync: Gallery 跨语言 focus、英文启用编辑与产物语言切换验�
 
 | Doc | Description |
 |-----|-------------|
-| [Gallery 真实数据与产物验收记录](development/gallery-real-data-acceptance-2026-07-22.md) | 半导体设备 29 节点 / 29 PNG 映射、跨语言 URL 聚焦、英文工作台与独立产物验收 (2026-07-22) |
+| [Gallery 真实数据与产物验收记录](development/gallery-real-data-acceptance-2026-07-22.md) | 半导体设备 29 节点 / 29 PNG 映射、主线纵向滚动、跨语言 URL 聚焦与英文工作台验收 (2026-07-22) |
 | [Catalog 与 Atlas 运行时动效修复设计](superpowers/specs/2026-07-15-runtime-motion-polish-design.md) | Catalog marker 正圆与场景统一时间线、Atlas 卡片平滑居中滚动 (2026-07-15) |
 | [双产品 HTML 标题与资料来源文案设计](superpowers/specs/2026-07-15-product-title-source-copy-design.md) | Atlas/Catalog HTML 标题使用项目标题，共用资料来源默认文案去除机构名称 (2026-07-15) |
 | [Catalog 聚焦框固定圆角设计](superpowers/specs/2026-07-15-catalog-focus-radius-design.md) | Catalog 运行时与实时预览统一 12px 聚焦框圆角，保留 pill 主题行为 (2026-07-15) |

@@ -1,9 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { ResolvedGalleryManifest } from '../../../src/products/gallery/contract/gallery-manifest.js'
-import { resolveGalleryInitialItem } from '../../../src/products/gallery/runtime/gallery-runtime.js'
 import { resolveGalleryFocusItemId } from '../../../src/products/gallery/runtime/gallery-focus.js'
-import { resolveGallerySelection } from '../../../src/products/gallery/runtime/gallery-scene.js'
+import { resolveGalleryInitialItem } from '../../../src/products/gallery/runtime/gallery-runtime.js'
+import {
+  resolveGalleryImageScrollDirection,
+  resolveGallerySelection,
+} from '../../../src/products/gallery/runtime/gallery-scene.js'
 
 function manifest(): ResolvedGalleryManifest {
   return {
@@ -74,4 +77,26 @@ test('Gallery selection derives the owning stage and category from an item id', 
     categoryId: 'cat-tools',
     itemId: 'item-lithography',
   })
+})
+
+test('Gallery image scroll follows the authored item order in both directions', () => {
+  const value = manifest()
+  value.stages[1].categories[0].itemIds.push('item-coating')
+  value.items.push({
+    id: 'item-coating',
+    categoryId: 'cat-tools',
+    title: '涂胶显影设备',
+    description: '涂胶显影设备',
+    order: 1,
+    image: { assetId: 'image-2', url: './assets/image-2.png' },
+  })
+
+  assert.equal(
+    resolveGalleryImageScrollDirection(value, 'item-lithography', 'item-coating'),
+    'forward',
+  )
+  assert.equal(
+    resolveGalleryImageScrollDirection(value, 'item-coating', 'item-lithography'),
+    'backward',
+  )
 })
