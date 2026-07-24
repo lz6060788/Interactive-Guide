@@ -68,7 +68,7 @@ Each `itemIds` entry must exist in `items`, and each item's `categoryId` must po
 
 ## Panorama and Placement
 
-Upload the panorama first, read the resulting asset definition, then set `panorama.assetId`. Coordinates are normalized to `[0,1]`.
+This section is required when Atlas or Catalog is selected. Upload the panorama first, read the resulting asset definition, then set `panorama.assetId`. Coordinates are normalized to `[0,1]`.
 
 ```json
 {
@@ -103,10 +103,30 @@ Treat the numbers above as shape examples only. Never use them as fallback coord
 
 ## Product Membership
 
+- Treat the inventory `productTypes` as the delivery selection. It does not replace or extend the Workbench project schema.
 - Add the intended category IDs to `products.atlas.categoryIds`.
 - Preserve `products.catalog.stageOrder` as `upstream`, `midstream`, `downstream`.
+
+### Gallery
+
+Upload every item image, preserve the current `products.gallery` defaults, set `enabled` to `true`, and populate `itemImageAssetIds`:
+
+```json
+{
+  "enabled": true,
+  "itemImageAssetIds": {
+    "dram": "asset-gallery-dram"
+  }
+}
+```
+
+Send the complete current Gallery section with these fields merged in. Every authored item must have a real uploaded image before Gallery can compile.
+
+### Shared Rules
+
 - Preserve editor-created interaction/theme/viewport defaults unless the user asks to change them.
 - Localize optional `hintText` in both locales.
+- Do not disable or rewrite an unselected product. Preserve its project config and omit it from preview/export instead.
 
 ## Scenes and Routes
 

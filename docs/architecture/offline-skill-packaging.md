@@ -2,7 +2,7 @@
 
 ## Overview
 
-`interactive-guide-offline` packages the existing Workbench server and admin build into an installable Agent Skill. The Skill is an orchestration layer: it collects real authoring materials, calls the existing loopback HTTP API, exposes the existing admin UI for review, and downloads the existing Atlas/Catalog preview ZIPs after explicit user acceptance.
+`interactive-guide-offline` packages the existing Workbench server and admin build into an installable Agent Skill. The Skill is an orchestration layer: it first records the requested product types, collects their real authoring materials, calls the existing loopback HTTP API, exposes the existing admin UI for review, and downloads the selected Atlas/Catalog/Gallery preview ZIPs after explicit user acceptance.
 
 This design keeps two independently evolving versions:
 
@@ -28,10 +28,10 @@ interactive-guide-offline Skill
 Existing Workbench
   - Express project and asset API
   - React admin build
-  - Atlas/Catalog preview builders
+  - Atlas/Catalog/Gallery preview builders
         |
         v
-Workspace project data + two standalone ZIPs
+Workspace project data + selected standalone ZIPs
 ```
 
 ### Source and Artifact Layout
@@ -56,7 +56,7 @@ interactive-guide-offline/
     workbench-manifest.json
 ```
 
-The runtime source closure is necessary because the current preview service invokes esbuild/Babel while producing standalone ES5 Atlas and Catalog bundles. The packager discovers those source inputs through esbuild metadata instead of copying the entire repository.
+The runtime source closure is necessary because the current preview service invokes esbuild/Babel while producing standalone ES5 Atlas, Catalog, and Gallery bundles. The packager discovers those source inputs through esbuild metadata instead of copying the entire repository.
 
 ### Assembly Contract
 
@@ -64,7 +64,7 @@ The package command:
 
 1. Builds the existing server and admin without modifying their source.
 2. Traverses the compiled server's relative imports from `dist/server/index.js`.
-3. Discovers both browser runtime source closures from the Atlas/Catalog entry files.
+3. Discovers the browser runtime source closures from the Atlas/Catalog/Gallery entry files.
 4. Resolves direct, transitive, optional, and peer Node dependencies from the installed repository packages.
 5. Writes a platform-specific ZIP with a Workbench manifest, artifact SHA-256, and sidecar checksum file.
 
@@ -90,7 +90,8 @@ The HTTP client rejects non-loopback base URLs. It uses existing project, asset,
 - No network service binding beyond loopback.
 - No AI or synthetic fallback content. Missing optional material is surfaced for manual review.
 - No final export before explicit user confirmation.
-- Atlas and Catalog remain independent HTML bundles produced from one reviewed project revision.
+- Product selection is Skill workflow state (`productTypes`), not a second Workbench domain model. Unselected project sections are preserved and omitted from build/delivery.
+- Atlas, Catalog, and Gallery remain independent HTML bundles; the selected subset is produced from one reviewed project revision.
 
 ### Versioning
 
@@ -102,12 +103,12 @@ Skill workflow changes can evolve independently as long as they use the existing
 
 ### Authoring
 
-1. The agent asks for project identity, bilingual knowledge, panorama, available hotspot/callout maps, scenes/videos, share copy, and analytics settings.
+1. The agent first asks for one or more product types: Atlas (独立交互图), Catalog (全景交互图), or Gallery (普通交互图). It then asks for project identity, bilingual knowledge, and only the materials required by the selection.
 2. `material-inventory.mjs` verifies local files and hashes them; missing optional inputs become a manual-review list.
 3. The launcher starts the bundled Workbench.
-4. `workbench-client.mjs` creates or updates the project through existing HTTP routes and uploads real assets.
-5. The user reviews both locales and both products in the Workbench UI. The agent performs targeted repairs until the user confirms completion.
-6. The client builds fresh Atlas and Catalog previews from the same revision and downloads both ZIPs with SHA-256 values.
+4. `workbench-client.mjs` creates or updates the project through existing HTTP routes, including Gallery configuration, and uploads real assets.
+5. The user reviews both locales and every selected product in the Workbench UI. The agent performs targeted repairs until the user confirms completion.
+6. The client builds fresh previews for exactly the selected product types from the same revision and downloads their ZIPs with SHA-256 values.
 
 ### Build and Verification
 
@@ -116,4 +117,4 @@ npm run package:offline-skill
 npm run verify:offline-skill-package
 ```
 
-The verification command rebuilds and assembles the artifact, extracts it into an isolated local workspace, starts the packaged Workbench, validates UI/API routing, creates a minimal bilingual project, uploads a panorama, and builds/downloads both product ZIPs. Any failure prevents the package from being treated as deliverable.
+The verification command rebuilds and assembles the artifact, extracts it into an isolated local workspace, starts the packaged Workbench, validates UI/API routing, creates a minimal bilingual project, uploads a real image, enables Gallery with an item-image mapping, and builds/downloads all three product ZIPs. Any failure prevents the package from being treated as deliverable.

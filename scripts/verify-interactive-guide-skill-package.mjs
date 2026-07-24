@@ -119,14 +119,56 @@ async function createSmokeProject(baseUrl) {
   })
   if (!upload.ok) throw new Error(`asset upload failed: ${await upload.text()}`)
   project = (await jsonRequest(baseUrl, '/projects/offline-package-smoke')).data
-  await jsonRequest(baseUrl, '/projects/offline-package-smoke/panorama', {
-    method: 'PUT',
-    headers: { 'x-expected-revision': String(project.metadata.revision) },
-    body: { ...project.panorama, assetId: 'asset-panorama' },
-  })
+  project = (
+    await jsonRequest(baseUrl, '/projects/offline-package-smoke/panorama', {
+      method: 'PUT',
+      headers: { 'x-expected-revision': String(project.metadata.revision) },
+      body: { ...project.panorama, assetId: 'asset-panorama' },
+    })
+  ).data
+
+  const stages = structuredClone(project.knowledge.stages)
+  stages[1].categories = [
+    {
+      id: 'smoke-category',
+      title: { 'zh-CN': '冒烟分类', 'en-US': 'Smoke Category' },
+      order: 0,
+      itemIds: ['smoke-item'],
+      experience: { kind: 'panorama' },
+    },
+  ]
+  project = (
+    await jsonRequest(baseUrl, '/projects/offline-package-smoke/knowledge', {
+      method: 'PUT',
+      headers: { 'x-expected-revision': String(project.metadata.revision) },
+      body: {
+        stages,
+        items: {
+          'smoke-item': {
+            id: 'smoke-item',
+            categoryId: 'smoke-category',
+            title: { 'zh-CN': '冒烟节点', 'en-US': 'Smoke Item' },
+            description: { 'zh-CN': '离线验证', 'en-US': 'Offline verification' },
+            order: 0,
+          },
+        },
+      },
+    })
+  ).data
+  project = (
+    await jsonRequest(baseUrl, '/projects/offline-package-smoke/products/gallery', {
+      method: 'PUT',
+      headers: { 'x-expected-revision': String(project.metadata.revision) },
+      body: {
+        ...project.products.gallery,
+        enabled: true,
+        itemImageAssetIds: { 'smoke-item': 'asset-panorama' },
+      },
+    })
+  ).data
 
   const outputs = []
-  for (const product of ['atlas', 'catalog']) {
+  for (const product of ['atlas', 'catalog', 'gallery']) {
     const build = (
       await jsonRequest(baseUrl, `/projects/offline-package-smoke/previews/${product}`, {
         method: 'POST',
@@ -178,6 +220,7 @@ async function main() {
       'interactive-guide-offline/scripts/workbench-client.mjs',
       'interactive-guide-offline/workbench/dist/server/index.js',
       'interactive-guide-offline/workbench/dist/admin/index.html',
+      'interactive-guide-offline/workbench/src/product-shell/browser/gallery-entry.ts',
       'interactive-guide-offline/workbench/workbench-manifest.json',
     ]
     for (const name of required) {
@@ -202,7 +245,9 @@ async function main() {
 
     const health = await fetch(new URL('/api/health', launched.uiUrl))
     if (!health.ok) throw new Error(`packaged health check returned ${health.status}`)
-    const admin = await fetch(new URL('/projects/offline-package-smoke/atlas', launched.uiUrl))
+    const admin = await fetch(
+      new URL('/projects/offline-package-smoke/gallery-editor', launched.uiUrl),
+    )
     if (!admin.ok || !/^<!doctype html>/i.test(await admin.text())) {
       throw new Error('packaged admin SPA fallback failed')
     }

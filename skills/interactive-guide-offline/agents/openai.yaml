@@ -1,4 +1,4 @@
 interface:
   display_name: 'Interactive Guide Offline'
-  short_description: 'Orchestrate offline Atlas and Catalog production'
-  default_prompt: 'Use $interactive-guide-offline to create or update an offline bilingual Atlas/Catalog project from my materials.'
+  short_description: 'Orchestrate offline Atlas, Catalog, and Gallery'
+  default_prompt: 'Use $interactive-guide-offline to choose product types and create or update their offline bilingual Interactive Guide project from my materials.'

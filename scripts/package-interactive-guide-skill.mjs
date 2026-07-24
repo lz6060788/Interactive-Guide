@@ -128,6 +128,7 @@ function browserRuntimeInputs() {
   const entryPoints = [
     path.join(repositoryRoot, 'src', 'product-shell', 'browser', 'atlas-entry.ts'),
     path.join(repositoryRoot, 'src', 'product-shell', 'browser', 'catalog-entry.ts'),
+    path.join(repositoryRoot, 'src', 'product-shell', 'browser', 'gallery-entry.ts'),
   ]
   const inputs = new Set()
   for (const entryPoint of entryPoints) {
@@ -279,6 +280,7 @@ function writeWorkbenchManifest(workbenchRoot, compiledFiles, runtimeSources, pa
     path.join('dist', 'admin', 'index.html'),
     path.join('src', 'product-shell', 'browser', 'atlas-entry.ts'),
     path.join('src', 'product-shell', 'browser', 'catalog-entry.ts'),
+    path.join('src', 'product-shell', 'browser', 'gallery-entry.ts'),
     path.join('vendor', 'king-fisher', 'bridge-0.6.0.umd.js'),
     path.join('vendor', 'king-fisher', 'falcon-0.5.26-zcp-692-snapshot.umd.js'),
   ]
@@ -294,6 +296,7 @@ function writeWorkbenchManifest(workbenchRoot, compiledFiles, runtimeSources, pa
       server: 'dist/server/index.js',
       admin: 'dist/admin/index.html',
     },
+    supportedProducts: ['atlas', 'catalog', 'gallery'],
     closure: {
       compiledFiles: compiledFiles.size,
       browserRuntimeSources: runtimeSources.size,

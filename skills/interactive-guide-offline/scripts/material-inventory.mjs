@@ -4,6 +4,8 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
+const PRODUCT_TYPES = ['atlas', 'catalog', 'gallery']
+
 function usage() {
   return `Usage:
   node scripts/material-inventory.mjs --input <inventory.json>
@@ -57,6 +59,78 @@ function inspectList(value, label, baseDir, issues) {
     .filter(Boolean)
 }
 
+function validateProductTypes(value, issues) {
+  if (!Array.isArray(value) || value.length === 0) {
+    issues.push({
+      path: 'productTypes',
+      message: 'must contain at least one of atlas, catalog, or gallery',
+    })
+    return []
+  }
+  const selected = []
+  for (const [index, product] of value.entries()) {
+    if (!PRODUCT_TYPES.includes(product)) {
+      issues.push({
+        path: `productTypes[${index}]`,
+        message: 'must be atlas, catalog, or gallery',
+      })
+      continue
+    }
+    if (selected.includes(product)) {
+      issues.push({ path: `productTypes[${index}]`, message: `duplicates "${product}"` })
+      continue
+    }
+    selected.push(product)
+  }
+  return PRODUCT_TYPES.filter(product => selected.includes(product))
+}
+
+function inspectGalleryImages(value, baseDir, issues, required) {
+  if (value === undefined) {
+    if (required) {
+      issues.push({
+        path: 'galleryItemImages',
+        message: 'is required when gallery is selected',
+      })
+    }
+    return []
+  }
+  if (!Array.isArray(value)) {
+    issues.push({
+      path: 'galleryItemImages',
+      message: 'must be an array of { itemId, path } entries',
+    })
+    return []
+  }
+  const seenItemIds = new Set()
+  const images = []
+  for (const [index, entry] of value.entries()) {
+    const label = `galleryItemImages[${index}]`
+    if (!entry || typeof entry !== 'object') {
+      issues.push({ path: label, message: 'must be an object with itemId and path' })
+      continue
+    }
+    if (typeof entry.itemId !== 'string' || !entry.itemId.trim()) {
+      issues.push({ path: `${label}.itemId`, message: 'is required' })
+      continue
+    }
+    if (seenItemIds.has(entry.itemId)) {
+      issues.push({ path: `${label}.itemId`, message: `duplicates "${entry.itemId}"` })
+      continue
+    }
+    seenItemIds.add(entry.itemId)
+    const file = inspectFile(entry.path, `${label}.path`, baseDir, issues, true)
+    if (file) images.push({ itemId: entry.itemId, ...file })
+  }
+  if (required && images.length === 0) {
+    issues.push({
+      path: 'galleryItemImages',
+      message: 'must contain at least one real item image when gallery is selected',
+    })
+  }
+  return images
+}
+
 function validateProject(project, issues) {
   if (!project || typeof project !== 'object') {
     issues.push({ path: 'project', message: 'is required' })
@@ -89,6 +163,9 @@ function main() {
   const baseDir = path.dirname(resolvedInput)
   const issues = []
   validateProject(inventory.project, issues)
+  const productTypes = validateProductTypes(inventory.productTypes, issues)
+  const requiresPanorama = productTypes.includes('atlas') || productTypes.includes('catalog')
+  const requiresGalleryImages = productTypes.includes('gallery')
   const files = {
     knowledgeDocuments: inspectList(
       inventory.knowledgeDocuments,
@@ -96,7 +173,13 @@ function main() {
       baseDir,
       issues,
     ),
-    panoramaImage: inspectFile(inventory.panoramaImage, 'panoramaImage', baseDir, issues, true),
+    panoramaImage: inspectFile(
+      inventory.panoramaImage,
+      'panoramaImage',
+      baseDir,
+      issues,
+      requiresPanorama,
+    ),
     hotspotPositionMap: inspectFile(
       inventory.hotspotPositionMap,
       'hotspotPositionMap',
@@ -113,6 +196,12 @@ function main() {
     analyticsConfig: inspectFile(inventory.analyticsConfig, 'analyticsConfig', baseDir, issues),
     htmlSceneBundles: inspectList(inventory.htmlSceneBundles, 'htmlSceneBundles', baseDir, issues),
     transitionVideos: inspectList(inventory.transitionVideos, 'transitionVideos', baseDir, issues),
+    galleryItemImages: inspectGalleryImages(
+      inventory.galleryItemImages,
+      baseDir,
+      issues,
+      requiresGalleryImages,
+    ),
   }
   if (files.knowledgeDocuments.length === 0) {
     issues.push({
@@ -121,14 +210,27 @@ function main() {
     })
   }
   const manualReview = []
-  if (!files.hotspotPositionMap) manualReview.push('Atlas hotspot positions')
-  if (!files.calloutPositionMap) manualReview.push('Atlas callouts and Catalog focus rectangles')
+  if (productTypes.includes('atlas') && !files.hotspotPositionMap) {
+    manualReview.push('Atlas hotspot positions')
+  }
+  if (
+    (productTypes.includes('atlas') || productTypes.includes('catalog')) &&
+    !files.calloutPositionMap
+  ) {
+    manualReview.push('Atlas callouts and Catalog focus rectangles')
+  }
+  if (productTypes.includes('gallery')) {
+    manualReview.push('Gallery item-to-image mapping completeness')
+  }
   if (!files.shareCopy) manualReview.push('share copy (if sharing is enabled)')
-  if (!files.analyticsConfig) manualReview.push('analytics settings (if analytics is enabled)')
+  if (productTypes.includes('atlas') && !files.analyticsConfig) {
+    manualReview.push('analytics settings (if Atlas analytics is enabled)')
+  }
   const output = {
     ok: issues.length === 0,
     inventoryPath: resolvedInput,
     project: inventory.project ?? null,
+    productTypes,
     files,
     manualReview,
     issues,

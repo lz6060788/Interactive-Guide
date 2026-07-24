@@ -66,10 +66,12 @@ test('material inventory verifies real bilingual inputs and reports manual calib
   const root = temporaryRoot('guide-materials')
   fs.writeFileSync(path.join(root, 'knowledge.md'), '# Knowledge\n')
   fs.writeFileSync(path.join(root, 'panorama.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+  fs.writeFileSync(path.join(root, 'dram.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
   const inventoryPath = path.join(root, 'inventory.json')
   fs.writeFileSync(
     inventoryPath,
     JSON.stringify({
+      productTypes: ['atlas', 'gallery'],
       project: {
         id: 'memory-chip-industry-chain',
         title: { 'zh-CN': '存储芯片产业链', 'en-US': 'Memory Chip Industry Chain' },
@@ -77,6 +79,7 @@ test('material inventory verifies real bilingual inputs and reports manual calib
       },
       knowledgeDocuments: ['knowledge.md'],
       panoramaImage: 'panorama.png',
+      galleryItemImages: [{ itemId: 'dram', path: 'dram.png' }],
     }),
   )
 
@@ -87,19 +90,55 @@ test('material inventory verifies real bilingual inputs and reports manual calib
   assert.equal(result.code, 0, result.stderr)
   const output = JSON.parse(result.stdout)
   assert.equal(output.ok, true)
+  assert.deepEqual(output.productTypes, ['atlas', 'gallery'])
   assert.equal(output.files.knowledgeDocuments.length, 1)
   assert.match(output.files.panoramaImage.sha256, /^[a-f0-9]{64}$/)
+  assert.match(output.files.galleryItemImages[0].sha256, /^[a-f0-9]{64}$/)
   assert(output.manualReview.includes('Atlas hotspot positions'))
+  assert(output.manualReview.includes('Gallery item-to-image mapping completeness'))
 })
 
-test('workbench client uses revisions and exports both preview ZIPs without overwriting', async () => {
+test('gallery-only material inventory does not require a panorama image', async () => {
+  const root = temporaryRoot('guide-gallery-materials')
+  fs.writeFileSync(path.join(root, 'knowledge.md'), '# Knowledge\n')
+  fs.writeFileSync(path.join(root, 'dram.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+  const inventoryPath = path.join(root, 'inventory.json')
+  fs.writeFileSync(
+    inventoryPath,
+    JSON.stringify({
+      productTypes: ['gallery'],
+      project: {
+        id: 'memory-chip-industry-chain',
+        title: { 'zh-CN': '存储芯片产业链', 'en-US': 'Memory Chip Industry Chain' },
+        defaultLocale: 'zh-CN',
+      },
+      knowledgeDocuments: ['knowledge.md'],
+      galleryItemImages: [{ itemId: 'dram', path: 'dram.png' }],
+    }),
+  )
+
+  const result = await runNode(path.join(skillScripts, 'material-inventory.mjs'), [
+    '--input',
+    inventoryPath,
+  ])
+  assert.equal(result.code, 0, result.stderr)
+  const output = JSON.parse(result.stdout)
+  assert.equal(output.ok, true)
+  assert.equal(output.files.panoramaImage, null)
+  assert(!output.manualReview.includes('Atlas hotspot positions'))
+  assert(!output.manualReview.includes('Atlas callouts and Catalog focus rectangles'))
+})
+
+test('workbench client uses revisions and exports selected preview ZIPs without overwriting', async () => {
   let revision = 4
+  let galleryEnabled = true
   let updateHeader = ''
   let updateBody: unknown
   const project = () => ({
     id: 'demo',
     metadata: { revision },
     knowledge: { stages: [], items: {} },
+    products: { gallery: { enabled: galleryEnabled } },
   })
   const server = http.createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
@@ -125,7 +164,9 @@ test('workbench client uses revisions and exports both preview ZIPs without over
       })
       return
     }
-    const previewMatch = /^\/api\/projects\/demo\/previews\/(atlas|catalog)$/.exec(url.pathname)
+    const previewMatch = /^\/api\/projects\/demo\/previews\/(atlas|catalog|gallery)$/.exec(
+      url.pathname,
+    )
     if (request.method === 'POST' && previewMatch) {
       const product = previewMatch[1]
       sendJson(200, {
@@ -138,7 +179,7 @@ test('workbench client uses revisions and exports both preview ZIPs without over
       })
       return
     }
-    const downloadMatch = /^\/api\/download\/(atlas|catalog)\.zip$/.exec(url.pathname)
+    const downloadMatch = /^\/api\/download\/(atlas|catalog|gallery)\.zip$/.exec(url.pathname)
     if (request.method === 'GET' && downloadMatch) {
       const product = downloadMatch[1]
       response.writeHead(200, {
@@ -171,18 +212,45 @@ test('workbench client uses revisions and exports both preview ZIPs without over
     assert.equal(JSON.parse(updated.stdout).project.metadata.revision, 5)
 
     const outputDir = path.join(root, 'outputs')
-    const exported = await runNode(client, ['export', ...baseArgs, '--output-dir', outputDir])
+    const exported = await runNode(client, [
+      'export',
+      ...baseArgs,
+      '--output-dir',
+      outputDir,
+      '--products',
+      'all',
+    ])
     assert.equal(exported.code, 0, exported.stderr)
     const exportResult = JSON.parse(exported.stdout)
-    assert.equal(exportResult.files.length, 2)
+    assert.deepEqual(exportResult.products, ['atlas', 'catalog', 'gallery'])
+    assert.equal(exportResult.files.length, 3)
     assert(
       exportResult.files.every((file: { sha256: string }) => /^[a-f0-9]{64}$/.test(file.sha256)),
     )
-    assert.equal(fs.readdirSync(outputDir).filter(name => name.endsWith('.zip')).length, 2)
+    assert.equal(fs.readdirSync(outputDir).filter(name => name.endsWith('.zip')).length, 3)
 
-    const collision = await runNode(client, ['export', ...baseArgs, '--output-dir', outputDir])
+    const collision = await runNode(client, [
+      'export',
+      ...baseArgs,
+      '--output-dir',
+      outputDir,
+      '--products',
+      'all',
+    ])
     assert.equal(collision.code, 1)
     assert.match(collision.stderr, /refusing to overwrite existing file/)
+
+    galleryEnabled = false
+    const disabledGallery = await runNode(client, [
+      'export',
+      ...baseArgs,
+      '--output-dir',
+      path.join(root, 'disabled-gallery'),
+      '--products',
+      'gallery',
+    ])
+    assert.equal(disabledGallery.code, 1)
+    assert.match(disabledGallery.stderr, /gallery was selected.*enabled is false/)
   } finally {
     await close(server)
   }

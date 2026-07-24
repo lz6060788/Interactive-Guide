@@ -4,6 +4,8 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
+const PRODUCT_TYPES = ['atlas', 'catalog', 'gallery']
+
 const SECTION_PATHS = {
   metadata: 'metadata',
   localization: 'localization',
@@ -13,6 +15,7 @@ const SECTION_PATHS = {
   navigation: 'navigation',
   atlas: 'products/atlas',
   catalog: 'products/catalog',
+  gallery: 'products/gallery',
   integrations: 'integrations',
 }
 
@@ -23,10 +26,11 @@ function usage() {
   node scripts/workbench-client.mjs create --base-url <url> --input <create.json>
   node scripts/workbench-client.mjs update --base-url <url> --project-id <id> --section <section> --input <section.json> [--expected-revision <n>]
   node scripts/workbench-client.mjs upload --base-url <url> --project-id <id> --kind <image|video|html-bundle> --asset-id <id> --file <path> [--content-type <mime>] [--expected-revision <n>]
-  node scripts/workbench-client.mjs preview --base-url <url> --project-id <id> --product <atlas|catalog>
-  node scripts/workbench-client.mjs export --base-url <url> --project-id <id> --output-dir <directory> [--product <both|atlas|catalog>]
+  node scripts/workbench-client.mjs preview --base-url <url> --project-id <id> --product <atlas|catalog|gallery>
+  node scripts/workbench-client.mjs export --base-url <url> --project-id <id> --output-dir <directory> --products <atlas,catalog,gallery>
 
-Sections: metadata, localization, knowledge, panorama, scenes, navigation, atlas, catalog, integrations.
+Sections: metadata, localization, knowledge, panorama, scenes, navigation, atlas, catalog, gallery, integrations.
+Use --products all for all three products. Legacy --product both means atlas,catalog.
 The base URL must resolve to localhost or a loopback IP address.`
 }
 
@@ -217,9 +221,32 @@ async function uploadAsset(baseUrl, args) {
 }
 
 function assertProduct(value) {
-  if (value !== 'atlas' && value !== 'catalog')
-    throw new Error('--product must be atlas or catalog')
+  if (!PRODUCT_TYPES.includes(value)) {
+    throw new Error('--product must be atlas, catalog, or gallery')
+  }
   return value
+}
+
+function requestedProducts(args) {
+  const raw = args.products ?? args.product
+  if (!raw) {
+    throw new Error(
+      '--products is required; choose atlas, catalog, gallery, or a comma-separated set',
+    )
+  }
+  if (raw === 'all') return [...PRODUCT_TYPES]
+  if (raw === 'both') return ['atlas', 'catalog']
+  const selected = raw
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean)
+  if (selected.length === 0 || selected.some(product => !PRODUCT_TYPES.includes(product))) {
+    throw new Error('--products must contain only atlas, catalog, and gallery')
+  }
+  if (new Set(selected).size !== selected.length) {
+    throw new Error('--products must not contain duplicates')
+  }
+  return PRODUCT_TYPES.filter(product => selected.includes(product))
 }
 
 async function buildPreview(baseUrl, projectId, product) {
@@ -279,13 +306,14 @@ async function downloadZip(baseUrl, downloadUrl, outputDir, fallbackName) {
 async function exportProducts(baseUrl, args) {
   const projectId = requireArg(args, 'project-id')
   const outputDir = path.resolve(requireArg(args, 'output-dir'))
-  const requested = args.product ?? 'both'
-  if (!['both', 'atlas', 'catalog'].includes(requested)) {
-    throw new Error('--product must be both, atlas, or catalog')
-  }
   const project = await getProject(baseUrl, projectId)
   const sourceRevision = project?.data?.metadata?.revision
-  const products = requested === 'both' ? ['atlas', 'catalog'] : [requested]
+  const products = requestedProducts(args)
+  if (products.includes('gallery') && project?.data?.products?.gallery?.enabled !== true) {
+    throw new Error(
+      'gallery was selected but project.products.gallery.enabled is false; enable and configure Gallery before export',
+    )
+  }
   const builds = []
   for (const product of products) builds.push(await buildPreview(baseUrl, projectId, product))
   for (const build of builds) {
@@ -307,7 +335,7 @@ async function exportProducts(baseUrl, args) {
       )),
     })
   }
-  return { ok: true, command: 'export', projectId, sourceRevision, files }
+  return { ok: true, command: 'export', projectId, sourceRevision, products, files }
 }
 
 async function main() {
