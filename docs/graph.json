@@ -12,7 +12,7 @@
       },
       "design": {
         "path": "docs/architecture/后端详细设计方案.md",
-        "summary": "Backend detailed design including Express API routes, service layer, repository pattern, and build pipeline stages."
+        "summary": "Archived pre-refactor backend design retained only as historical reference; not a current implementation contract."
       },
       "pipeline": {
         "path": "docs/architecture/构建任务流与目录结构设计.md",
