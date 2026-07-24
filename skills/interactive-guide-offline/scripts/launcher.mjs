@@ -60,6 +60,26 @@ function parsePort(value, label) {
   return port
 }
 
+function assertDependenciesInstalled() {
+  const manifestPath = path.join(workbenchRoot, 'package.json')
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`workbench dependency manifest is missing: ${manifestPath}`)
+  }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+  const dependencies = Object.keys(manifest.dependencies ?? {})
+  if (dependencies.length === 0) {
+    throw new Error(`workbench dependency manifest declares no dependencies: ${manifestPath}`)
+  }
+  const missing = dependencies.filter(name => {
+    const packagePath = path.join(workbenchRoot, 'node_modules', ...name.split('/'), 'package.json')
+    return !fs.existsSync(packagePath)
+  })
+  if (missing.length === 0) return
+  throw new Error(
+    `workbench dependencies are not installed (${missing.join(', ')}); run "npm ci --omit=dev" in "${workbenchRoot}" and retry`,
+  )
+}
+
 async function findFreePort() {
   return await new Promise((resolve, reject) => {
     const server = net.createServer()
@@ -196,6 +216,7 @@ async function main() {
   if (!fs.existsSync(serverEntry) || !fs.existsSync(path.join(adminRoot, 'index.html'))) {
     throw new Error('bundled workbench is missing; assemble the installable Skill artifact first')
   }
+  assertDependenciesInstalled()
 
   const workspace = path.resolve(args.workspace)
   fs.mkdirSync(workspace, { recursive: true })

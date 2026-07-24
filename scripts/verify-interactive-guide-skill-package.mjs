@@ -43,6 +43,37 @@ function runPackager(outputDir) {
   return payload
 }
 
+function installWorkbenchDependencies(workbenchRoot) {
+  const npmArgs = ['ci', '--omit=dev', '--no-audit', '--no-fund']
+  const npmCli = process.env.npm_execpath
+  const command = npmCli && fs.existsSync(npmCli) ? process.execPath : 'npm'
+  const args = command === process.execPath ? [npmCli, ...npmArgs] : npmArgs
+  const result = spawnSync(command, args, {
+    cwd: workbenchRoot,
+    encoding: 'utf8',
+    windowsHide: true,
+    shell: command === 'npm' && process.platform === 'win32',
+    maxBuffer: 50 * 1024 * 1024,
+  })
+  if (result.status !== 0) {
+    throw new Error(`dependency installation failed:\n${result.stdout}\n${result.stderr}`)
+  }
+  return result.stdout.trim()
+}
+
+function verifyLauncherRequiresInstallation(launcherPath, skillRoot, workspace) {
+  const result = spawnSync(process.execPath, [launcherPath, '--workspace', workspace], {
+    cwd: skillRoot,
+    encoding: 'utf8',
+    windowsHide: true,
+  })
+  if (result.status === 0 || !/npm ci --omit=dev/.test(result.stderr)) {
+    throw new Error(
+      `launcher did not report the dependency installation requirement:\n${result.stdout}\n${result.stderr}`,
+    )
+  }
+}
+
 function waitForJsonLine(child, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
     let stdout = ''
@@ -221,6 +252,8 @@ async function main() {
       'interactive-guide-offline/workbench/dist/server/index.js',
       'interactive-guide-offline/workbench/dist/admin/index.html',
       'interactive-guide-offline/workbench/src/product-shell/browser/gallery-entry.ts',
+      'interactive-guide-offline/workbench/package.json',
+      'interactive-guide-offline/workbench/package-lock.json',
       'interactive-guide-offline/workbench/workbench-manifest.json',
     ]
     for (const name of required) {
@@ -229,12 +262,18 @@ async function main() {
     if (entryNames.some(name => name.includes('/dist/automation/'))) {
       throw new Error('package includes superseded automation build output')
     }
+    if (entryNames.some(name => name.includes('/node_modules/'))) {
+      throw new Error('package must not include node_modules')
+    }
 
     const extractedRoot = path.join(temporaryRoot, 'extracted')
     zip.extractAllTo(extractedRoot, true)
     const skillRoot = path.join(extractedRoot, 'interactive-guide-offline')
     const launcherPath = path.join(skillRoot, 'scripts', 'launcher.mjs')
     const workspace = path.join(temporaryRoot, 'workspace')
+    const workbenchRoot = path.join(skillRoot, 'workbench')
+    verifyLauncherRequiresInstallation(launcherPath, skillRoot, workspace)
+    const dependencyInstall = installWorkbenchDependencies(workbenchRoot)
     launcher = spawn(process.execPath, [launcherPath, '--workspace', workspace], {
       cwd: skillRoot,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -261,6 +300,7 @@ async function main() {
         artifactSize: packaged.size,
         artifactSha256: packaged.sha256,
         workbenchManifest: packaged.manifest,
+        dependencyInstall,
         previews,
       })}\n`,
     )

@@ -30,7 +30,8 @@ function usage() {
   node scripts/package-interactive-guide-skill.mjs [--output-dir <directory>] [--skip-build]
 
 Builds the existing workbench, combines its runtime closure with the orchestration Skill,
-and writes one self-contained ZIP plus a .sha256 file.`
+and writes one installable ZIP plus a .sha256 file. Runtime dependencies are declared
+in workbench/package.json and must be installed by the user after extraction.`
 }
 
 function parseArgs(argv) {
@@ -215,21 +216,6 @@ function collectRuntimePackageRoots() {
   return roots
 }
 
-function copyRuntimePackages(workbenchRoot) {
-  const roots = collectRuntimePackageRoots()
-  for (const sourceRoot of [...roots.keys()].sort((left, right) => left.length - right.length)) {
-    const relative = path.relative(repositoryRoot, sourceRoot)
-    if (relative.startsWith('..') || !relative.split(path.sep).includes('node_modules')) {
-      throw new Error(`runtime package is outside repository node_modules: ${sourceRoot}`)
-    }
-    fs.cpSync(sourceRoot, path.join(workbenchRoot, relative), {
-      recursive: true,
-      dereference: true,
-    })
-  }
-  return roots
-}
-
 function copySkillSource(stagingSkillRoot) {
   fs.cpSync(skillSource, stagingSkillRoot, {
     recursive: true,
@@ -250,10 +236,7 @@ function sourceCommit() {
   return result.status === 0 ? result.stdout.trim() : 'unknown'
 }
 
-function writeWorkbenchManifest(workbenchRoot, compiledFiles, runtimeSources, packages) {
-  const projectPackage = JSON.parse(
-    fs.readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8'),
-  )
+function writeDependencyManifests(workbenchRoot, projectPackage, packages) {
   const dependencyVersions = Object.fromEntries(
     runtimePackages.map(name => {
       const installed = findInstalledPackage(name, repositoryRoot)
@@ -261,23 +244,72 @@ function writeWorkbenchManifest(workbenchRoot, compiledFiles, runtimeSources, pa
       return [name, manifest.version]
     }),
   )
+  const workbenchPackage = {
+    name: 'interactive-guide-offline-workbench',
+    private: true,
+    type: 'module',
+    version: projectPackage.version,
+    dependencies: dependencyVersions,
+  }
   fs.writeFileSync(
     path.join(workbenchRoot, 'package.json'),
-    `${JSON.stringify(
-      {
-        name: 'interactive-guide-offline-workbench',
-        private: true,
-        type: 'module',
-        version: projectPackage.version,
-        dependencies: dependencyVersions,
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(workbenchPackage, null, 2)}\n`,
   )
+
+  const installedLockPath = path.join(repositoryRoot, 'node_modules', '.package-lock.json')
+  ensureFile(installedLockPath, 'installed dependency lock')
+  const installedLock = JSON.parse(fs.readFileSync(installedLockPath, 'utf8'))
+  if (installedLock.lockfileVersion !== 3 || !installedLock.packages) {
+    throw new Error('installed dependency lock must use npm lockfileVersion 3')
+  }
+  const runtimePackagePaths = new Set(
+    [...packages.keys()].map(packageRoot =>
+      path.relative(repositoryRoot, packageRoot).replaceAll('\\', '/'),
+    ),
+  )
+  for (const packagePath of runtimePackagePaths) {
+    if (!installedLock.packages[packagePath]) {
+      throw new Error(`installed dependency lock is missing ${packagePath}`)
+    }
+  }
+  const lockedPackages = {
+    '': {
+      name: workbenchPackage.name,
+      version: workbenchPackage.version,
+      dependencies: dependencyVersions,
+    },
+  }
+  for (const packagePath of Object.keys(installedLock.packages).sort()) {
+    const definition = structuredClone(installedLock.packages[packagePath])
+    if (runtimePackagePaths.has(packagePath)) {
+      delete definition.dev
+      delete definition.devOptional
+    }
+    lockedPackages[packagePath] = definition
+  }
+  const workbenchLock = {
+    name: workbenchPackage.name,
+    version: workbenchPackage.version,
+    lockfileVersion: 3,
+    requires: true,
+    packages: lockedPackages,
+  }
+  fs.writeFileSync(
+    path.join(workbenchRoot, 'package-lock.json'),
+    `${JSON.stringify(workbenchLock, null, 2)}\n`,
+  )
+}
+
+function writeWorkbenchManifest(workbenchRoot, compiledFiles, runtimeSources, packages) {
+  const projectPackage = JSON.parse(
+    fs.readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8'),
+  )
+  writeDependencyManifests(workbenchRoot, projectPackage, packages)
   const criticalRelativePaths = [
     path.join('dist', 'server', 'index.js'),
     path.join('dist', 'admin', 'index.html'),
+    'package.json',
+    'package-lock.json',
     path.join('src', 'product-shell', 'browser', 'atlas-entry.ts'),
     path.join('src', 'product-shell', 'browser', 'catalog-entry.ts'),
     path.join('src', 'product-shell', 'browser', 'gallery-entry.ts'),
@@ -285,7 +317,7 @@ function writeWorkbenchManifest(workbenchRoot, compiledFiles, runtimeSources, pa
     path.join('vendor', 'king-fisher', 'falcon-0.5.26-zcp-692-snapshot.umd.js'),
   ]
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     name: 'interactive-guide-offline-workbench',
     workbenchVersion: projectPackage.version,
     sourceCommit: sourceCommit(),
@@ -297,10 +329,16 @@ function writeWorkbenchManifest(workbenchRoot, compiledFiles, runtimeSources, pa
       admin: 'dist/admin/index.html',
     },
     supportedProducts: ['atlas', 'catalog', 'gallery'],
+    dependencyInstall: {
+      packageManager: 'npm',
+      command: 'npm ci --omit=dev',
+      workingDirectory: 'workbench',
+      bundledNodeModules: false,
+    },
     closure: {
       compiledFiles: compiledFiles.size,
       browserRuntimeSources: runtimeSources.size,
-      nodePackages: packages.size,
+      resolvedNodePackages: packages.size,
       directRuntimePackages: runtimePackages,
     },
     criticalFiles: Object.fromEntries(
@@ -365,7 +403,7 @@ function main() {
     const compiledFiles = copyCompiledServerClosure(workbenchRoot)
     copyAdminBuild(workbenchRoot)
     const runtimeSources = copyBrowserRuntimeSources(workbenchRoot)
-    const packages = copyRuntimePackages(workbenchRoot)
+    const packages = collectRuntimePackageRoots()
     const manifest = writeWorkbenchManifest(workbenchRoot, compiledFiles, runtimeSources, packages)
 
     const temporaryZip = path.join(stagingParent, `${skillName}.zip`)

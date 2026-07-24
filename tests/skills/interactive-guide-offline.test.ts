@@ -8,6 +8,18 @@ import { afterEach, test } from 'node:test'
 
 const repositoryRoot = process.cwd()
 const skillScripts = path.join(repositoryRoot, 'skills', 'interactive-guide-offline', 'scripts')
+const packagedRuntimeDependencies = [
+  'adm-zip',
+  'cors',
+  'dotenv',
+  'express',
+  'uuid',
+  'zod',
+  '@babel/core',
+  '@babel/preset-env',
+  'acorn',
+  'esbuild',
+]
 const temporaryRoots: string[] = []
 
 afterEach(() => {
@@ -278,6 +290,39 @@ function waitForLauncher(child: ReturnType<typeof spawn>): Promise<Record<string
   })
 }
 
+test('launcher reports the user installation command when dependencies are missing', async () => {
+  const root = temporaryRoot('guide-launcher-missing-dependencies')
+  const skillRoot = path.join(root, 'interactive-guide-offline')
+  const scriptsRoot = path.join(skillRoot, 'scripts')
+  const workbenchRoot = path.join(skillRoot, 'workbench')
+  const serverRoot = path.join(workbenchRoot, 'dist', 'server')
+  const adminRoot = path.join(workbenchRoot, 'dist', 'admin')
+  fs.mkdirSync(scriptsRoot, { recursive: true })
+  fs.mkdirSync(serverRoot, { recursive: true })
+  fs.mkdirSync(adminRoot, { recursive: true })
+  fs.copyFileSync(path.join(skillScripts, 'launcher.mjs'), path.join(scriptsRoot, 'launcher.mjs'))
+  fs.writeFileSync(
+    path.join(workbenchRoot, 'package.json'),
+    JSON.stringify({
+      type: 'module',
+      dependencies: Object.fromEntries(
+        packagedRuntimeDependencies.map(dependency => [dependency, '0.0.0-test']),
+      ),
+    }),
+  )
+  fs.writeFileSync(path.join(serverRoot, 'index.js'), '')
+  fs.writeFileSync(path.join(adminRoot, 'index.html'), '<!doctype html>')
+
+  const result = await runNode(path.join(scriptsRoot, 'launcher.mjs'), [
+    '--workspace',
+    path.join(root, 'workspace'),
+  ])
+  assert.equal(result.code, 1)
+  assert.match(result.stderr, /workbench dependencies are not installed/)
+  assert.match(result.stderr, /npm ci --omit=dev/)
+  assert.match(result.stderr, new RegExp(workbenchRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+})
+
 test('launcher serves the admin SPA, proxies API, and stops its own backend', async () => {
   const root = temporaryRoot('guide-launcher')
   const skillRoot = path.join(root, 'interactive-guide-offline')
@@ -289,7 +334,23 @@ test('launcher serves the admin SPA, proxies API, and stops its own backend', as
   fs.mkdirSync(serverRoot, { recursive: true })
   fs.mkdirSync(adminRoot, { recursive: true })
   fs.copyFileSync(path.join(skillScripts, 'launcher.mjs'), path.join(scriptsRoot, 'launcher.mjs'))
-  fs.writeFileSync(path.join(workbenchRoot, 'package.json'), JSON.stringify({ type: 'module' }))
+  fs.writeFileSync(
+    path.join(workbenchRoot, 'package.json'),
+    JSON.stringify({
+      type: 'module',
+      dependencies: Object.fromEntries(
+        packagedRuntimeDependencies.map(dependency => [dependency, '0.0.0-test']),
+      ),
+    }),
+  )
+  for (const dependency of packagedRuntimeDependencies) {
+    const packageRoot = path.join(workbenchRoot, 'node_modules', ...dependency.split('/'))
+    fs.mkdirSync(packageRoot, { recursive: true })
+    fs.writeFileSync(
+      path.join(packageRoot, 'package.json'),
+      JSON.stringify({ name: dependency, version: '0.0.0-test' }),
+    )
+  }
   fs.writeFileSync(
     path.join(adminRoot, 'index.html'),
     '<!doctype html><title>Offline Workbench</title>',
